@@ -1,5 +1,5 @@
-from backend.app.models.models import ServiceCategory, TipMethod
-from backend.app.schemas.schemas import TransactionCreate, TransactionResponse, TransactionSummary, EmployeeFinancials, LedgerRouting
+from app.models.models import ServiceCategory, TipMethod
+from app.schemas.schemas import TransactionCreate, TransactionResponse, TransactionSummary, EmployeeFinancials, LedgerRouting
 
 def calculate_transaction(data: TransactionCreate) -> TransactionResponse:
     expected_price = data.expected_price

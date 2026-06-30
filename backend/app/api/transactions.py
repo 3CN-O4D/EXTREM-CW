@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from backend.app.db.session import get_db
-from backend.app.models.models import Transaction as TransactionModel, User as UserModel
-from backend.app.schemas.schemas import TransactionCreate, TransactionResponse
-from backend.app.services.finance import calculate_transaction
-from backend.app.services.utils import get_current_week_id
-from backend.app.api.deps import check_role, get_current_user
-from backend.app.models.models import UserRole
+from app.db.session import get_db
+from app.models.models import Transaction as TransactionModel, User as UserModel
+from app.schemas.schemas import TransactionCreate, TransactionResponse
+from app.services.finance import calculate_transaction
+from app.services.utils import get_current_week_id
+from app.api.deps import check_role, get_current_user
+from app.models.models import UserRole
 from sqlalchemy import func
 from typing import List
 

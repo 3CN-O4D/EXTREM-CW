@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
-from backend.app.models.models import User, Transaction, Expense, Repayment, WeeklyLog, UserRole
-from backend.app.services.utils import get_current_week_id
+from app.models.models import User, Transaction, Expense, Repayment, WeeklyLog, UserRole
+from app.services.utils import get_current_week_id
 from datetime import datetime
 import json
 
@@ -21,7 +21,7 @@ def reset_weekly_balances(db: Session):
     print(f"Weekly reset completed for {week_id}")
 
 if __name__ == "__main__":
-    from backend.app.db.session import SessionLocal
+    from app.db.session import SessionLocal
     db = SessionLocal()
     reset_weekly_balances(db)
     db.close()

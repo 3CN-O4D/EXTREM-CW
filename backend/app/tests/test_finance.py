@@ -1,5 +1,5 @@
-from backend.app.schemas.schemas import TransactionCreate, ServiceCategory, TipMethod
-from backend.app.services.finance import calculate_transaction
+from app.schemas.schemas import TransactionCreate, ServiceCategory, TipMethod
+from app.services.finance import calculate_transaction
 
 def test_full_package_floor_penalty():
     # Scenario A: Full Package discounted too much (500 ksh)

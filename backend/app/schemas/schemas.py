@@ -1,6 +1,6 @@
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict
-from backend.app.models.models import UserRole, ServiceCategory, TipMethod
+from app.models.models import UserRole, ServiceCategory, TipMethod
 from datetime import datetime
 
 # User Schemas

@@ -22,6 +22,8 @@ export default function ManagerPanel() {
     expected_price: 200,
     cash_paid: 0,
     mpesa_paid: 0,
+    mpesa_transaction_id: '',
+    mpesa_sender_name: '',
     tip_method: 'cash',
     has_car_wash: true,
     has_vacuum: false,
@@ -30,6 +32,19 @@ export default function ManagerPanel() {
     carpet_characteristics: '',
     receiver_id: ''
   });
+
+  const [expenseForm, setExpenseForm] = useState({
+    description: '',
+    amount: 0,
+    category: 'General'
+  });
+
+  const [repaymentForm, setRepaymentForm] = useState({
+    employee_id: '',
+    amount: 0
+  });
+
+  const [activeTab, setActiveTab] = useState<'transaction' | 'expense' | 'repayment'>('transaction');
 
   useEffect(() => {
     api.get('/stats/employees').then(res => setEmployees(res.data));
@@ -60,9 +75,35 @@ export default function ManagerPanel() {
       };
       await api.post('/transactions/', payload);
       alert('Transaction logged successfully!');
-      // Reset form
+      fetchTransactions();
+      setForm({ ...form, cash_paid: 0, mpesa_paid: 0, mpesa_transaction_id: '', mpesa_sender_name: '', manual_tip: 0 });
     } catch (err) {
       alert('Error logging transaction');
+    }
+  };
+
+  const handleExpenseSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.post('/expenses/', expenseForm);
+      alert('Expense logged successfully!');
+      setExpenseForm({ description: '', amount: 0, category: 'General' });
+    } catch (err) {
+      alert('Error logging expense');
+    }
+  };
+
+  const handleRepaymentSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.post('/repayments/', {
+        employee_id: parseInt(repaymentForm.employee_id),
+        amount: parseFloat(repaymentForm.amount.toString())
+      });
+      alert('Repayment logged successfully!');
+      setRepaymentForm({ employee_id: '', amount: 0 });
+    } catch (err) {
+      alert('Error logging repayment');
     }
   };
 
@@ -72,6 +113,27 @@ export default function ManagerPanel() {
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8">
       <h1 className="text-2xl font-bold mb-6">Manager Workspace</h1>
+
+      <div className="flex border-b dark:border-slate-700">
+        <button
+          onClick={() => setActiveTab('transaction')}
+          className={`px-6 py-2 font-medium ${activeTab === 'transaction' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-gray-500'}`}
+        >
+          New Transaction
+        </button>
+        <button
+          onClick={() => setActiveTab('expense')}
+          className={`px-6 py-2 font-medium ${activeTab === 'expense' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-gray-500'}`}
+        >
+          Log Expenses
+        </button>
+        <button
+          onClick={() => setActiveTab('repayment')}
+          className={`px-6 py-2 font-medium ${activeTab === 'repayment' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-gray-500'}`}
+        >
+          Debt Repayment
+        </button>
+      </div>
 
       <div className="flex space-x-2 overflow-x-auto pb-2">
         {weekDays.map(day => (
@@ -84,6 +146,7 @@ export default function ManagerPanel() {
           </button>
         ))}
       </div>
+      {activeTab === 'transaction' ? (
       <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -149,6 +212,31 @@ export default function ManagerPanel() {
           </div>
         </div>
 
+        {form.mpesa_paid > 0 && (
+          <div className="grid grid-cols-2 gap-4 p-4 border rounded bg-green-50 dark:bg-slate-900 border-green-200">
+            <div>
+              <label className="block text-sm font-medium">M-Pesa Sender Name</label>
+              <input
+                placeholder="Sender Name"
+                className="w-full p-2 border rounded dark:bg-slate-700"
+                value={form.mpesa_sender_name}
+                onChange={e => setForm({...form, mpesa_sender_name: e.target.value})}
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium">Transaction ID</label>
+              <input
+                placeholder="ABC123XYZ"
+                className="w-full p-2 border rounded dark:bg-slate-700"
+                value={form.mpesa_transaction_id}
+                onChange={e => setForm({...form, mpesa_transaction_id: e.target.value})}
+                required
+              />
+            </div>
+          </div>
+        )}
+
         <div className="flex space-x-6 py-2">
           <label className="flex items-center space-x-2">
             <input type="checkbox" checked={form.has_vacuum} onChange={e => setForm({...form, has_vacuum: e.target.checked})} />
@@ -186,6 +274,81 @@ export default function ManagerPanel() {
           Submit Transaction
         </button>
       </form>
+      ) : activeTab === 'expense' ? (
+      <form onSubmit={handleExpenseSubmit} className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow space-y-4">
+        <h2 className="text-xl font-bold">Log Business Expense</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium">Description</label>
+            <input
+              className="w-full p-2 border rounded dark:bg-slate-700"
+              value={expenseForm.description}
+              onChange={e => setExpenseForm({...expenseForm, description: e.target.value})}
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium">Amount</label>
+            <input
+              type="number"
+              className="w-full p-2 border rounded dark:bg-slate-700"
+              value={expenseForm.amount}
+              onChange={e => setExpenseForm({...expenseForm, amount: parseInt(e.target.value)})}
+              required
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium">Category</label>
+          <select
+            className="w-full p-2 border rounded dark:bg-slate-700"
+            value={expenseForm.category}
+            onChange={e => setExpenseForm({...expenseForm, category: e.target.value})}
+          >
+            <option value="General">General</option>
+            <option value="Soap">Soap/Chemicals</option>
+            <option value="Water">Water</option>
+            <option value="Electricity">Electricity</option>
+            <option value="Rent">Rent</option>
+            <option value="Salary">Salary Advance</option>
+          </select>
+        </div>
+        <button type="submit" className="w-full bg-red-600 text-white font-bold py-3 rounded hover:bg-red-700">
+          Log Expense
+        </button>
+      </form>
+      ) : (
+      <form onSubmit={handleRepaymentSubmit} className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow space-y-4">
+        <h2 className="text-xl font-bold text-green-600">Record Debt Repayment</h2>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium">Employee</label>
+            <select
+              className="w-full p-2 border rounded dark:bg-slate-700"
+              value={repaymentForm.employee_id}
+              onChange={e => setRepaymentForm({...repaymentForm, employee_id: e.target.value})}
+              required
+            >
+              <option value="">Select Employee</option>
+              {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium">Repayment Amount (Ksh)</label>
+            <input
+              type="number"
+              className="w-full p-2 border rounded dark:bg-slate-700"
+              value={repaymentForm.amount}
+              onChange={e => setRepaymentForm({...repaymentForm, amount: parseInt(e.target.value)})}
+              required
+            />
+          </div>
+        </div>
+        <button type="submit" className="w-full bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700">
+          Confirm Repayment
+        </button>
+      </form>
+      )}
 
       <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
          <h2 className="text-xl font-semibold mb-4">Transactions for {format(selectedDay, 'PPPP')}</h2>

@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from backend.app.db.session import get_db
-from backend.app.models.models import Transaction, Expense, Repayment, User, UserRole
-from backend.app.services.utils import get_current_week_id
-from backend.app.api.deps import check_role
+from app.db.session import get_db
+from app.models.models import Transaction, Expense, Repayment, User, UserRole
+from app.services.utils import get_current_week_id
+from app.api.deps import check_role
 
 router = APIRouter()
 
