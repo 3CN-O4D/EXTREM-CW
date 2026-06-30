@@ -1,9 +1,9 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.app.api import transactions, users, expenses, repayments, stats
-from backend.app.db.session import engine
-from backend.app.models.models import Base
-from backend.app.core.config import settings
+from app.api import transactions, users, expenses, repayments, stats
+from app.db.session import engine
+from app.models.models import Base
+from app.core.config import settings
 
 # Create database tables
 Base.metadata.create_all(bind=engine)

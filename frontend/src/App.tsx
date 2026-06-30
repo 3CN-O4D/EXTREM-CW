@@ -2,8 +2,11 @@ import React, { useState } from 'react';
 import { BrowserRouter, Routes, Route, Link, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
+import LandingPage from './pages/LandingPage';
 import AdminDashboard from './pages/AdminDashboard';
 import ManagerPanel from './pages/ManagerPanel';
+import EmployeeManagement from './pages/EmployeeManagement';
+import EmployeeDashboard from './pages/EmployeeDashboard';
 import { Sun, Moon, LogOut, LayoutDashboard, Calculator, Users } from 'lucide-react';
 
 function AppContent() {
@@ -15,11 +18,10 @@ function AppContent() {
     document.documentElement.classList.toggle('dark');
   };
 
-  if (!user) return <Login />;
-
   return (
     <div className={`min-h-screen flex bg-gray-50 dark:bg-slate-900 transition-colors duration-200`}>
-      {/* Sidebar */}
+      {/* Sidebar - only show when logged in */}
+      {user && (
       <aside className="w-64 bg-white dark:bg-slate-800 border-r border-gray-200 dark:border-slate-700 hidden md:flex flex-col">
         <div className="p-6 border-b border-gray-200 dark:border-slate-700">
           <h1 className="text-xl font-bold text-primary-600">Carwash POS</h1>
@@ -59,12 +61,20 @@ function AppContent() {
           </div>
         </div>
       </aside>
+      )}
 
       {/* Main Content */}
       <main className="flex-1 overflow-auto">
         <Routes>
-          <Route path="/" element={user.role === 'admin' ? <AdminDashboard /> : <ManagerPanel />} />
-          <Route path="/manage" element={<ManagerPanel />} />
+          <Route path="/" element={
+            !user ? <LandingPage /> :
+            user.role === 'admin' ? <AdminDashboard /> :
+            user.role === 'manager' ? <ManagerPanel /> :
+            <EmployeeDashboard />
+          } />
+          <Route path="/login" element={!user ? <Login /> : <Navigate to="/" />} />
+          <Route path="/manage" element={user ? <ManagerPanel /> : <Navigate to="/login" />} />
+          <Route path="/employees" element={user?.role === 'admin' ? <EmployeeManagement /> : <Navigate to="/" />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>

@@ -17,7 +17,8 @@ class Settings(BaseSettings):
     def get_database_url(self) -> str:
         if self.DATABASE_URL:
             return self.DATABASE_URL
-        return f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}@{self.POSTGRES_SERVER}/{self.POSTGRES_DB}"
+        # Fallback to sqlite for local dev if postgres not specified
+        return f"sqlite:///./carwash.db"
 
     class Config:
         env_file = ".env"
