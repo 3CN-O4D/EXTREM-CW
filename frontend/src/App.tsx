@@ -4,6 +4,8 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import AdminDashboard from './pages/AdminDashboard';
 import ManagerPanel from './pages/ManagerPanel';
+import EmployeeManagement from './pages/EmployeeManagement';
+import EmployeeDashboard from './pages/EmployeeDashboard';
 import { Sun, Moon, LogOut, LayoutDashboard, Calculator, Users } from 'lucide-react';
 
 function AppContent() {
@@ -63,8 +65,13 @@ function AppContent() {
       {/* Main Content */}
       <main className="flex-1 overflow-auto">
         <Routes>
-          <Route path="/" element={user.role === 'admin' ? <AdminDashboard /> : <ManagerPanel />} />
+          <Route path="/" element={
+            user.role === 'admin' ? <AdminDashboard /> :
+            user.role === 'manager' ? <ManagerPanel /> :
+            <EmployeeDashboard />
+          } />
           <Route path="/manage" element={<ManagerPanel />} />
+          <Route path="/employees" element={<EmployeeManagement />} />
           <Route path="*" element={<Navigate to="/" />} />
         </Routes>
       </main>

@@ -1,8 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
+import { format, startOfWeek, addDays, isSameDay } from 'date-fns';
 
 export default function ManagerPanel() {
   const [employees, setEmployees] = useState<any[]>([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
+  const [selectedDay, setSelectedDay] = useState<Date>(new Date());
+  const standardPrices: any = {
+    bicycle: 50,
+    motorcycle: 70,
+    taxi: 150,
+    car: 200,
+    midrange: 300,
+    lorry: 500,
+    carpet: 300
+  };
+
   const [form, setForm] = useState({
     washer_id: '',
     category: 'car',
@@ -20,7 +33,15 @@ export default function ManagerPanel() {
 
   useEffect(() => {
     api.get('/stats/employees').then(res => setEmployees(res.data));
-  }, []);
+    fetchTransactions();
+  }, [selectedDay]);
+
+  const fetchTransactions = async () => {
+    const res = await api.get('/transactions/', {
+      params: { day: format(selectedDay, 'yyyy-MM-dd') }
+    });
+    setTransactions(res.data);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,9 +66,24 @@ export default function ManagerPanel() {
     }
   };
 
+  const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const weekDays = [...Array(7)].map((_, i) => addDays(weekStart, i));
+
   return (
-    <div className="p-6 max-w-4xl mx-auto">
-      <h1 className="text-2xl font-bold mb-6">Manager Transaction Input</h1>
+    <div className="p-6 max-w-6xl mx-auto space-y-8">
+      <h1 className="text-2xl font-bold mb-6">Manager Workspace</h1>
+
+      <div className="flex space-x-2 overflow-x-auto pb-2">
+        {weekDays.map(day => (
+          <button
+            key={day.toISOString()}
+            onClick={() => setSelectedDay(day)}
+            className={`px-4 py-2 rounded whitespace-nowrap transition ${isSameDay(selectedDay, day) ? 'bg-primary-600 text-white' : 'bg-gray-200 dark:bg-slate-700'}`}
+          >
+            {format(day, 'EEE (dd/MM)')}
+          </button>
+        ))}
+      </div>
       <form onSubmit={handleSubmit} className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -67,7 +103,10 @@ export default function ManagerPanel() {
             <select
               className="w-full p-2 border rounded dark:bg-slate-700"
               value={form.category}
-              onChange={e => setForm({...form, category: e.target.value})}
+              onChange={e => {
+                const cat = e.target.value;
+                setForm({...form, category: cat, expected_price: standardPrices[cat] || 0});
+              }}
             >
               <option value="bicycle">Bicycle</option>
               <option value="motorcycle">Motorcycle</option>
@@ -147,6 +186,34 @@ export default function ManagerPanel() {
           Submit Transaction
         </button>
       </form>
+
+      <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
+         <h2 className="text-xl font-semibold mb-4">Transactions for {format(selectedDay, 'PPPP')}</h2>
+         <div className="overflow-x-auto">
+           <table className="w-full text-left">
+             <thead>
+               <tr className="border-b">
+                 <th className="py-2">Time</th>
+                 <th className="py-2">Washer</th>
+                 <th className="py-2">Category</th>
+                 <th className="py-2">Paid</th>
+                 <th className="py-2">Shortfall</th>
+               </tr>
+             </thead>
+             <tbody>
+               {transactions.map(tx => (
+                 <tr key={tx.id} className="border-b">
+                   <td className="py-2">{format(new Date(tx.timestamp), 'HH:mm')}</td>
+                   <td className="py-2 font-medium">{tx.washer_id}</td>
+                   <td className="py-2 capitalize">{tx.category}</td>
+                   <td className="py-2 font-mono">Ksh {tx.total_paid}</td>
+                   <td className="py-2 text-red-500 font-mono">{tx.shortfall > 0 ? `Ksh ${tx.shortfall}` : '-'}</td>
+                 </tr>
+               ))}
+             </tbody>
+           </table>
+         </div>
+      </div>
     </div>
   );
 }

@@ -5,10 +5,35 @@ from backend.app.models.models import Transaction as TransactionModel, User as U
 from backend.app.schemas.schemas import TransactionCreate, TransactionResponse
 from backend.app.services.finance import calculate_transaction
 from backend.app.services.utils import get_current_week_id
-from backend.app.api.deps import check_role
+from backend.app.api.deps import check_role, get_current_user
 from backend.app.models.models import UserRole
+from sqlalchemy import func
+from typing import List
 
 router = APIRouter()
+
+@router.get("/", response_model=None)
+def get_transactions(
+    day: str = None,
+    week_id: str = None,
+    washer_id: int = None,
+    db: Session = Depends(get_db),
+    current_user: UserModel = Depends(get_current_user)
+):
+    query = db.query(TransactionModel)
+    if day:
+        query = query.filter(func.date(TransactionModel.timestamp) == day)
+    elif week_id:
+        query = query.filter(TransactionModel.week_id == week_id)
+
+    if washer_id:
+        query = query.filter(TransactionModel.washer_id == washer_id)
+
+    # Employees can only see their own
+    if current_user.role == UserRole.EMPLOYEE:
+        query = query.filter(TransactionModel.washer_id == current_user.id)
+
+    return query.all()
 
 @router.post("/", response_model=TransactionResponse)
 def create_transaction(
