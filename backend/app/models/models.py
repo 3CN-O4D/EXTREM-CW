@@ -66,6 +66,9 @@ class Transaction(Base):
     has_engine_wash = Column(Boolean, default=False)
 
     # Carpet Metadata
+    plate_number = Column(String, nullable=True)
+    customer_phone = Column(String, nullable=True)
+
     carpet_characteristics = Column(Text, nullable=True)
     receiver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     receiver = relationship("User", foreign_keys=[receiver_id], back_populates="transactions_as_receiver")
@@ -110,3 +113,14 @@ class WeeklyLog(Base):
     total_labor_expense = Column(Float)
     total_profit = Column(Float)
     data_json = Column(Text) # Store serialized detailed stats
+
+class Debt(Base):
+    __tablename__ = "debts"
+    id = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    amount = Column(Float, nullable=False)
+    service = Column(String, nullable=True)
+    date = Column(DateTime, default=datetime.utcnow)
+    paid = Column(Float, default=0.0)
+    paid_date = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)

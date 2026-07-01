@@ -27,13 +27,11 @@ def calculate_transaction(data: TransactionCreate) -> TransactionResponse:
     total_paid = data.cash_paid + data.mpesa_paid
     isolated_tip = 0.0
 
-    # Automatic Tips for certain categories
-    if data.category in [ServiceCategory.CAR, ServiceCategory.TAXI, ServiceCategory.MOTORCYCLE]:
-        if total_paid > expected_price:
-            isolated_tip = total_paid - expected_price
-    else:
-        # Manual Tips for others
-        isolated_tip = data.manual_tip
+    # Auto-tip: overpayment on any category
+    if total_paid > expected_price:
+        isolated_tip = total_paid - expected_price
+    # Manual tip always adds on top (e.g. customer paid exact but gave extra cash)
+    isolated_tip += data.manual_tip
 
     net_remitted = total_paid - isolated_tip
     shortfall = max(0.0, expected_price - net_remitted)

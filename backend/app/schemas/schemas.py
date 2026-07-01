@@ -31,6 +31,7 @@ class User(UserBase):
 class CarpetMetadata(BaseModel):
     characteristics: str
     receiver_id: int
+    customer_phone: Optional[str] = None
 
 class TransactionCreate(BaseModel):
     washer_id: int
@@ -45,6 +46,7 @@ class TransactionCreate(BaseModel):
     has_car_wash: bool = False
     has_vacuum: bool = False
     has_engine_wash: bool = False
+    plate_number: Optional[str] = None
     carpet_metadata: Optional[CarpetMetadata] = None
 
 class TransactionSummary(BaseModel):
@@ -70,6 +72,22 @@ class TransactionResponse(BaseModel):
     employee_financials: EmployeeFinancials
     ledger_routing: LedgerRouting
 
+class TransactionUpdate(BaseModel):
+    washer_id: Optional[int] = None
+    category: Optional[ServiceCategory] = None
+    expected_price: Optional[float] = None
+    cash_paid: Optional[float] = None
+    mpesa_paid: Optional[float] = None
+    mpesa_transaction_id: Optional[str] = None
+    mpesa_sender_name: Optional[str] = None
+    manual_tip: Optional[float] = None
+    tip_method: Optional[TipMethod] = None
+    has_car_wash: Optional[bool] = None
+    has_vacuum: Optional[bool] = None
+    has_engine_wash: Optional[bool] = None
+    plate_number: Optional[str] = None
+    carpet_metadata: Optional[CarpetMetadata] = None
+
 # Expense Schemas
 class ExpenseCreate(BaseModel):
     description: str
@@ -92,6 +110,38 @@ class Repayment(RepaymentCreate):
     id: int
     timestamp: datetime
     week_id: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+# Tip Schemas
+class TipCreate(BaseModel):
+    employee_id: int
+    amount: float
+    method: TipMethod  # WAGES = add to wage, CASH = expense
+
+# Debt Schemas
+class DebtCreate(BaseModel):
+    employee_id: int
+    amount: float
+    service: Optional[str] = None
+    paid: float = 0.0
+    paid_date: Optional[str] = None
+    notes: Optional[str] = None
+
+class DebtUpdate(BaseModel):
+    paid: float
+    paid_date: Optional[str] = None
+
+class DebtOut(BaseModel):
+    id: int
+    employee_id: int
+    amount: float
+    service: Optional[str] = None
+    date: datetime
+    paid: float
+    paid_date: Optional[datetime] = None
+    notes: Optional[str] = None
+    balance: float
 
     model_config = ConfigDict(from_attributes=True)
 
