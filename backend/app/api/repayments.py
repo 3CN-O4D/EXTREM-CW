@@ -4,7 +4,7 @@ from sqlalchemy import func
 from app.db.session import get_db
 from app.models.models import Repayment as RepaymentModel, User as UserModel, Debt as DebtModel
 from app.schemas.schemas import RepaymentCreate, RepaymentOut
-from app.services.utils import get_current_week_id
+from app.services.utils import get_current_week_id, validate_day
 from datetime import datetime as dt
 from typing import List
 
@@ -20,6 +20,7 @@ def list_repayments(
     db: Session = Depends(get_db),
     current_user = Depends(get_current_user)
 ):
+    validate_day(day)
     query = (
         db.query(RepaymentModel, UserModel)
         .join(UserModel, UserModel.id == RepaymentModel.employee_id)

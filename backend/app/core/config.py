@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     POSTGRES_DB: str = "carwash"
     DATABASE_URL: str | None = None
     CORS_ORIGINS: str = "http://localhost:5173"
+    ENABLE_DOCS: bool = True
 
     @property
     def get_database_url(self) -> str:

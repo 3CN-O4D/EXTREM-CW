@@ -4,7 +4,7 @@ from sqlalchemy import func
 from datetime import datetime
 from app.db.session import get_db
 from app.models.models import Transaction, Expense, Repayment, User, UserRole, Carpet
-from app.services.utils import get_current_week_id
+from app.services.utils import get_current_week_id, validate_day
 from app.api.deps import check_role, get_current_user
 from app.models.models import User as UserModel
 
@@ -108,6 +108,7 @@ def get_summary(
     day: str = None, # YYYY-MM-DD
     db: Session = Depends(get_db)
 ):
+    validate_day(day)
     query = db.query(Transaction)
     exp_query = db.query(Expense)
 
@@ -179,6 +180,7 @@ def get_employee_performance(
     day: str = None,
     db: Session = Depends(get_db)
 ):
+    validate_day(day)
     employees = db.query(User).filter(User.role == UserRole.EMPLOYEE).all()
     return [_collect_employee_stats(emp, db, week_id, day) for emp in employees]
 
@@ -189,6 +191,7 @@ def get_employee_stats(
     day: str = None,
     db: Session = Depends(get_db)
 ):
+    validate_day(day)
     emp = db.query(User).filter(User.id == employee_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
@@ -201,4 +204,5 @@ def get_my_stats(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_user)
 ):
+    validate_day(day)
     return _collect_employee_stats(current_user, db, week_id, day)

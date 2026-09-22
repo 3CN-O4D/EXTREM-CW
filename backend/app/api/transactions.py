@@ -4,7 +4,7 @@ from app.db.session import get_db
 from app.models.models import Transaction as TransactionModel, User as UserModel, Expense as ExpenseModel
 from app.schemas.schemas import TransactionCreate, TransactionUpdate, TransactionResponse
 from app.services.finance import calculate_transaction
-from app.services.utils import get_current_week_id
+from app.services.utils import get_current_week_id, validate_day
 from app.api.deps import check_role, get_current_user
 from app.models.models import UserRole, TipMethod
 from sqlalchemy import func
@@ -20,6 +20,7 @@ def get_transactions(
     db: Session = Depends(get_db),
     current_user: UserModel = Depends(get_current_user)
 ):
+    validate_day(day)
     query = db.query(TransactionModel)
     if day:
         query = query.filter(func.date(TransactionModel.timestamp) == day)

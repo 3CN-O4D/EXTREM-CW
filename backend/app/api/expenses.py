@@ -5,7 +5,7 @@ from sqlalchemy import func
 from app.db.session import get_db
 from app.models.models import Expense as ExpenseModel
 from app.schemas.schemas import ExpenseCreate, Expense as ExpenseSchema
-from app.services.utils import get_current_week_id
+from app.services.utils import get_current_week_id, validate_day
 
 from app.api.deps import check_role
 from app.models.models import UserRole
@@ -37,6 +37,7 @@ def get_expenses(
     db: Session = Depends(get_db),
     current_user = Depends(check_role([UserRole.ADMIN, UserRole.MANAGER]))
 ):
+    validate_day(day)
     query = db.query(ExpenseModel)
     if day:
         query = query.filter(func.date(ExpenseModel.timestamp) == day)

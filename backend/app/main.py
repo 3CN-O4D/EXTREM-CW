@@ -41,7 +41,12 @@ for col in ["client_name VARCHAR", "image_data TEXT"]:
     except Exception:
         pass  # Column already exists
 
-app = FastAPI(title=settings.PROJECT_NAME)
+app = FastAPI(
+    title=settings.PROJECT_NAME,
+    docs_url="/docs" if settings.ENABLE_DOCS else None,
+    redoc_url="/redoc" if settings.ENABLE_DOCS else None,
+    openapi_url="/openapi.json" if settings.ENABLE_DOCS else None,
+)
 
 # Set up CORS
 app.add_middleware(

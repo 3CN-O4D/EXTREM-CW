@@ -1,5 +1,5 @@
 from typing import Optional, List
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from app.models.models import UserRole, ServiceCategory, TipMethod
 from datetime import datetime
 
@@ -36,14 +36,14 @@ class CarpetMetadata(BaseModel):
 class TransactionCreate(BaseModel):
     washer_id: int
     category: ServiceCategory
-    expected_price: float
-    cash_paid: float
-    mpesa_paid: float
+    expected_price: float = Field(ge=0)
+    cash_paid: float = Field(ge=0)
+    mpesa_paid: float = Field(ge=0)
     mpesa_transaction_id: Optional[str] = None
     mpesa_sender_name: Optional[str] = None
-    manual_tip: float = 0.0
+    manual_tip: float = Field(default=0.0, ge=0)
     tip_method: TipMethod
-    misc_amount: float = 0.0
+    misc_amount: float = Field(default=0.0, ge=0)
     misc_description: Optional[str] = None
     has_car_wash: bool = False
     has_vacuum: bool = False
@@ -81,14 +81,14 @@ class TransactionResponse(BaseModel):
 class TransactionUpdate(BaseModel):
     washer_id: Optional[int] = None
     category: Optional[ServiceCategory] = None
-    expected_price: Optional[float] = None
-    cash_paid: Optional[float] = None
-    mpesa_paid: Optional[float] = None
+    expected_price: Optional[float] = Field(default=None, ge=0)
+    cash_paid: Optional[float] = Field(default=None, ge=0)
+    mpesa_paid: Optional[float] = Field(default=None, ge=0)
     mpesa_transaction_id: Optional[str] = None
     mpesa_sender_name: Optional[str] = None
-    manual_tip: Optional[float] = None
+    manual_tip: Optional[float] = Field(default=None, ge=0)
     tip_method: Optional[TipMethod] = None
-    misc_amount: Optional[float] = None
+    misc_amount: Optional[float] = Field(default=None, ge=0)
     misc_description: Optional[str] = None
     has_car_wash: Optional[bool] = None
     has_vacuum: Optional[bool] = None
@@ -100,7 +100,7 @@ class TransactionUpdate(BaseModel):
 # Expense Schemas
 class ExpenseCreate(BaseModel):
     description: str
-    amount: float
+    amount: float = Field(ge=0)
     category: str
 
 class Expense(ExpenseCreate):
@@ -114,7 +114,7 @@ class Expense(ExpenseCreate):
 # Repayment Schemas
 class RepaymentCreate(BaseModel):
     employee_id: int
-    amount: float
+    amount: float = Field(ge=0)
 
 class Repayment(RepaymentCreate):
     id: int
@@ -130,20 +130,20 @@ class RepaymentOut(Repayment):
 # Tip Schemas
 class TipCreate(BaseModel):
     employee_id: int
-    amount: float
+    amount: float = Field(ge=0)
     method: TipMethod  # WAGES = add to wage, CASH = expense
 
 # Debt Schemas
 class DebtCreate(BaseModel):
     employee_id: int
-    amount: float
+    amount: float = Field(ge=0)
     service: Optional[str] = None
-    paid: float = 0.0
+    paid: float = Field(default=0.0, ge=0)
     paid_date: Optional[str] = None
     notes: Optional[str] = None
 
 class DebtUpdate(BaseModel):
-    paid: float
+    paid: float = Field(ge=0)
     paid_date: Optional[str] = None
 
 class DebtOut(BaseModel):
@@ -178,17 +178,17 @@ class CarpetCreate(BaseModel):
     client_name: Optional[str] = None
     customer_phone: Optional[str] = None
     image_data: Optional[str] = None
-    expected_price: float = 0.0
-    cash_paid: float = 0.0
-    mpesa_paid: float = 0.0
+    expected_price: float = Field(default=0.0, ge=0)
+    cash_paid: float = Field(default=0.0, ge=0)
+    mpesa_paid: float = Field(default=0.0, ge=0)
 
 class CarpetUpdate(BaseModel):
     is_washed: Optional[bool] = None
     characteristics: Optional[str] = None
     client_name: Optional[str] = None
-    expected_price: Optional[float] = None
-    cash_paid: Optional[float] = None
-    mpesa_paid: Optional[float] = None
+    expected_price: Optional[float] = Field(default=None, ge=0)
+    cash_paid: Optional[float] = Field(default=None, ge=0)
+    mpesa_paid: Optional[float] = Field(default=None, ge=0)
     customer_phone: Optional[str] = None
     image_data: Optional[str] = None
 
