@@ -43,16 +43,20 @@ class TransactionCreate(BaseModel):
     mpesa_sender_name: Optional[str] = None
     manual_tip: float = 0.0
     tip_method: TipMethod
+    misc_amount: float = 0.0
+    misc_description: Optional[str] = None
     has_car_wash: bool = False
     has_vacuum: bool = False
     has_engine_wash: bool = False
     plate_number: Optional[str] = None
+    custom_category: Optional[str] = None
     carpet_metadata: Optional[CarpetMetadata] = None
 
 class TransactionSummary(BaseModel):
     expected_price: float
     total_customer_paid: float
     isolated_tip: float
+    misc_amount: float = 0.0
     net_business_remittance: float
     shortfall_detected: float
 
@@ -68,6 +72,8 @@ class LedgerRouting(BaseModel):
     business_labor_expense: float
 
 class TransactionResponse(BaseModel):
+    id: int
+    timestamp: datetime
     transaction_summary: TransactionSummary
     employee_financials: EmployeeFinancials
     ledger_routing: LedgerRouting
@@ -82,10 +88,13 @@ class TransactionUpdate(BaseModel):
     mpesa_sender_name: Optional[str] = None
     manual_tip: Optional[float] = None
     tip_method: Optional[TipMethod] = None
+    misc_amount: Optional[float] = None
+    misc_description: Optional[str] = None
     has_car_wash: Optional[bool] = None
     has_vacuum: Optional[bool] = None
     has_engine_wash: Optional[bool] = None
     plate_number: Optional[str] = None
+    custom_category: Optional[str] = None
     carpet_metadata: Optional[CarpetMetadata] = None
 
 # Expense Schemas
@@ -98,6 +107,7 @@ class Expense(ExpenseCreate):
     id: int
     timestamp: datetime
     week_id: str
+    transaction_id: Optional[int] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -112,6 +122,10 @@ class Repayment(RepaymentCreate):
     week_id: str
 
     model_config = ConfigDict(from_attributes=True)
+
+class RepaymentOut(Repayment):
+    employee_name: Optional[str] = None
+    abbreviation: Optional[str] = None
 
 # Tip Schemas
 class TipCreate(BaseModel):
@@ -152,3 +166,45 @@ class Token(BaseModel):
 
 class TokenData(BaseModel):
     username: Optional[str] = None
+
+class ChangePasswordIn(BaseModel):
+    current_password: str
+    new_password: str
+
+# Carpet Schemas
+class CarpetCreate(BaseModel):
+    receiver_id: int
+    characteristics: Optional[str] = None
+    client_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    image_data: Optional[str] = None
+    expected_price: float = 0.0
+    cash_paid: float = 0.0
+    mpesa_paid: float = 0.0
+
+class CarpetUpdate(BaseModel):
+    is_washed: Optional[bool] = None
+    characteristics: Optional[str] = None
+    client_name: Optional[str] = None
+    expected_price: Optional[float] = None
+    cash_paid: Optional[float] = None
+    mpesa_paid: Optional[float] = None
+    customer_phone: Optional[str] = None
+    image_data: Optional[str] = None
+
+class CarpetOut(BaseModel):
+    id: int
+    created_at: datetime
+    receiver_id: int
+    characteristics: Optional[str] = None
+    client_name: Optional[str] = None
+    customer_phone: Optional[str] = None
+    image_data: Optional[str] = None
+    expected_price: float
+    cash_paid: float
+    mpesa_paid: float
+    is_washed: bool
+    status: str
+    released_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)

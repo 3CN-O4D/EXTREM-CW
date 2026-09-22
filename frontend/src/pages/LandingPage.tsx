@@ -45,7 +45,7 @@ export default function LandingPage() {
       {/* Navbar */}
       <nav className="flex justify-between items-center p-6 bg-slate-900 text-white sticky top-0 z-50">
         <div className="flex items-center gap-3">
-          <img src="/src/images/carwashlogo.png" alt="Extreme" className="h-12 object-contain" />
+          <img src="/src/images/logo.jpeg" alt="Extreme" className="h-12 object-contain" />
           <div className="text-2xl font-bold tracking-tighter text-blue-400">EXTREME AUTO CARWASH</div>
         </div>
         <div className="space-x-6 hidden md:flex">
@@ -66,7 +66,7 @@ export default function LandingPage() {
         />
         <div className="relative z-20 space-y-6 max-w-3xl px-6">
           <div className="flex justify-center mb-6">
-            <img src="/src/images/carwashlogo.png" alt="EXTREME" className="h-28 object-contain drop-shadow-2xl" />
+            <img src="/src/images/logo.jpeg" alt="EXTREME" className="h-28 object-contain drop-shadow-2xl" />
           </div>
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight">PRISTINE CLEAN. <br/><span className="text-blue-500">EXTREME VALUE.</span></h1>
           <p className="text-xl text-gray-200">The most professional carwash service in Eldoret. We don't just wash; we detail.</p>
@@ -161,7 +161,7 @@ export default function LandingPage() {
       </section>
 
       <footer className="bg-black text-gray-600 py-10 text-center text-sm flex flex-col items-center gap-2">
-        <img src="/src/images/carwashlogo.png" alt="EXTREME" className="h-10 object-contain opacity-50" />
+        <img src="/src/images/logo.jpeg" alt="EXTREME" className="h-10 object-contain opacity-50" />
         &copy; 2026 EXTREME AUTO CARWASH. All rights reserved.
       </footer>
     </div>

@@ -1,7 +1,8 @@
 from app.models.models import ServiceCategory, TipMethod
-from app.schemas.schemas import TransactionCreate, TransactionResponse, TransactionSummary, EmployeeFinancials, LedgerRouting
+from app.schemas.schemas import TransactionCreate, TransactionSummary, EmployeeFinancials, LedgerRouting
+from types import SimpleNamespace
 
-def calculate_transaction(data: TransactionCreate) -> TransactionResponse:
+def calculate_transaction(data: TransactionCreate) -> SimpleNamespace:
     expected_price = data.expected_price
 
     # 1. Vacuum & Engine Wash Floor Rules (Full Package)
@@ -25,11 +26,12 @@ def calculate_transaction(data: TransactionCreate) -> TransactionResponse:
 
     # 3. Tip Isolation
     total_paid = data.cash_paid + data.mpesa_paid
+    misc_amount = data.misc_amount or 0.0
     isolated_tip = 0.0
 
-    # Auto-tip: overpayment on any category
+    # Auto-tip: overpayment on any category, minus any classified as miscellaneous
     if total_paid > expected_price:
-        isolated_tip = total_paid - expected_price
+        isolated_tip = max(0.0, total_paid - expected_price - misc_amount)
     # Manual tip always adds on top (e.g. customer paid exact but gave extra cash)
     isolated_tip += data.manual_tip
 
@@ -54,11 +56,12 @@ def calculate_transaction(data: TransactionCreate) -> TransactionResponse:
     credit_wages = max(0.0, final_payout)
     debit_debt = abs(min(0.0, final_payout))
 
-    return TransactionResponse(
+    return SimpleNamespace(
         transaction_summary=TransactionSummary(
             expected_price=expected_price,
             total_customer_paid=total_paid,
             isolated_tip=isolated_tip,
+            misc_amount=misc_amount,
             net_business_remittance=net_remitted,
             shortfall_detected=shortfall
         ),

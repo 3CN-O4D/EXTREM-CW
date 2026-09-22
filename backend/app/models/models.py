@@ -36,6 +36,7 @@ class ServiceCategory(str, enum.Enum):
     MIDRANGE = "midrange"
     LORRY = "lorry"
     CARPET = "carpet"
+    OTHER = "other"
 
 class TipMethod(str, enum.Enum):
     CASH = "cash"
@@ -59,6 +60,8 @@ class Transaction(Base):
 
     manual_tip = Column(Float, default=0.0)
     tip_method = Column(Enum(TipMethod))
+    misc_amount = Column(Float, default=0.0)
+    misc_description = Column(String, nullable=True)
 
     # Flags for add-ons
     has_car_wash = Column(Boolean, default=False)
@@ -68,6 +71,7 @@ class Transaction(Base):
     # Carpet Metadata
     plate_number = Column(String, nullable=True)
     customer_phone = Column(String, nullable=True)
+    custom_category = Column(String, nullable=True)
 
     carpet_characteristics = Column(Text, nullable=True)
     receiver_id = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -93,6 +97,7 @@ class Expense(Base):
     amount = Column(Float)
     category = Column(String) # e.g., Soap, Electricity
     week_id = Column(String, index=True)
+    transaction_id = Column(Integer, ForeignKey("transactions.id"), nullable=True)
 
 class Repayment(Base):
     __tablename__ = "repayments"
@@ -124,3 +129,20 @@ class Debt(Base):
     paid = Column(Float, default=0.0)
     paid_date = Column(DateTime, nullable=True)
     notes = Column(Text, nullable=True)
+
+class Carpet(Base):
+    __tablename__ = "carpets"
+    id = Column(Integer, primary_key=True, index=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    receiver = relationship("User", foreign_keys=[receiver_id])
+    characteristics = Column(Text, nullable=True)
+    client_name = Column(String, nullable=True)
+    customer_phone = Column(String, nullable=True)
+    image_data = Column(Text, nullable=True)  # base64 data URL (switch to Supabase Storage URL for Vercel)
+    expected_price = Column(Float, default=0.0)
+    cash_paid = Column(Float, default=0.0)
+    mpesa_paid = Column(Float, default=0.0)
+    is_washed = Column(Boolean, default=False)
+    status = Column(String, default="received")  # received | released
+    released_at = Column(DateTime, nullable=True)

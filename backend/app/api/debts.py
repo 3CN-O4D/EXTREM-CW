@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.models.models import Debt as DebtModel, User as UserModel
 from app.schemas.schemas import DebtCreate, DebtUpdate, DebtOut
-from app.api.deps import check_role
+from app.api.deps import check_role, get_current_user
 from app.models.models import UserRole
 from datetime import datetime
 from typing import List
@@ -14,20 +14,20 @@ router = APIRouter()
 def list_debts(
     employee_id: int = None,
     db: Session = Depends(get_db),
-    current_user = Depends(check_role([UserRole.ADMIN, UserRole.MANAGER]))
+    current_user = Depends(get_current_user)
 ):
     query = db.query(DebtModel)
     if employee_id:
         query = query.filter(DebtModel.employee_id == employee_id)
-    debts = query.all()
-    result = []
-    for d in debts:
-        result.append(DebtOut(
-            id=d.id, employee_id=d.employee_id, amount=d.amount,
-            service=d.service, date=d.date, paid=d.paid,
-            paid_date=d.paid_date, notes=d.notes, balance=d.amount - d.paid
-        ))
-    return result
+    # Employees can only see their own debts
+    if current_user.role == UserRole.EMPLOYEE:
+        query = query.filter(DebtModel.employee_id == current_user.id)
+    debts = query.order_by(DebtModel.date.desc()).all()
+    return [DebtOut(
+        id=d.id, employee_id=d.employee_id, amount=d.amount,
+        service=d.service, date=d.date, paid=d.paid,
+        paid_date=d.paid_date, notes=d.notes, balance=d.amount - d.paid
+    ) for d in debts]
 
 @router.post("/", response_model=DebtOut)
 def create_debt(
