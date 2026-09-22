@@ -29,4 +29,4 @@ cd frontend && npm install && npm run dev
 ## Deploy
 
 - Vercel: framework preset **Vite**, root directory `frontend`, env `VITE_API_URL`.
-- Supabase: `supabase login` (token as `SUPABASE_ACCESS_TOKEN`), then `supabase db push`.
+- Supabase: `supabase login` (token as `SUPABASE_ACCESS_TOKEN`), then `supabase db push`.# EXTREME-CW
