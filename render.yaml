@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: extrem-cw-api
+    runtime: docker
+    plan: free
+    dockerContext: ./backend
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: ENABLE_DOCS
+        value: "false"
+      - key: CORS_ORIGINS
+        value: "https://extreme-cw.vercel.app,http://localhost:5173"
