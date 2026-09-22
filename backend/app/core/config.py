@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     POSTGRES_PASSWORD: str = "postgres"
     POSTGRES_DB: str = "carwash"
     DATABASE_URL: str | None = None
+    CORS_ORIGINS: str = "http://localhost:5173"
 
     @property
     def get_database_url(self) -> str:
