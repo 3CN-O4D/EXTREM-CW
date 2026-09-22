@@ -22,7 +22,7 @@ export default function LandingPage() {
   const services = [
     { name: 'Bicycle Wash', price: '50 Ksh', desc: 'Standard bicycle detailing', img: ['/src/images/bicyclewash1.jpeg', '/src/images/bicyclewash2.jpeg'] },
     { name: 'Motorcycle Full Wash', price: '70 Ksh', desc: 'Comprehensive motorcycle cleaning', img: ['/src/images/motorcyclewash1.jpeg', '/src/images/motorcyclewash2.jpeg'] },
-    { name: 'Taxi Wash', price: '150 Ksh', desc: 'Interior or Exterior options', img: '/src/images/exterior.jpeg' },
+    { name: 'Taxi Wash', price: '150 Ksh', desc: 'Interior or Exterior options', img: ['/src/images/exterior.jpeg', '/src/images/wasili.jpeg'] },
     { name: 'Normal Car Wash', price: '200 Ksh', desc: 'Professional car detailing', img: ['/src/images/soapycar1.jpeg', '/src/images/soapycar2.jpeg'] },
     { name: 'Midrange Wash', price: '300 Ksh', desc: 'Matatus, Canters, and Hiaces', img: '/src/images/soapycarwashing.jpeg' },
     { name: 'Vacuuming', price: '200 Ksh', desc: 'Deep interior vacuum service', img: ['/src/images/vacuuming1.jpeg', '/src/images/vacuuming2.jpeg'] },
