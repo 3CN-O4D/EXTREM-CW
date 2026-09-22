@@ -217,7 +217,7 @@ export default function AdminDashboard() {
                 <tr className="border-b"><th className="py-2">Date</th><th className="py-2">Description</th><th className="py-2">Vehicle</th><th className="py-2">Washer</th><th className="py-2 text-right">Amount</th></tr>
               </thead>
               <tbody>
-                {summary.misc_items.map(m => (
+                {summary.misc_items.map((m: any) => (
                   <tr key={m.id} className="border-b">
                     <td className="py-2 text-sm">{format(new Date(m.timestamp), 'EEE dd/MM HH:mm')}</td>
                     <td className="py-2">{m.description || '-'}</td>

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Phone, MessageCircle, MapPin, CheckCircle2, ChevronRight, Clock } from 'lucide-react';
+import { Phone, MessageCircle, MapPin, ChevronRight, Clock } from 'lucide-react';
 
 function Slideshow({ images }: { images: string[] }) {
   const [idx, setIdx] = useState(0);

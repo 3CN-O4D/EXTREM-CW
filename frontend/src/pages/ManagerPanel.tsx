@@ -99,7 +99,6 @@ export default function ManagerPanel() {
       params.day = format(selectedDay, 'yyyy-MM-dd');
     } else {
       const weekStart = startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
-      const weekEnd = addDays(weekStart, 6);
       params.week_id = format(weekStart, 'yyyy-II');
     }
     const res = await api.get('/transactions/', { params });
@@ -318,7 +317,7 @@ export default function ManagerPanel() {
   };
 
   const handleCarpetRelease = async (carpetId: number, price: number) => {
-    const amount = prompt(`Release carpet — Cash received (Ksh, expected ${price}):`, price);
+    const amount = prompt(`Release carpet — Cash received (Ksh, expected ${price}):`, String(price));
     if (amount === null) return;
     try {
       await api.post(`/carpets/${carpetId}/release`, { cash_paid: toNum(amount) });
