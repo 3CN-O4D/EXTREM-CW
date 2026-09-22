@@ -31,6 +31,7 @@ export default function ManagerPanel() {
     carpet_characteristics: '', receiver_id: '', custom_category: '', client_name: ''
   });
   const [carpetImage, setCarpetImage] = useState('');
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [smsInput, setSmsInput] = useState('');
   const [smsPreview, setSmsPreview] = useState<ParsedPaymentSms | null>(null);
   const [extraChoice, setExtraChoice] = useState<'tip' | 'misc'>('tip');
@@ -828,9 +829,8 @@ export default function ManagerPanel() {
                     </td>
                     <td className="py-2">
                       {c.image_data ? (
-                        <a href={c.image_data} target="_blank" rel="noreferrer">
-                          <img src={c.image_data} alt="carpet" className="h-12 w-12 object-cover rounded border cursor-pointer" />
-                        </a>
+                        <img src={c.image_data} alt="carpet" onClick={() => setPhotoPreview(c.image_data)}
+                          className="h-12 w-12 object-cover rounded border cursor-pointer" />
                       ) : <span className="text-gray-400">—</span>}
                     </td>
                     <td className="py-2 font-medium">{empMap[c.receiver_id] || c.receiver_id}</td>
@@ -1082,5 +1082,15 @@ export default function ManagerPanel() {
        </div>
        )}
     </div>
+
+      {photoPreview && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setPhotoPreview(null)}>
+          <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setPhotoPreview(null)}
+              className="absolute -top-3 -right-3 bg-red-600 text-white w-8 h-8 rounded-full font-bold">×</button>
+            <img src={photoPreview} alt="carpet preview" className="w-full rounded-lg shadow-2xl" />
+          </div>
+        </div>
+      )}
   );
 }

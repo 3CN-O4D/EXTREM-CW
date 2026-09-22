@@ -14,6 +14,7 @@ export default function EmployeeDashboard() {
   const [carpetsOut, setCarpetsOut] = useState<any[]>([]);
   const [debts, setDebts] = useState<any[]>([]);
   const [repayments, setRepayments] = useState<any[]>([]);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchEmpData = async () => {
@@ -161,7 +162,7 @@ export default function EmployeeDashboard() {
                     <td className="py-2 text-sm">{format(new Date(c.created_at), 'dd/MM HH:mm')}</td>
                     <td className="py-2 text-sm">
                       <span className="pr-2">{c.characteristics || 'Carpet'}</span>
-                      {c.image_data && <a href={c.image_data} target="_blank" rel="noreferrer"><img src={c.image_data} alt="carpet" className="inline h-8 w-8 object-cover rounded border" /></a>}
+                      {c.image_data && <img src={c.image_data} alt="carpet" onClick={() => setPhotoPreview(c.image_data)} className="inline h-8 w-8 object-cover rounded border cursor-pointer" />}
                     </td>
                     <td className="py-2 text-sm">
                       {c.client_name ? <div>{c.client_name}</div> : <div className="text-gray-400">—</div>}
@@ -270,6 +271,16 @@ export default function EmployeeDashboard() {
         ) : <p className="text-gray-400 text-sm">No repayments this week.</p>}
       </div>
     </div>
+
+      {photoPreview && (
+        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setPhotoPreview(null)}>
+          <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
+            <button onClick={() => setPhotoPreview(null)}
+              className="absolute -top-3 -right-3 bg-red-600 text-white w-8 h-8 rounded-full font-bold">×</button>
+            <img src={photoPreview} alt="carpet preview" className="w-full rounded-lg shadow-2xl" />
+          </div>
+        </div>
+      )}
   );
 }
 

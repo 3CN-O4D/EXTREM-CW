@@ -2,9 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from app.db.session import get_db
-from app.models.models import Carpet as CarpetModel, User, UserRole
-from app.schemas.schemas import CarpetCreate, CarpetUpdate, CarpetOut
+from app.models.models import Carpet as CarpetModel, User, UserRole, ServiceCategory, TipMethod
+from app.schemas.schemas import CarpetCreate, CarpetUpdate, CarpetOut, TransactionCreate, CarpetMetadata
 from app.api.deps import check_role, get_current_user
+from app.api.transactions import create_transaction
 from typing import List
 
 router = APIRouter()
@@ -97,11 +98,18 @@ def update_carpet(carpet_id: int, update: CarpetUpdate, db: Session = Depends(ge
     db.refresh(carpet)
     return carpet
 
-@router.post("/{carpet_id}/release", response_model=CarpetOut, dependencies=[Depends(check_role([UserRole.ADMIN, UserRole.MANAGER]))])
-def release_carpet(carpet_id: int, update: CarpetUpdate, db: Session = Depends(get_db)):
+@router.post("/{carpet_id}/release", response_model=CarpetOut)
+def release_carpet(
+    carpet_id: int,
+    update: CarpetUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(check_role([UserRole.ADMIN, UserRole.MANAGER]))
+):
     carpet = db.query(CarpetModel).filter(CarpetModel.id == carpet_id).first()
     if not carpet:
         raise HTTPException(status_code=404, detail="Carpet not found")
+    if carpet.status == "released":
+        raise HTTPException(status_code=400, detail="Carpet already released")
     if update.cash_paid is not None:
         carpet.cash_paid = update.cash_paid
     if update.mpesa_paid is not None:
@@ -113,6 +121,24 @@ def release_carpet(carpet_id: int, update: CarpetUpdate, db: Session = Depends(g
     carpet.status = "released"
     carpet.released_at = datetime.utcnow()
     db.commit()
+
+    if carpet.expected_price > 0 or (carpet.cash_paid + carpet.mpesa_paid) > 0:
+        tx_data = TransactionCreate(
+            washer_id=carpet.receiver_id,
+            category=ServiceCategory.CARPET,
+            expected_price=carpet.expected_price,
+            cash_paid=carpet.cash_paid,
+            mpesa_paid=carpet.mpesa_paid,
+            tip_method=TipMethod.CASH,
+            has_car_wash=True,
+            carpet_metadata=CarpetMetadata(
+                characteristics=carpet.characteristics or "Carpet",
+                receiver_id=carpet.receiver_id,
+                customer_phone=carpet.customer_phone
+            )
+        )
+        create_transaction(tx_data, db, current_user)
+
     db.refresh(carpet)
     return carpet
 
