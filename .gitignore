@@ -14,7 +14,7 @@ dist/
 frontend/dist/
 
 # Local databases / runtime
-backend/carwash.db
+carwash.db
 *.db-journal
 *.db-wal
 *.db-shm
