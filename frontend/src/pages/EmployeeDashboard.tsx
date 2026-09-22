@@ -270,7 +270,6 @@ export default function EmployeeDashboard() {
           </table>
         ) : <p className="text-gray-400 text-sm">No repayments this week.</p>}
       </div>
-    </div>
 
       {photoPreview && (
         <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setPhotoPreview(null)}>
@@ -281,6 +280,7 @@ export default function EmployeeDashboard() {
           </div>
         </div>
       )}
+    </div>
   );
 }
 
