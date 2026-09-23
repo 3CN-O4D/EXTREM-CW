@@ -15,11 +15,7 @@
   ],
   "routes": [
     { "src": "/api/v1/(.*)", "dest": "/api/index.ts" },
-    { "src": "/assets/(.*)", "dest": "/frontend/assets/$1" },
-    { "src": "/images/(.*)", "dest": "/frontend/images/$1" },
-    { "src": "/favicon.svg", "dest": "/frontend/favicon.svg" },
-    { "src": "/icons.svg", "dest": "/frontend/icons.svg" },
     { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/frontend/index.html" }
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
