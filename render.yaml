@@ -3,7 +3,7 @@ services:
     name: extrem-cw-api
     runtime: docker
     plan: free
-    dockerContext: ./backend
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /
     autoDeploy: true
     envVars:
