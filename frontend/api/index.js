@@ -1,4 +1,3 @@
-"use strict";
 var __create = Object.create;
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
@@ -28608,7 +28607,7 @@ var require_client2 = __commonJS({
     var nodeUtils = require("util");
     var Native;
     try {
-      Native = require("pg-native");
+      Native = null;
     } catch (e) {
       throw e;
     }
@@ -34693,13 +34692,14 @@ var require_bcryptjs = __commonJS({
   }
 });
 
-// server/src/index.ts
-var src_exports = {};
-__export(src_exports, {
-  app: () => app,
+// ../../../../tmp/opencode/esbuild-entry.ts
+var esbuild_entry_exports = {};
+__export(esbuild_entry_exports, {
   default: () => src_default
 });
-module.exports = __toCommonJS(src_exports);
+module.exports = __toCommonJS(esbuild_entry_exports);
+
+// server/src/index.ts
 var import_serverless_http = __toESM(require_serverless_http());
 
 // server/src/app.ts
@@ -36383,10 +36383,6 @@ if (!process.env.VERCEL && process.env.NODE_ENV !== "test") {
     console.log(`Carwash POS API listening on http://localhost:${port}`);
   });
 }
-// Annotate the CommonJS export names for ESM import in node:
-0 && (module.exports = {
-  app
-});
 /*! Bundled license information:
 
 depd/index.js:
@@ -36810,4 +36806,6 @@ bcryptjs/dist/bcrypt.js:
    * see: https://github.com/dcodeIO/bcrypt.js for details
    *)
 */
-module.exports = module.exports.default || module.exports;
+
+
+module.exports = module.exports.default === module.exports ? module.exports : (module.exports.default || module.exports);
