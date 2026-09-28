@@ -1,3 +1,5 @@
+export const config = { runtime: 'nodejs22.x' };
+
 export default (event) => {
   console.log('ARITY1_CALLED', JSON.stringify(Object.keys(event || {})), 'method=' + (event && event.method), 'httpMethod=' + (event && event.httpMethod));
   return Promise.resolve({
