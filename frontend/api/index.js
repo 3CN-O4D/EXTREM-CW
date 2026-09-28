@@ -36810,5 +36810,4 @@ bcryptjs/dist/bcrypt.js:
    * see: https://github.com/dcodeIO/bcrypt.js for details
    *)
 */
-
-module.exports = module.exports.default === module.exports ? module.exports : (module.exports.default || module.exports);
+module.exports = module.exports.default || module.exports;
