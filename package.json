@@ -2,6 +2,9 @@
   "name": "extrem-cw",
   "version": "1.0.0",
   "private": true,
+  "scripts": {
+    "build:api": "./scripts/build-api.sh"
+  },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

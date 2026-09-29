@@ -35715,7 +35715,9 @@ router8.post(
           custom_category: null,
           carpet_metadata: {
             characteristics: carpet.characteristics || "Carpet",
-            receiver_id: washerId,
+            // The commission follows the washer, but the carpet record should
+            // still say who actually received it (picked later or never).
+            receiver_id: carpet.receiver_id ?? carpet.submitter_id ?? washerId,
             customer_phone: carpet.customer_phone
           }
         };
@@ -36176,8 +36178,42 @@ router11.patch(
     }
     params.push(id);
     if (!sets.length) return res.json(serializeArrival(a));
-    const rows = (await pool.query(`UPDATE vehicle_arrivals SET ${sets.join(", ")} WHERE id = $${params.length} RETURNING *`, params)).rows;
-    res.json(serializeArrival(rows[0]));
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const rows = (await client.query(
+        `UPDATE vehicle_arrivals SET ${sets.join(", ")} WHERE id = $${params.length} RETURNING *`,
+        params
+      )).rows;
+      const newPrice = rows[0].expected_price;
+      if (newPrice !== a.expected_price && a.debt_id) {
+        const debt = await client.query("SELECT id, amount, paid FROM debts WHERE id = $1 FOR UPDATE", [a.debt_id]);
+        if (debt.rows.length) {
+          const wasAmount = Number(debt.rows[0].amount) || 0;
+          const paid = Number(debt.rows[0].paid) || 0;
+          const newAmount = Math.max(paid, newPrice);
+          await client.query("UPDATE debts SET amount = $1 WHERE id = $2", [newAmount, a.debt_id]);
+          if (newAmount > wasAmount) {
+            await client.query("UPDATE users SET debt_balance = debt_balance + $1 WHERE id = $2", [
+              newAmount - wasAmount,
+              a.submitter_id
+            ]);
+          } else if (newAmount < wasAmount) {
+            await client.query("UPDATE users SET debt_balance = GREATEST(0, debt_balance - $1) WHERE id = $2", [
+              wasAmount - newAmount,
+              a.submitter_id
+            ]);
+          }
+        }
+      }
+      await client.query("COMMIT");
+      res.json(serializeArrival(rows[0]));
+    } catch (e) {
+      await client.query("ROLLBACK");
+      throw e;
+    } finally {
+      client.release();
+    }
   })
 );
 router11.post(
@@ -36199,7 +36235,12 @@ router11.post(
       if (v < 0) throw new HttpError(422, `${k} must be >= 0`);
     }
     if (cash_paid + mpesa_paid === 0) throw new HttpError(422, "enter at least some payment (cash or mpesa)");
-    const washerId = a.washer_id ?? a.submitter_id;
+    let washerId = a.washer_id ?? a.submitter_id;
+    if (body.washer_id !== void 0 && body.washer_id !== null && body.washer_id !== "") {
+      const v = Number(body.washer_id);
+      if (!Number.isInteger(v)) throw new HttpError(422, "washer_id must be an integer");
+      washerId = v;
+    }
     const washer = await queryOne("SELECT * FROM users WHERE id = $1", [washerId]);
     if (!washer) throw new HttpError(404, "Washer not found");
     const txData = {
@@ -36221,26 +36262,30 @@ router11.post(
       custom_category: null,
       carpet_metadata: null
     };
-    await createTransactionCore(txData, actor);
+    const created = await createTransactionCore(txData, actor);
     const now = (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").replace("Z", "");
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const txId = (await client.query(
-        `SELECT id FROM transactions WHERE plate_number = $1 AND category = $2
-           AND timestamp > now() - interval '2 minutes' ORDER BY id DESC LIMIT 1`,
-        [a.plate_number, a.category.toUpperCase()]
-      )).rows[0]?.id;
+      const txId = created.id;
       await client.query(
         `UPDATE vehicle_arrivals SET status='settled', settled_at=$1, cash_paid=$2, mpesa_paid=$3,
            transaction_id=$4, washer_id=COALESCE(washer_id,$5) WHERE id=$6`,
         [now, cash_paid, mpesa_paid, txId ?? null, washerId, id]
       );
       if (a.debt_id) {
-        await client.query(
-          `UPDATE debts SET paid = GREATEST(paid, LEAST($1::float8, $2::float8)), paid_date = $3 WHERE id = $4`,
-          [a.expected_price, cash_paid + mpesa_paid, now, a.debt_id]
-        );
+        const before = await client.query("SELECT paid, amount FROM debts WHERE id = $1 FOR UPDATE", [a.debt_id]);
+        if (before.rows.length) {
+          const wasPaid = Number(before.rows[0].paid) || 0;
+          const newPaid = Math.max(wasPaid, Math.min(a.expected_price, cash_paid + mpesa_paid));
+          await client.query("UPDATE debts SET paid = $1, paid_date = $2 WHERE id = $3", [newPaid, now, a.debt_id]);
+          if (newPaid > wasPaid) {
+            await client.query("UPDATE users SET debt_balance = GREATEST(0, debt_balance - $1) WHERE id = $2", [
+              newPaid - wasPaid,
+              a.submitter_id
+            ]);
+          }
+        }
       }
       await client.query("COMMIT");
       const updated = await queryOne("SELECT * FROM vehicle_arrivals WHERE id = $1", [id]);
@@ -36269,9 +36314,16 @@ router11.delete(
     try {
       await client.query("BEGIN");
       if (a.debt_id) {
-        const debt = await client.query("SELECT * FROM debts WHERE id = $1", [a.debt_id]);
+        const debt = await client.query("SELECT amount, paid FROM debts WHERE id = $1 FOR UPDATE", [a.debt_id]);
         if (debt.rows.length) {
           await client.query("DELETE FROM debts WHERE id = $1", [a.debt_id]);
+          const outstanding = Math.max(0, (Number(debt.rows[0].amount) || 0) - (Number(debt.rows[0].paid) || 0));
+          if (outstanding > 0) {
+            await client.query("UPDATE users SET debt_balance = GREATEST(0, debt_balance - $1) WHERE id = $2", [
+              outstanding,
+              a.submitter_id
+            ]);
+          }
         }
       }
       await client.query("DELETE FROM vehicle_arrivals WHERE id = $1", [id]);

@@ -283,7 +283,9 @@ router.post(
           custom_category: null,
           carpet_metadata: {
             characteristics: carpet.characteristics || 'Carpet',
-            receiver_id: washerId!,
+            // The commission follows the washer, but the carpet record should
+            // still say who actually received it (picked later or never).
+            receiver_id: carpet.receiver_id ?? carpet.submitter_id ?? washerId!,
             customer_phone: carpet.customer_phone,
           },
         };

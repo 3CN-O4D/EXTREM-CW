@@ -982,6 +982,61 @@ describe('vehicle arrivals (log now, settle later)', () => {
     await manager.delete(`/debts/${auto.id}`);
   });
 
+  it('the washer can be chosen at settlement time and drives the commission', async () => {
+    // J logs it, but Abel is the one who washes it: the transaction (and so the
+    // commission) must follow the chosen washer, not the submitter.
+    const created = await empJ.post('/vehicles/', { category: 'taxi', plate_number: 'KDA900X', expected_price: 150 });
+    expect(created.status).toBe(200);
+    const arrivalId = created.json.id;
+
+    const settle = await empJ.post(`/vehicles/${arrivalId}/settle`, {
+      cash_paid: 150,
+      washer_id: A_ID,
+    });
+    expect(settle.status).toBe(200);
+    expect(settle.json.washer_id).toBe(A_ID);
+    expect(settle.json.transaction_id).toBeTruthy();
+
+    const tx = (await manager.get('/transactions/')).json.find((t: any) => t.plate_number === 'KDA900X');
+    expect(tx).toBeTruthy();
+    expect(tx.washer_id).toBe(A_ID);
+    expect(tx.transaction_id).toBe(settle.json.transaction_id);
+    // taxi 150 -> 50 commission
+    expect(tx.calculated_commission).toBe(50);
+
+    await manager.delete(`/vehicles/${arrivalId}`);
+    await manager.delete(`/transactions/${tx.id}`);
+  });
+
+  it('correcting an overdue price corrects the shortfall charged for it', async () => {
+    const created = await empJ.post('/vehicles/', { category: 'car', plate_number: 'KDB901X', expected_price: 500 });
+    const arrivalId = created.json.id;
+    const { pool } = await import('../src/db');
+    await pool.query(`UPDATE vehicle_arrivals SET created_at = now() - interval '25 hours' WHERE id = $1`, [arrivalId]);
+
+    // Lazy sweep charges the 500 shortfall.
+    const expired = (await empJ.get('/vehicles/')).json.find((v: any) => v.id === arrivalId);
+    expect(expired.status).toBe('expired');
+    const auto = (await manager.get('/debts/')).json.find((d: any) => d.id === expired.debt_id);
+    expect(auto.amount).toBe(500);
+    const before = (await manager.get('/stats/employees')).json.find((u: any) => u.id === J_ID);
+    expect(before.debt_balance).toBe(500);
+
+    // Realising it should have been 300: the charge has to follow.
+    const patched = await empJ.patch(`/vehicles/${arrivalId}`, { expected_price: 300 });
+    expect(patched.status).toBe(200);
+    const after = (await manager.get('/debts/')).json.find((d: any) => d.id === auto.id);
+    expect(after.amount).toBe(300);
+    const afterEmp = (await manager.get('/stats/employees')).json.find((u: any) => u.id === J_ID);
+    expect(afterEmp.debt_balance).toBe(300);
+
+    // Deleting the arrival gives the whole charge back.
+    expect((await empJ.delete(`/vehicles/${arrivalId}`)).status).toBe(200);
+    expect((await manager.get('/debts/')).json.find((d: any) => d.id === auto.id)).toBeFalsy();
+    const cleared = (await manager.get('/stats/employees')).json.find((u: any) => u.id === J_ID);
+    expect(cleared.debt_balance).toBe(0);
+  });
+
   it('employees may delete their own pending arrival and cannot settle anothers', async () => {
     const mine = await empJ.post('/vehicles/', { category: 'bicycle', plate_number: 'BMX1', expected_price: 50 });
     const owned = await manager.post('/vehicles/', { category: 'taxi', plate_number: 'KCE404', expected_price: 150 });
