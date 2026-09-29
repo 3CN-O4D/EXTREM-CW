@@ -72,6 +72,42 @@ export interface DebtRow {
   paid: number;
   paid_date: Date | null;
   notes: string | null;
+  transaction_id: number | null;
+}
+
+export interface TipRow {
+  id: number;
+  timestamp: Date;
+  employee_id: number;
+  amount: number;
+  method: string; // 'CASH' | 'WAGES'
+  week_id: string;
+  notes: string | null;
+}
+
+export interface ClientDebtRow {
+  id: number;
+  client_name: string;
+  customer_phone: string | null;
+  description: string | null;
+  amount: number;
+  paid: number;
+  date: Date | null;
+  paid_date: Date | null;
+  notes: string | null;
+  created_at: Date | null;
+}
+
+export interface WeeklyLogRow {
+  id: number;
+  week_id: string;
+  start_date: Date | null;
+  end_date: Date | null;
+  total_revenue: number;
+  total_expenses: number;
+  total_labor_expense: number;
+  total_profit: number;
+  data_json: string | null;
 }
 
 export interface CarpetRow {

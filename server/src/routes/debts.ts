@@ -121,10 +121,10 @@ router.put(
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('UPDATE debts SET paid = $1, paid_date = $2 WHERE id = $3', [paid, paidDate, id]);
+await client.query('UPDATE debts SET paid = $1, paid_date = $2 WHERE id = $3', [paid, paidDate, id]);
       await client.query(
-        'UPDATE users SET debt_balance = debt_balance - $1 + $2 WHERE id = $3',
-        [debt.paid, paid, debt.employee_id],
+        'UPDATE users SET debt_balance = GREATEST(0, debt_balance + $1) WHERE id = $2',
+        [debt.paid - paid, debt.employee_id],
       );
       await client.query('COMMIT');
       const updated = await queryOne<DebtRow>('SELECT * FROM debts WHERE id = $1', [id]);
@@ -151,7 +151,7 @@ router.delete(
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('UPDATE users SET debt_balance = debt_balance - $1 WHERE id = $2', [
+      await client.query('UPDATE users SET debt_balance = GREATEST(0, debt_balance - $1) WHERE id = $2', [
         debt.amount - debt.paid,
         debt.employee_id,
       ]);

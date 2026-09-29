@@ -113,7 +113,7 @@ router.get(
       expConds = `WHERE week_id = $${expParams.length}`;
     }
 
-    const [totalCash, expenses, labor, revenue, miscTotal, miscRows, catRows, totalDebt, empLabor] = await Promise.all([
+    const [totalCash, expenses, labor, revenue, miscTotal, miscRows, catRows, totalDebt, clientDebt, empLabor] = await Promise.all([
       pool.query(`SELECT COALESCE(SUM(total_paid),0) AS v FROM transactions ${txConds}`, txParams),
       pool.query(`SELECT COALESCE(SUM(amount),0) AS v FROM expenses ${expConds}`, expParams),
       pool.query(`SELECT COALESCE(SUM(final_payout),0) AS v FROM transactions ${txConds} AND final_payout > 0`, txParams),
@@ -126,6 +126,7 @@ router.get(
       ),
       pool.query(`SELECT category, COUNT(id) AS c FROM transactions ${txConds} GROUP BY category`, txParams),
       pool.query(`SELECT COALESCE(SUM(debt_balance),0) AS v FROM users`),
+      pool.query(`SELECT COALESCE(SUM(amount - paid),0) AS v FROM client_debts`),
       pool.query(
         `SELECT users.full_name, users.abbreviation, SUM(transactions.final_payout) AS wages
          FROM users JOIN transactions ON users.id = transactions.washer_id
@@ -180,6 +181,7 @@ router.get(
       })),
       category_counts: categoryCounts,
       total_debts: Number(totalDebt.rows[0].v),
+      total_client_debts: Number(clientDebt.rows[0].v),
     });
   }),
 );

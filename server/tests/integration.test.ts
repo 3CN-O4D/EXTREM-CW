@@ -14,6 +14,27 @@ const SECRET = process.env.SECRET_KEY as string;
 const sign = (payload: object, secret: string = SECRET) =>
   jwt.sign(payload, secret, { algorithm: 'HS256' });
 
+// Test-only: put an employee on a clean financial slate (no open debts, zero
+// cached balances) so money-math assertions are deterministic regardless of
+// which earlier tests left auto shortfall rows behind.
+async function resetFinances(...userIds: number[]): Promise<void> {
+  const { pool } = await import('../src/db');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const id of userIds) {
+      await client.query('DELETE FROM debts WHERE employee_id = $1', [id]);
+      await client.query('UPDATE users SET debt_balance = 0, payable_balance = 0 WHERE id = $1', [id]);
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 beforeAll(async () => {
   snap = await snapshotDb();
   const srv = await makeApi();
@@ -564,7 +585,9 @@ describe('expenses & tips', () => {
 
 describe('debts & repayments', () => {
   it('creates debts, updates balances, reconciles repayments oldest-first', async () => {
+    await resetFinances(J_ID);
     const before = (await admin.get('/auth/users')).json.find((u: any) => u.id === J_ID).debt_balance;
+    expect(before).toBe(0);
 
     const d1 = await manager.post('/debts/', { employee_id: J_ID, amount: 5000, service: 'Advance 1' });
     const d2 = await manager.post('/debts/', { employee_id: J_ID, amount: 3000, service: 'Advance 2' });
@@ -603,20 +626,22 @@ describe('debts & repayments', () => {
   });
 
   it('updating a debt paid amount adjusts balance; deleting reverses it', async () => {
+    await resetFinances(A_ID);
     const before = (await admin.get('/auth/users')).json.find((u: any) => u.id === A_ID).debt_balance;
+    expect(before).toBe(0);
     const d = await manager.post('/debts/', { employee_id: A_ID, amount: 1000, service: 'Phone' });
     // create_debt adds (amount - paid) = 1000
     expect((await admin.get('/auth/users')).json.find((u: any) => u.id === A_ID).debt_balance - before).toBe(1000);
 
-    // Python update_debt moves balance by (new_paid - old_paid) = +400, keeping parity.
+    // update from paid=0 to paid=400 removes 400 of the debt from the balance
     const upd = await manager.put(`/debts/${d.json.id}`, { paid: 400 });
     expect(upd.status).toBe(200);
     expect(upd.json.balance).toBe(600);
-    expect((await admin.get('/auth/users')).json.find((u: any) => u.id === A_ID).debt_balance - before).toBe(1400);
+    expect((await admin.get('/auth/users')).json.find((u: any) => u.id === A_ID).debt_balance - before).toBe(600);
 
     await manager.delete(`/debts/${d.json.id}`);
-    // delete_debt subtracts (amount - paid) = 600
-    expect((await admin.get('/auth/users')).json.find((u: any) => u.id === A_ID).debt_balance - before).toBe(800);
+    // delete removes the remaining (amount - paid) = 600
+    expect((await admin.get('/auth/users')).json.find((u: any) => u.id === A_ID).debt_balance - before).toBe(0);
   });
 
   it('rejects negative amounts and unknown employees; employees see own debts only', async () => {
@@ -767,5 +792,113 @@ describe('misc guards', () => {
     const r = await manager.get('/does-not-exist');
     expect(r.status).toBe(404);
     expect(r.json.detail).toBe('Not Found');
+  });
+});
+describe('shortfall auto-debt rows', () => {
+  it('creates a debts row (tx-linked) when a shortfall exceeds commission, and removes it on delete', async () => {
+    const before = (await admin.get('/auth/users')).json.find((u: any) => u.id === A_ID).debt_balance;
+
+    const t = await manager.post('/transactions/', {
+      washer_id: A_ID,
+      category: 'car',
+      expected_price: 200,
+      cash_paid: 100,
+      mpesa_paid: 0,
+      manual_tip: 0,
+      tip_method: 'cash',
+    });
+    expect(t.status).toBe(200);
+    expect(t.json.ledger_routing.debit_employee_debt).toBe(30);
+
+    const afterTx = (await admin.get('/auth/users')).json.find((u: any) => u.id === A_ID).debt_balance;
+    expect(afterTx - before).toBe(30);
+
+    const debts = (await manager.get('/debts/?employee_id=' + A_ID)).json;
+    const auto = debts.find((d: any) => d.transaction_id === t.json.id);
+    expect(auto).toBeTruthy();
+    expect(auto.service).toBe('Shortfall');
+    expect(auto.amount).toBe(30);
+    expect(auto.balance).toBe(30);
+
+    const del = await manager.delete(`/transactions/${t.json.id}`);
+    expect(del.status).toBe(200);
+    const afterDel = (await admin.get('/auth/users')).json.find((u: any) => u.id === A_ID).debt_balance;
+    expect(afterDel - before).toBe(0);
+    const debts2 = (await manager.get('/debts/?employee_id=' + A_ID)).json;
+    expect(debts2.find((d: any) => d.transaction_id === t.json.id)).toBeUndefined();
+  });
+});
+
+describe('client debts', () => {
+  it('CRUDs client debts and reports total_client_debts in summary', async () => {
+    expect((await manager.post('/client-debts/', { amount: 500 })).status).toBe(422); // missing name
+    const c = await manager.post('/client-debts/', {
+      client_name: 'Safari Motors',
+      customer_phone: '0700111222',
+      description: 'Car wash credit',
+      amount: 2500,
+    });
+    expect(c.status).toBe(200);
+    expect(c.json.balance).toBe(2500);
+    expect(c.json.paid).toBe(0);
+
+    const list = await manager.get('/client-debts/');
+    expect(list.json.some((d: any) => d.id === c.json.id)).toBe(true);
+
+    const paid = await manager.put(`/client-debts/${c.json.id}`, { paid: 1000 });
+    expect(paid.status).toBe(200);
+    expect(paid.json.balance).toBe(1500);
+
+    const s = await manager.get('/stats/summary');
+    expect(s.json.total_client_debts).toBeGreaterThanOrEqual(1500);
+
+    expect((await empJ.get('/client-debts/')).status).toBe(403);
+
+    const del = await manager.delete(`/client-debts/${c.json.id}`);
+    expect(del.status).toBe(200);
+    expect((await manager.get('/client-debts/')).json.some((d: any) => d.id === c.json.id)).toBe(false);
+  });
+});
+
+describe('weekly settlement (Sunday payday)', () => {
+  it('pays wages, covers debts, carries the remainder, resets payable, and is idempotent', async () => {
+    // Give J an open manual debt plus wages this week (via a transaction).
+    const debt = await manager.post('/debts/', { employee_id: J_ID, amount: 3000, service: 'Advance' });
+    expect(debt.status).toBe(200);
+    const tx = await manager.post('/transactions/', {
+      washer_id: J_ID,
+      category: 'car',
+      expected_price: 200,
+      cash_paid: 200,
+      mpesa_paid: 0,
+      manual_tip: 0,
+      tip_method: 'cash',
+    });
+    expect(tx.status).toBe(200);
+
+    // Deterministic target: after settling, debt_balance === max(0, open debts),
+    // payable_balance === 0, and a weekly log exists for the current week.
+    const settle = await manager.post('/settlements/');
+    expect(settle.status).toBe(200);
+
+    const week_id = '2026-40'; // suite runs against the live current week
+    const open = (await manager.get('/debts/?employee_id=' + J_ID)).json
+      .filter((d: any) => d.employee_id === J_ID)
+      .reduce((s: number, d: any) => s + d.balance, 0);
+    const users = await admin.get('/auth/users');
+    const j = users.json.find((u: any) => u.id === J_ID);
+    expect(j.payable_balance).toBe(0);
+    expect(j.debt_balance).toBe(Math.max(0, open));
+
+    const logs = await manager.get('/settlements/?week_id=' + week_id);
+    expect(logs.status).toBe(200);
+    expect(logs.json.some((l: any) => l.week_id === week_id)).toBe(true);
+
+    const again = await manager.post('/settlements/');
+    expect(again.status).toBe(409);
+    expect(again.json.detail).toMatch(/already settled/);
+
+    // Tear down so later settles are unaffected.
+    await manager.delete(`/transactions/${tx.json.id}`);
   });
 });

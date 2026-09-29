@@ -64,7 +64,11 @@ const TX_COLS =
   'id, timestamp, washer_id, category, expected_price, cash_paid, mpesa_paid, mpesa_transaction_id, mpesa_sender_name, manual_tip, tip_method, misc_amount, misc_description, has_car_wash, has_vacuum, has_engine_wash, plate_number, customer_phone, custom_category, carpet_characteristics, receiver_id, total_paid, isolated_tip, net_business_remittance, shortfall, calculated_commission, net_wage_before_tip, final_payout, week_id';
 const EXP_COLS = 'id, timestamp, description, amount, category, week_id, transaction_id';
 const REP_COLS = 'id, timestamp, employee_id, amount, week_id';
-const DEB_COLS = 'id, employee_id, amount, service, date, paid, paid_date, notes';
+const DEB_COLS = 'id, employee_id, amount, service, date, paid, paid_date, notes, transaction_id';
+const TIP_COLS = 'id, timestamp, employee_id, amount, method, week_id, notes';
+const CDEBT_COLS = 'id, client_name, customer_phone, description, amount, paid, date, paid_date, notes, created_at';
+const WLOG_COLS =
+  'id, week_id, start_date, end_date, total_revenue, total_expenses, total_labor_expense, total_profit, data_json';
 const CAR_COLS =
   'id, created_at, receiver_id, characteristics, client_name, customer_phone, image_data, expected_price, cash_paid, mpesa_paid, is_washed, status, released_at';
 
@@ -86,6 +90,9 @@ export async function snapshotDb() {
     expenses: await snapshotTable('expenses', 'id', EXP_COLS),
     repayments: await snapshotTable('repayments', 'id', REP_COLS),
     debts: await snapshotTable('debts', 'id', DEB_COLS),
+    tips: await snapshotTable('tips', 'id', TIP_COLS),
+    client_debts: await snapshotTable('client_debts', 'id', CDEBT_COLS),
+    weekly_logs: await snapshotTable('weekly_logs', 'id', WLOG_COLS),
     carpets: await snapshotTable('carpets', 'id', CAR_COLS),
   };
 }
@@ -95,10 +102,10 @@ export async function restoreDb(snap: ReturnType<typeof snapshotDb> extends Prom
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    for (const t of ['repayments', 'debts', 'expenses', 'transactions', 'carpets', 'users']) {
+    for (const t of ['tips', 'repayments', 'debts', 'client_debts', 'weekly_logs', 'expenses', 'transactions', 'carpets', 'users']) {
       await client.query(`DELETE FROM ${t}`);
     }
-    const order = ['users', 'transactions', 'expenses', 'repayments', 'debts', 'carpets'];
+    const order = ['users', 'transactions', 'expenses', 'repayments', 'debts', 'tips', 'client_debts', 'weekly_logs', 'carpets'];
     for (const table of order) {
       const s = (snap as any)[table] as Snapshot;
       if (!s || !s.rows.length) continue;

@@ -29,21 +29,37 @@ router.post(
     if (!emp) throw new HttpError(404, 'Employee not found');
     if (!emp.full_name) throw new HttpError(404, 'Employee not found');
 
-    if (method === 'wages') {
-      // WAGES = add to wage balance
-      await pool.query('UPDATE users SET payable_balance = payable_balance + $1 WHERE id = $2', [
-        amount,
-        employee_id,
-      ]);
-    } else {
-      // CASH = record a Chai expense
-      const week_id = getCurrentWeekId();
-      const now = new Date().toISOString().replace('T', ' ').replace('Z', '');
-      await pool.query(
-        `INSERT INTO expenses (timestamp, description, amount, category, week_id)
-         VALUES ($1,$2,$3,$4,$5)`,
-        [now, `Chai - ${emp.full_name}`, amount, 'Chai', week_id],
+    const week_id = getCurrentWeekId();
+    const now = new Date().toISOString().replace('T', ' ').replace('Z', '');
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO tips (timestamp, employee_id, amount, method, week_id, notes)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [now, employee_id, amount, method.toUpperCase(), week_id, 'Tip logged via /tips'],
       );
+
+      if (method === 'wages') {
+        // WAGES = add to wage balance
+        await client.query('UPDATE users SET payable_balance = payable_balance + $1 WHERE id = $2', [
+          amount,
+          employee_id,
+        ]);
+      } else {
+        // CASH = record a Chai expense
+        await client.query(
+          `INSERT INTO expenses (timestamp, description, amount, category, week_id)
+           VALUES ($1,$2,$3,$4,$5)`,
+          [now, `Chai - ${emp.full_name}`, amount, 'Chai', week_id],
+        );
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
     }
 
     res.json({ message: 'Tip logged successfully', method, employee: emp.full_name });

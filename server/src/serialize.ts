@@ -1,6 +1,16 @@
 // FastAPI response serialization equivalents: enum columns stored uppercase in
 // the DB are returned lowercase; datetimes are returned as ISO strings.
-import type { TxRow, ExpenseRow, RepaymentRow, DebtRow, CarpetRow, UserRow } from './types';
+import type {
+  TxRow,
+  ExpenseRow,
+  RepaymentRow,
+  DebtRow,
+  TipRow,
+  ClientDebtRow,
+  WeeklyLogRow,
+  CarpetRow,
+  UserRow,
+} from './types';
 
 export function iso(d: Date | null | undefined): string | null {
   if (!d) return null;
@@ -92,7 +102,50 @@ export function serializeDebt(d: DebtRow): Record<string, unknown> {
     paid: d.paid,
     paid_date: iso(d.paid_date),
     notes: d.notes,
+    transaction_id: d.transaction_id ?? null,
     balance: d.amount - d.paid,
+  };
+}
+
+export function serializeTip(t: TipRow): Record<string, unknown> {
+  return {
+    id: t.id,
+    timestamp: iso(t.timestamp),
+    employee_id: t.employee_id,
+    amount: t.amount,
+    method: t.method.toLowerCase(),
+    week_id: t.week_id,
+    notes: t.notes,
+  };
+}
+
+export function serializeClientDebt(c: ClientDebtRow): Record<string, unknown> {
+  return {
+    id: c.id,
+    client_name: c.client_name,
+    customer_phone: c.customer_phone,
+    description: c.description,
+    amount: c.amount,
+    paid: c.paid,
+    balance: c.amount - c.paid,
+    date: iso(c.date),
+    paid_date: iso(c.paid_date),
+    notes: c.notes,
+    created_at: iso(c.created_at),
+  };
+}
+
+export function serializeWeeklyLog(w: WeeklyLogRow): Record<string, unknown> {
+  return {
+    id: w.id,
+    week_id: w.week_id,
+    start_date: iso(w.start_date),
+    end_date: iso(w.end_date),
+    total_revenue: w.total_revenue,
+    total_expenses: w.total_expenses,
+    total_labor_expense: w.total_labor_expense,
+    total_profit: w.total_profit,
+    data: w.data_json ? JSON.parse(w.data_json) : null,
   };
 }
 

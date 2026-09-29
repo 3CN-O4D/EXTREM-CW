@@ -170,6 +170,8 @@ export async function createTransactionCore(data: CreateData, actor: UserRow): P
       [credit, debit, data.washer_id],
     );
 
+    await syncShortfallDebt(client, tx.id, data.washer_id, debit, tx);
+
     await syncChaiExpense(client, tx, result.transaction_summary.isolated_tip, washer.full_name ?? '');
     await client.query('COMMIT');
 
@@ -213,6 +215,35 @@ async function reverseBalances(client: any, tx: TxRow): Promise<void> {
     'UPDATE users SET payable_balance = payable_balance - $1, debt_balance = debt_balance - $2 WHERE id = $3',
     [credit, debit, tx.washer_id],
   );
+}
+
+// Keep an auto-generated `debts` row for every shortfall that exceeds the
+// worker's commission (debit_employee_debt). The row documents the debt; the
+// user balance mutation happens separately (the ledger decrements debt_balance).
+async function syncShortfallDebt(
+  client: any,
+  txId: number,
+  washerId: number,
+  debit: number,
+  tx: TxRow,
+): Promise<void> {
+  await client.query('DELETE FROM debts WHERE transaction_id = $1', [txId]);
+  if (debit > 0) {
+    const now = new Date().toISOString().replace('T', ' ').replace('Z', '');
+    const plate = tx.plate_number ? ` ${tx.plate_number}` : '';
+    await client.query(
+      `INSERT INTO debts (employee_id, amount, service, date, paid, paid_date, notes, transaction_id)
+       VALUES ($1,$2,$3,$4,0,NULL,$5,$6)`,
+      [
+        washerId,
+        debit,
+        'Shortfall',
+        now,
+        `Auto debt: ${tx.category.toLowerCase()}${plate} collected ${tx.total_paid} of expected ${tx.expected_price}`,
+        txId,
+      ],
+    );
+  }
 }
 
 // GET /transactions
@@ -353,7 +384,8 @@ router.put(
         [credit, debit, merged.washer_id],
       );
 
-      const refreshed = (await client.query(`SELECT ${TX_FIELDS} FROM transactions WHERE id = $1`, [txId])).rows[0] as TxRow;
+const refreshed = (await client.query(`SELECT ${TX_FIELDS} FROM transactions WHERE id = $1`, [txId])).rows[0] as TxRow;
+      await syncShortfallDebt(client, txId, merged.washer_id, debit, refreshed);
       await syncChaiExpense(client, refreshed, result.transaction_summary.isolated_tip, washer.full_name ?? '');
       await client.query('COMMIT');
 
@@ -387,6 +419,7 @@ router.delete(
     try {
       await client.query('BEGIN');
       await reverseBalances(client, tx);
+      await client.query('DELETE FROM debts WHERE transaction_id = $1', [txId]);
       await client.query('DELETE FROM expenses WHERE transaction_id = $1', [txId]);
       await client.query('DELETE FROM transactions WHERE id = $1', [txId]);
       await client.query('COMMIT');

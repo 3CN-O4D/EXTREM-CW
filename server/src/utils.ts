@@ -29,6 +29,26 @@ export function getCurrentWeekId(): string {
   return `${year}-${String(week).padStart(2, '0')}`;
 }
 
+// Inverse of ISO week id: Monday 00:00 UTC .. Sunday 23:59:59 UTC for `YYYY-WW`.
+export function isoWeekRange(weekId: string): { start: string; end: string } {
+  const m = /^(\d{4})-(\d{2})$/.exec(weekId);
+  if (!m) throw new HttpError(422, 'week_id must be in YYYY-WW format');
+  const year = Number(m[1]);
+  const week = Number(m[2]);
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Weekday = (jan4.getUTCDay() + 6) % 7;
+  const firstMonday = new Date(jan4);
+  firstMonday.setUTCDate(jan4.getUTCDate() - jan4Weekday);
+  const monday = new Date(firstMonday);
+  monday.setUTCDate(firstMonday.getUTCDate() + (week - 1) * 7);
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  const fmt = (d: Date) => `${d.toISOString().slice(0, 10)} 00:00:00`;
+  return { start: fmt(monday), end: `${sunday.toISOString().slice(0, 10)} 23:59:59` };
+}
+
+export const WEEK_ID_RE = /^\d{4}-\d{2}$/;
+
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Strict YYYY-MM-DD validation (rejects 2026-02-30 etc.), mirrors Python
