@@ -59,6 +59,12 @@ describe('calculateTransaction', () => {
     expect(r.employee_financials.calculated_commission).toBe(0);
   });
 
+  it('taxi @ 150 -> commission 50 (30% of 150 is 45, we give 50 as motivation)', () => {
+    const r = calculateTransaction(base({ category: 'taxi', expected_price: 150, cash_paid: 150 }));
+    expect(r.employee_financials.calculated_commission).toBe(50);
+    expect(r.employee_financials.final_payout_output).toBe(50);
+  });
+
   it('car @ 200 plain -> commission 70 flat', () => {
     const r = calculateTransaction(base({ category: 'car', expected_price: 200, cash_paid: 200 }));
     expect(r.employee_financials.calculated_commission).toBe(70);

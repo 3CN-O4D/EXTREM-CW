@@ -6,6 +6,16 @@ const logoImg = '/src/images/logo.jpeg';
 
 const weekId = format(new Date(), 'yyyy-II');
 
+const VEHICLE_CATEGORIES = [
+  { key: 'bicycle', label: 'Bicycle', price: 50 },
+  { key: 'motorcycle', label: 'Motorcycle', price: 70 },
+  { key: 'taxi', label: 'Taxi', price: 150 },
+  { key: 'car', label: 'Car', price: 200 },
+  { key: 'midrange', label: 'Midrange', price: 300 },
+  { key: 'lorry', label: 'Lorry', price: 500 },
+  { key: 'other', label: 'Other', price: 0 },
+];
+
 export default function EmployeeDashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState<any>(null);
@@ -15,6 +25,21 @@ export default function EmployeeDashboard() {
   const [debts, setDebts] = useState<any[]>([]);
   const [repayments, setRepayments] = useState<any[]>([]);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+
+  // Arrivals: log a vehicle when it arrives, take the money later.
+  const [arrivals, setArrivals] = useState<any[]>([]);
+  const [plate, setPlate] = useState('');
+  const [arrivalCategory, setArrivalCategory] = useState('car');
+  const [arrivalPrice, setArrivalPrice] = useState('200');
+  const [arrivalMsg, setArrivalMsg] = useState('');
+  const [settleRow, setSettleRow] = useState<number | null>(null);
+  const [settleCash, setSettleCash] = useState('');
+  const [settleMpesa, setSettleMpesa] = useState('');
+
+  const loadArrivals = async () => {
+    const res = await api.get('/vehicles/');
+    setArrivals(res.data);
+  };
 
   useEffect(() => {
     const fetchEmpData = async () => {
@@ -36,9 +61,57 @@ export default function EmployeeDashboard() {
       setRepayments(repRes.data);
     };
     fetchEmpData();
+    loadArrivals();
   }, [user]);
 
+  const logArrival = async (e: any) => {
+    e.preventDefault();
+    setArrivalMsg('');
+    try {
+      await api.post('/vehicles/', {
+        plate_number: plate,
+        category: arrivalCategory,
+        expected_price: Number(arrivalPrice) || 0,
+      });
+      setPlate('');
+      setArrivalMsg('Arrival logged.');
+      await loadArrivals();
+    } catch (err: any) {
+      setArrivalMsg(err.response?.data?.detail || 'Could not log the arrival');
+    }
+  };
+
+  const settleArrival = async (id: number) => {
+    setArrivalMsg('');
+    try {
+      await api.post(`/vehicles/${id}/settle`, {
+        cash_paid: Number(settleCash) || 0,
+        mpesa_paid: Number(settleMpesa) || 0,
+      });
+      setSettleRow(null);
+      setSettleCash('');
+      setSettleMpesa('');
+      setArrivalMsg('Payment recorded.');
+      await loadArrivals();
+    } catch (err: any) {
+      setArrivalMsg(err.response?.data?.detail || 'Could not record the payment');
+    }
+  };
+
+  const deleteArrival = async (id: number) => {
+    setArrivalMsg('');
+    try {
+      await api.delete(`/vehicles/${id}`);
+      setArrivalMsg('Arrival removed.');
+      await loadArrivals();
+    } catch (err: any) {
+      setArrivalMsg(err.response?.data?.detail || 'Could not remove the arrival');
+    }
+  };
+
   if (!stats) return <div className="p-6">Loading your stats...</div>;
+
+  const pendingArrivals = arrivals.filter(a => a.status !== 'settled');
 
   return (
     <div className="p-6 space-y-6">
@@ -68,6 +141,111 @@ export default function EmployeeDashboard() {
         <StatCard title="Carpets Received" value={stats.carpets_received} color="bg-amber-600" />
         <StatCard title="Carpets Released" value={stats.carpets_released} color="bg-purple-600" />
         <StatCard title="Payable Balance" value={`Ksh ${stats.payable_balance}`} color="bg-emerald-700" />
+      </div>
+
+      <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
+        <h2 className="text-xl font-semibold mb-1 text-sky-600">Vehicles Waiting (log on arrival)</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Log a vehicle the moment it arrives — no money needed yet. Take the payment any
+          time before it turns red (24h). Red rows count against you.
+        </p>
+
+        <form onSubmit={logArrival} className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end mb-4">
+          <label className="text-sm">
+            <span className="block text-gray-600 mb-1">Plate number</span>
+            <input value={plate} onChange={e => setPlate(e.target.value)} placeholder="KDY 123A"
+              className="w-full border rounded px-3 py-2 uppercase" required />
+          </label>
+          <label className="text-sm">
+            <span className="block text-gray-600 mb-1">Type</span>
+            <select value={arrivalCategory} onChange={e => {
+              setArrivalCategory(e.target.value);
+              const c = VEHICLE_CATEGORIES.find(x => x.key === e.target.value);
+              if (c) setArrivalPrice(String(c.price));
+            }} className="w-full border rounded px-3 py-2">
+              {VEHICLE_CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label} (Ksh {c.price})</option>)}
+            </select>
+          </label>
+          <label className="text-sm">
+            <span className="block text-gray-600 mb-1">Expected price</span>
+            <input type="number" min="0" value={arrivalPrice} onChange={e => setArrivalPrice(e.target.value)}
+              className="w-full border rounded px-3 py-2" />
+          </label>
+          <button type="submit" className="col-span-2 md:col-span-1 bg-sky-600 text-white px-4 py-2 rounded">
+            Log Arrival
+          </button>
+        </form>
+
+        {arrivalMsg && <p className="text-sm text-gray-600 mb-3">{arrivalMsg}</p>}
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b">
+                <th className="py-2">Arrived</th>
+                <th className="py-2">Plate</th>
+                <th className="py-2">Type</th>
+                <th className="py-2 text-right">Expected</th>
+                <th className="py-2 text-right">Paid</th>
+                <th className="py-2">Status</th>
+                <th className="py-2 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pendingArrivals.length === 0 && (
+                <tr><td colSpan={7} className="py-4 text-center text-gray-400 text-sm">No vehicles waiting.</td></tr>
+              )}
+              {pendingArrivals.map(a => (
+                <tr key={a.id}
+                  className={`border-b ${a.overdue ? 'bg-red-100 dark:bg-red-900/40' : ''}`}>
+                  <td className="py-2 text-sm">{format(new Date(a.created_at), 'dd/MM HH:mm')}</td>
+                  <td className="py-2 font-mono text-sm">{a.plate_number}</td>
+                  <td className="py-2 text-sm capitalize">{a.category}</td>
+                  <td className="py-2 font-mono text-right text-sm">Ksh {a.expected_price}</td>
+                  <td className="py-2 font-mono text-right text-sm">Ksh {(a.cash_paid || 0) + (a.mpesa_paid || 0)}</td>
+                  <td className="py-2 text-sm">
+                    {a.status === 'expired' || a.overdue ? (
+                      <span className="text-red-600 font-semibold">Overdue — counts against you</span>
+                    ) : (
+                      <span className="text-amber-600">Waiting for payment</span>
+                    )}
+                  </td>
+                  <td className="py-2 text-right text-sm">
+                    <button onClick={() => {
+                      setSettleRow(settleRow === a.id ? null : a.id);
+                      setSettleCash('');
+                      setSettleMpesa('');
+                    }} className="text-sky-600 underline mr-2">Take payment</button>
+                    <button onClick={() => deleteArrival(a.id)} className="text-red-600 underline">Remove</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {settleRow !== null && (
+          <div className="mt-4 p-4 border rounded bg-slate-50 dark:bg-slate-700/40">
+            <p className="text-sm font-semibold mb-2">
+              Payment for {arrivals.find(a => a.id === settleRow)?.plate_number} (cash + mpesa, money is money)
+            </p>
+            <div className="flex flex-wrap gap-3 items-end">
+              <label className="text-sm">
+                <span className="block text-gray-600 mb-1">Cash</span>
+                <input type="number" min="0" value={settleCash} onChange={e => setSettleCash(e.target.value)}
+                  className="w-32 border rounded px-3 py-2" />
+              </label>
+              <label className="text-sm">
+                <span className="block text-gray-600 mb-1">M-Pesa</span>
+                <input type="number" min="0" value={settleMpesa} onChange={e => setSettleMpesa(e.target.value)}
+                  className="w-32 border rounded px-3 py-2" />
+              </label>
+              <button onClick={() => settleArrival(settleRow)}
+                className="bg-emerald-600 text-white px-4 py-2 rounded">Record Payment</button>
+              <button onClick={() => setSettleRow(null)} className="px-4 py-2 rounded border">Cancel</button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">

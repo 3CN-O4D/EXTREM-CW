@@ -154,6 +154,7 @@ export function serializeCarpet(c: CarpetRow): Record<string, unknown> {
     id: c.id,
     created_at: iso(c.created_at),
     receiver_id: c.receiver_id,
+    submitter_id: c.submitter_id ?? null,
     characteristics: c.characteristics,
     client_name: c.client_name,
     customer_phone: c.customer_phone,

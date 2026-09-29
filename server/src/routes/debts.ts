@@ -95,37 +95,62 @@ router.post(
   }),
 );
 
-// PUT /debts/:id
+// PUT /debts/:id - correct anything, including auto-calculated shortfalls:
+// change the amount, and/or mark it paid for the full amount or partially
+// (the employee's balance updates by the difference). Employees may fix debts
+// they own; admin/manager may fix any.
 router.put(
   '/:id',
   wrap(async (req: AuthRequest, res) => {
-    await requireRole(req, M);
+    const user = await getCurrentUser(req);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, 'Debt not found');
     const debt = await queryOne<DebtRow>('SELECT * FROM debts WHERE id = $1', [id]);
     if (!debt) throw new HttpError(404, 'Debt not found');
-
-    const body = req.body || {};
-    const paid = asFloat(body.paid, 'paid');
-    if (paid < 0) throw new HttpError(422, 'paid must be >= 0');
-    const paidDateStr = asOptStr(body.paid_date);
-
-    let paidDate: string | null = debt.paid_date
-      ? debt.paid_date.toISOString().replace('T', ' ').replace('Z', '')
-      : null;
-    if (paidDateStr) {
-      const m = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}:\d{2}(?:\.\d+)?))?/.exec(paidDateStr);
-      if (m) paidDate = `${m[1]} ${m[2] ? m[2].replace(/\.\d+$/, '') : '00:00:00'}`;
+    if (user.role.toUpperCase() === 'EMPLOYEE' && debt.employee_id !== user.id) {
+      throw new HttpError(403, 'Not your debt');
     }
 
+    const body = req.body || {};
+    const amount = body.amount !== undefined ? asFloat(body.amount, 'amount') : debt.amount;
+    if (amount < 0) throw new HttpError(422, 'amount must be >= 0');
+    const paid = asOptFloat(body.paid, 'paid') ?? debt.paid;
+    if (paid < 0) throw new HttpError(422, 'paid must be >= 0');
+    if (paid > amount) throw new HttpError(422, 'paid cannot exceed amount');
+    const service = asOptStr(body.service) ?? debt.service;
+    const notes = asOptStr(body.notes) ?? debt.notes;
+    const paidDateStr = asOptStr(body.paid_date);
+
+    let paidDate = debt.paid_date
+      ? new Date(debt.paid_date).toISOString().replace('T', ' ').replace('Z', '')
+      : null;
+    if (paidDateStr !== undefined) {
+      if (!paidDateStr) paidDate = null;
+      else {
+        const m = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}:\d{2}(?:\.\d+)?))?/.exec(paidDateStr);
+        if (m) paidDate = `${m[1]} ${m[2] ? m[2].replace(/\.\d+$/, '') : '00:00:00'}`;
+      }
+    }
+    if (paid > 0 && !paidDate) {
+      paidDate = new Date().toISOString().replace('T', ' ').replace('Z', '');
+    }
+
+    const delta = (amount - paid) - (debt.amount - debt.paid);
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-await client.query('UPDATE debts SET paid = $1, paid_date = $2 WHERE id = $3', [paid, paidDate, id]);
-      await client.query(
-        'UPDATE users SET debt_balance = GREATEST(0, debt_balance + $1) WHERE id = $2',
-        [debt.paid - paid, debt.employee_id],
-      );
+      await client.query('UPDATE debts SET amount = $1, paid = $2, paid_date = $3, service = $4, notes = $5 WHERE id = $6', [
+        amount,
+        paid,
+        paidDate,
+        service,
+        notes,
+        id,
+      ]);
+      await client.query('UPDATE users SET debt_balance = GREATEST(0, debt_balance + $1) WHERE id = $2', [
+        delta,
+        debt.employee_id,
+      ]);
       await client.query('COMMIT');
       const updated = await queryOne<DebtRow>('SELECT * FROM debts WHERE id = $1', [id]);
       res.json(serializeDebt(updated!));
@@ -138,7 +163,7 @@ await client.query('UPDATE debts SET paid = $1, paid_date = $2 WHERE id = $3', [
   }),
 );
 
-// DELETE /debts/:id
+// DELETE /debts/:id - remove a mistaken auto shortfall (admin/manager only)
 router.delete(
   '/:id',
   wrap(async (req: AuthRequest, res) => {

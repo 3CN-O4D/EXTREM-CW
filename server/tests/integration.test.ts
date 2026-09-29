@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import jwt from 'jsonwebtoken';
-import { Api, makeApi, snapshotDb, restoreDb, clearSettlement } from './helpers';
+import { Api, makeApi, snapshotDb, restoreDb, clearSettlement, seedDemoUsers, saveSnapshotFile, assertDestructiveRunAllowed } from './helpers';
 
 let api: Api;
 let close: () => Promise<void>;
@@ -36,10 +36,19 @@ async function resetFinances(...userIds: number[]): Promise<void> {
 }
 
 beforeAll(async () => {
+  assertDestructiveRunAllowed();
   snap = await snapshotDb();
+  await saveSnapshotFile(snap);
+  await seedDemoUsers();
   const srv = await makeApi();
   api = srv.api;
   close = srv.close;
+
+  // Auth clients must exist for every describe, so log in here (runs even when
+  // a -t filter skips the auth describe block).
+  admin = new Api(api.base).auth((await login('admin', 'admin')).json.access_token);
+  manager = new Api(api.base).auth((await login('manager', 'manager')).json.access_token);
+  empJ = new Api(api.base).auth((await login('J', 'JJJJ')).json.access_token);
 });
 
 afterAll(async () => {
@@ -331,6 +340,20 @@ describe('transactions', () => {
     });
     expect(r.json.employee_financials.calculated_commission).toBe(0);
     expect(r.json.employee_financials.final_payout_output).toBe(0);
+    ids.push(r.json.id);
+  });
+
+  it('taxi @150 -> commission 50 (motivation bonus over 30%)', async () => {
+    const r = await manager.post('/transactions/', {
+      washer_id: J_ID,
+      category: 'taxi',
+      expected_price: 150,
+      cash_paid: 150,
+      mpesa_paid: 0,
+      tip_method: 'cash',
+    });
+    expect(r.json.employee_financials.calculated_commission).toBe(50);
+    expect(r.json.employee_financials.final_payout_output).toBe(50);
     ids.push(r.json.id);
   });
 
@@ -706,6 +729,7 @@ describe('carpets', () => {
       expected_price: 200,
       cash_paid: 0,
       mpesa_paid: 0,
+      image_data: 'data:image/jpeg;base64,' + 'A'.repeat(200),
     });
     expect(recv.status).toBe(200);
     expect(recv.json.status).toBe('received');
@@ -745,6 +769,49 @@ describe('carpets', () => {
     await manager.delete(`/carpets/${carpetId}`);
   });
 
+  it('partial carpet release: no employee debt, unpaid balance becomes client debt', async () => {
+    const jBefore = (await manager.get('/debts/')).json.filter((d: any) => d.employee_id === J_ID);
+
+    const recv = await manager.post('/carpets/', {
+      receiver_id: J_ID,
+      characteristics: 'Red runner',
+      client_name: 'Bob',
+      customer_phone: '0799000111',
+      expected_price: 300,
+      cash_paid: 0,
+      mpesa_paid: 0,
+      image_data: 'data:image/jpeg;base64,' + 'B'.repeat(200),
+    });
+    const carpetId = recv.json.id;
+
+    const rel = await manager.post(`/carpets/${carpetId}/release`, { cash_paid: 100 });
+    expect(rel.status).toBe(200);
+
+    // The employee is NOT charged for the unpaid carpet balance.
+    const jAfter = (await manager.get('/debts/')).json.filter((d: any) => d.employee_id === J_ID);
+    expect(jAfter.length).toBe(jBefore.length);
+
+    // The remaining Ksh 200 is a CLIENT debt for the customer.
+    const cds = (await manager.get('/client-debts/')).json.filter(
+      (d: any) => d.client_name === 'Bob' && d.description?.includes('Red runner'),
+    );
+    expect(cds.length).toBe(1);
+    expect(cds[0].amount).toBe(200);
+    expect(cds[0].paid).toBe(0);
+
+    // The carpet transaction still records the 30% commission.
+    const txs = (await manager.get('/transactions/')).json;
+    const carpetTx = txs.find((t: any) => t.customer_phone === '0799000111');
+    expect(carpetTx).toBeTruthy();
+    expect(carpetTx.calculated_commission).toBe(90);
+
+    // Clean up the generated rows.
+    await manager.delete(`/carpets/${carpetId}`);
+    if (carpetTx) await manager.delete(`/transactions/${carpetTx.id}`);
+    const created = cds[0];
+    expect((await manager.delete(`/client-debts/${created.id}`)).status).toBe(200);
+  });
+
   it('releasing a zero-value carpet records no transaction', async () => {
     const before = (await manager.get('/transactions/')).json.length;
     const recv = await manager.post('/carpets/', {
@@ -753,6 +820,7 @@ describe('carpets', () => {
       expected_price: 0,
       cash_paid: 0,
       mpesa_paid: 0,
+      image_data: 'data:image/jpeg;base64,' + 'C'.repeat(200),
     });
     const rel = await manager.post(`/carpets/${recv.json.id}/release`, {});
     expect(rel.status).toBe(200);
@@ -761,19 +829,180 @@ describe('carpets', () => {
     await manager.delete(`/carpets/${recv.json.id}`);
   });
 
-  it('employees only see carpets they received', async () => {
+  it('employees see carpets they received OR submitted (receiver-later)', async () => {
     const r = await empJ.get('/carpets/');
     expect(r.status).toBe(200);
-    for (const c of r.json) expect(c.receiver_id).toBe(J_ID);
+    for (const c of r.json) {
+      expect(c.receiver_id === J_ID || c.submitter_id === J_ID).toBe(true);
+    }
   });
 
-  it('validates carpet pay fields and receiver existence', async () => {
+  it('validates carpet pay fields, photo, and receiver existence', async () => {
+    // A photo is mandatory on arrival.
+    expect((await manager.post('/carpets/', { receiver_id: 99999, expected_price: 20 })).status).toBe(422);
     expect(
-      (await manager.post('/carpets/', { receiver_id: 99999, expected_price: 20 })).status,
-    ).toBe(404);
+      (await manager.post('/carpets/', { image_data: 'data:image/jpeg;base64,' + 'D'.repeat(200) })).status,
+    ).toBe(200);
     expect(
-      (await manager.post('/carpets/', { receiver_id: J_ID, expected_price: -1 })).status,
+      (await manager.post('/carpets/', { image_data: 'data:image/jpeg;base64,' + 'D'.repeat(200) })).json
+        .receiver_id,
+    ).toBe(null);
+    expect(
+      (await manager.post('/carpets/', { receiver_id: J_ID, expected_price: -1, image_data: 'x'.repeat(300) }))
+        .status,
     ).toBe(422);
+  });
+
+  it('employees can receive, wash, and release carpets; release skips the wash', async () => {
+    const recv = await empJ.post('/carpets/', {
+      characteristics: 'Guest mat (no wash)',
+      client_name: 'Carol',
+      customer_phone: '0711222333',
+      expected_price: 150,
+      cash_paid: 150,
+      mpesa_paid: 0,
+      image_data: 'data:image/jpeg;base64,' + 'E'.repeat(200),
+    });
+    expect(recv.status).toBe(200);
+    expect(recv.json.receiver_id).toBe(null); // receiver picked later
+    expect(recv.json.submitter_id).toBe(J_ID);
+    const carpetId = recv.json.id;
+
+    // Enployee can still release it before it is ever washed.
+    const rel = await empJ.post(`/carpets/${carpetId}/release`, { washer_id: J_ID });
+    expect(rel.status).toBe(200);
+    expect(rel.json.status).toBe('released');
+
+    const txs = (await manager.get('/transactions/')).json;
+    const carpetTx = txs.find((t: any) => t.customer_phone === '0711222333');
+    expect(carpetTx).toBeTruthy();
+    expect(carpetTx.receiver_id).toBe(J_ID);
+    // carpet @150 -> 30% -> 45 commission
+    expect(carpetTx.calculated_commission).toBe(45);
+    expect(carpetTx.shortfall).toBe(0);
+
+    await manager.delete(`/carpets/${carpetId}`);
+    if (carpetTx) await manager.delete(`/transactions/${carpetTx.id}`);
+  });
+});
+
+describe('vehicle arrivals (log now, settle later)', () => {
+  it('log an arrival without money, then settle later with cash+mpesa mix', async () => {
+    const arr = await empJ.post('/vehicles/', {
+      category: 'car',
+      plate_number: 'kdd 123a',
+      expected_price: 200,
+    });
+    expect(arr.status).toBe(200);
+    expect(arr.json.status).toBe('pending');
+    expect(arr.json.plate_number).toBe('KDD123A');
+    expect(arr.json.category).toBe('car');
+    expect(arr.json.expected_price).toBe(200);
+    expect(arr.json.submitter_id).toBe(J_ID);
+    expect(arr.json.overdue).toBe(false);
+    const arrivalId = arr.json.id;
+
+    // No money was taken yet - the arrivals list shows it as unpaid.
+    const list = await empJ.get('/vehicles/');
+    expect(list.json.some((v: any) => v.id === arrivalId && v.cash_paid === 0 && v.mpesa_paid === 0)).toBe(true);
+
+    // The washer can be picked now (or left for later).
+    const patch = await empJ.patch(`/vehicles/${arrivalId}`, { washer_id: J_ID });
+    expect(patch.status).toBe(200);
+    expect(patch.json.washer_id).toBe(J_ID);
+
+    // Settle: any cash + mpesa mix is money.
+    const settle = await empJ.post(`/vehicles/${arrivalId}/settle`, { cash_paid: 100, mpesa_paid: 100 });
+    expect(settle.status).toBe(200);
+    expect(settle.json.status).toBe('settled');
+    expect(settle.json.cash_paid).toBe(100);
+    expect(settle.json.mpesa_paid).toBe(100);
+
+    const txs = (await manager.get('/transactions/')).json;
+    const tx = txs.find((t: any) => t.plate_number === 'KDD123A');
+    expect(tx).toBeTruthy();
+    expect(tx.category).toBe('car');
+    expect(tx.cash_paid).toBe(100);
+    expect(tx.mpesa_paid).toBe(100);
+    // car @200 fully paid -> the 70 flat commission
+    expect(tx.calculated_commission).toBe(70);
+    expect(tx.shortfall).toBe(0);
+
+    // Settled arrivals cannot be re-settled or deleted.
+    expect((await empJ.post(`/vehicles/${arrivalId}/settle`, { cash_paid: 200 })).status).toBe(400);
+    expect((await empJ.delete(`/vehicles/${arrivalId}`)).status).toBe(400);
+    expect((await manager.delete(`/transactions/${tx.id}`)).status).toBe(200);
+  });
+
+  it('an arrival unpaid after 24h becomes an employee shortfall; settling it deposits against it', async () => {
+    const arr = await empJ.post('/vehicles/', { category: 'car', plate_number: 'KAZ200Z', expected_price: 200 });
+    const arrivalId = arr.json.id;
+
+    // Force the arrival 25h old, as if the 24h window already closed.
+    const { pool } = await import('../src/db');
+    await pool.query(
+      `UPDATE vehicle_arrivals SET created_at = now() - interval '25 hours' WHERE id = $1`,
+      [arrivalId],
+    );
+
+    // Opening the arrivals list runs the lazy sweep: arrival marked expired and
+    // a shortfall debt for the submitter is created.
+    const list = await empJ.get('/vehicles/');
+    const expired = list.json.find((v: any) => v.id === arrivalId);
+    expect(expired.status).toBe('expired');
+    expect(expired.debt_id).toBeTruthy();
+    expect(expired.overdue).toBe(true);
+
+    const debts = (await empJ.get('/debts/')).json;
+    const auto = debts.find((d: any) => d.id === expired.debt_id);
+    expect(auto).toBeTruthy();
+    expect(auto.employee_id).toBe(J_ID);
+    expect(auto.amount).toBe(200);
+    expect(auto.service).toBe('Vehicle');
+    expect(auto.notes).toContain('overdue');
+    expect(auto.paid).toBe(0);
+    expect(auto.balance).toBe(200);
+
+    // Part of the money comes in later: transaction shortfall recorded, and the
+    // auto-shortfall debt is partially paid off.
+    await empJ.post(`/vehicles/${arrivalId}/settle`, { mpesa_paid: 100 });
+    const debtAfter = (await manager.get('/debts/')).json.find((d: any) => d.id === expired.debt_id);
+    expect(debtAfter.paid).toBe(100);
+    expect(debtAfter.balance).toBe(100);
+
+    const txs = (await manager.get('/transactions/')).json;
+    const tx = txs.find((t: any) => t.plate_number === 'KAZ200Z');
+    expect(tx).toBeTruthy();
+    expect(tx.shortfall).toBe(100);
+
+    // Cleanup: remove the shortfall debt spawned by the partial transaction.
+    const shortfallDebt = (await manager.get('/debts/')).json.find((d: any) => d.transaction_id === tx.id);
+    if (shortfallDebt) await manager.delete(`/debts/${shortfallDebt.id}`);
+    await manager.delete(`/transactions/${tx.id}`);
+    await manager.delete(`/debts/${auto.id}`);
+  });
+
+  it('employees may delete their own pending arrival and cannot settle anothers', async () => {
+    const mine = await empJ.post('/vehicles/', { category: 'bicycle', plate_number: 'BMX1', expected_price: 50 });
+    const owned = await manager.post('/vehicles/', { category: 'taxi', plate_number: 'KCE404', expected_price: 150 });
+
+    // An employee editing/settling a colleague's arrival is rejected.
+    expect((await empJ.patch(`/vehicles/${owned.json.id}`, { plate_number: 'KCE405' })).status).toBe(403);
+    expect((await empJ.post(`/vehicles/${owned.json.id}/settle`, { cash_paid: 150 })).status).toBe(403);
+
+    // Deleting your own pending arrival works.
+    expect((await empJ.delete(`/vehicles/${mine.json.id}`)).status).toBe(200);
+    expect((await manager.delete(`/vehicles/${owned.json.id}`)).status).toBe(200);
+  });
+
+  it('validates arrival payloads', async () => {
+    expect((await empJ.post('/vehicles/', { category: 'car', plate_number: 'bad!plate' })).status).toBe(422);
+    expect((await empJ.post('/vehicles/', { category: 'carpet', plate_number: 'ABC1' })).status).toBe(422);
+    const ok = await empJ.post('/vehicles/', { category: 'motorcycle', plate_number: 'KCJ77M', expected_price: 70 });
+    expect(ok.status).toBe(200);
+    expect(ok.json.expected_price).toBe(70);
+    expect((await empJ.patch(`/vehicles/${ok.json.id}`, { expected_price: -5 })).status).toBe(422);
+    await empJ.delete(`/vehicles/${ok.json.id}`);
   });
 });
 

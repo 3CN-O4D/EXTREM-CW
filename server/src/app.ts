@@ -12,6 +12,7 @@ import debtsRouter from './routes/debts';
 import carpetsRouter from './routes/carpets';
 import clientDebtsRouter from './routes/client-debts';
 import settlementsRouter from './routes/settlements';
+import vehiclesRouter from './routes/vehicles';
 
 export function createApp() {
   const app = express();
@@ -34,6 +35,7 @@ export function createApp() {
   app.use('/api/v1/carpets', carpetsRouter);
   app.use('/api/v1/client-debts', clientDebtsRouter);
   app.use('/api/v1/settlements', settlementsRouter);
+  app.use('/api/v1/vehicles', vehiclesRouter);
 
   // 404
   app.use((_req: Request, res: Response) => {

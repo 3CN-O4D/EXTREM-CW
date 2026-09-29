@@ -70,7 +70,9 @@ const CDEBT_COLS = 'id, client_name, customer_phone, description, amount, paid, 
 const WLOG_COLS =
   'id, week_id, start_date, end_date, total_revenue, total_expenses, total_labor_expense, total_profit, data_json';
 const CAR_COLS =
-  'id, created_at, receiver_id, characteristics, client_name, customer_phone, image_data, expected_price, cash_paid, mpesa_paid, is_washed, status, released_at';
+  'id, created_at, receiver_id, submitter_id, characteristics, client_name, customer_phone, image_data, expected_price, cash_paid, mpesa_paid, is_washed, status, released_at';
+const ARR_COLS =
+  'id, created_at, plate_number, category, expected_price, submitter_id, washer_id, cash_paid, mpesa_paid, status, debt_id, transaction_id, settled_at';
 
 interface Snapshot {
   table: string;
@@ -94,6 +96,7 @@ export async function snapshotDb() {
     client_debts: await snapshotTable('client_debts', 'id', CDEBT_COLS),
     weekly_logs: await snapshotTable('weekly_logs', 'id', WLOG_COLS),
     carpets: await snapshotTable('carpets', 'id', CAR_COLS),
+    vehicle_arrivals: await snapshotTable('vehicle_arrivals', 'id', ARR_COLS),
   };
 }
 
@@ -102,10 +105,10 @@ export async function restoreDb(snap: ReturnType<typeof snapshotDb> extends Prom
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    for (const t of ['tips', 'repayments', 'debts', 'client_debts', 'weekly_logs', 'expenses', 'transactions', 'carpets', 'users']) {
+    for (const t of ['tips', 'repayments', 'debts', 'client_debts', 'weekly_logs', 'expenses', 'transactions', 'carpets', 'vehicle_arrivals', 'users']) {
       await client.query(`DELETE FROM ${t}`);
     }
-    const order = ['users', 'transactions', 'expenses', 'repayments', 'debts', 'tips', 'client_debts', 'weekly_logs', 'carpets'];
+    const order = ['users', 'vehicle_arrivals', 'transactions', 'expenses', 'repayments', 'debts', 'tips', 'client_debts', 'weekly_logs', 'carpets'];
     for (const table of order) {
       const s = (snap as any)[table] as Snapshot;
       if (!s || !s.rows.length) continue;
@@ -137,6 +140,71 @@ export async function restoreDb(snap: ReturnType<typeof snapshotDb> extends Prom
 export async function clearSettlement(weekId: string) {
   const { pool } = await import('../src/db');
   await pool.query('DELETE FROM weekly_logs WHERE week_id = $1', [weekId]);
+}
+
+// The suite wipes and re-seeds the configured database, so it must only run
+// when explicitly requested (see the `test:db` script).
+export function assertDestructiveRunAllowed() {
+  if (process.env.ALLOW_DB_WIPE !== '1') {
+    throw new Error(
+      'Refusing to run: these tests wipe and re-seed the database. Run "npm run test:db" (or set ALLOW_DB_WIPE=1) to confirm.',
+    );
+  }
+}
+
+const SNAPSHOT_FILE = '/tmp/opencode/extremcw-test-snapshot.json';
+
+// Safety net: keep a copy of the live data on disk before the suite wipes it,
+// so the data can be recovered even if the in-memory restore fails.
+export async function saveSnapshotFile(snap: any) {
+  const fs = await import('fs/promises');
+  await fs.writeFile(SNAPSHOT_FILE, JSON.stringify(snap, null, 1));
+}
+
+export async function restoreFromFile(): Promise<number> {
+  const fs = await import('fs/promises');
+  const raw = await fs.readFile(SNAPSHOT_FILE, 'utf8');
+  const snap = JSON.parse(raw);
+  await restoreDb(snap);
+  let n = 0;
+  for (const t of Object.keys(snap)) n += snap[t].rows.length;
+  return n;
+}
+
+// Build the deterministic demo state the suite expects (the migration-seed
+// users with known logins), regardless of what is currently in the DB. The
+// suite calls this AFTER snapshotting, and afterAll restores the snapshot.
+export async function seedDemoUsers() {
+  const { pool } = await import('../src/db');
+  const { getPasswordHash } = await import('../src/auth');
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (const t of ['tips', 'repayments', 'debts', 'client_debts', 'weekly_logs', 'expenses', 'transactions', 'carpets', 'vehicle_arrivals', 'users']) {
+      await client.query(`DELETE FROM ${t}`);
+    }
+    const users = [
+      [1, 'Business Manager', 'manager', getPasswordHash('manager'), 'MANAGER'],
+      [2, 'Administrator', 'admin', getPasswordHash('admin'), 'ADMIN'],
+      [3, 'Jeophrey', 'J', getPasswordHash('JJJJ'), 'EMPLOYEE'],
+      [4, 'Abel', 'A', getPasswordHash('AAAA'), 'EMPLOYEE'],
+      [5, 'Levis', 'L', getPasswordHash('LLLL'), 'EMPLOYEE'],
+      [6, 'Derrick', 'D', getPasswordHash('DDDD'), 'EMPLOYEE'],
+    ];
+    for (const [id, full_name, abbreviation, hashed_password, role] of users) {
+      await client.query(
+        'INSERT INTO users (id, full_name, abbreviation, hashed_password, role, is_active, payable_balance, debt_balance) VALUES ($1,$2,$3,$4,$5,true,0,0)',
+        [id, full_name, abbreviation, hashed_password, role],
+      );
+    }
+    await client.query(`SELECT setval(pg_get_serial_sequence('users', 'id'), 6, true)`);
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
 export async function startServer() {

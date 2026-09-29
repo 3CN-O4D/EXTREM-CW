@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import api from '../services/api';
 import { format, startOfWeek, addDays, isSameDay, addWeeks } from 'date-fns';
 import { parsePaymentSms, type ParsedPaymentSms } from '../utils/smsParser';
@@ -75,11 +75,16 @@ export default function ManagerPanel() {
   const [tipForm, setTipForm] = useState({ employee_id: '', amount: 0, method: 'wages' });
   const [expenseForm, setExpenseForm] = useState({ description: '', amount: 0, category: 'General' });
   const [repaymentForm, setRepaymentForm] = useState({ employee_id: '', amount: 0 });
-  const [activeTab, setActiveTab] = useState<'transaction' | 'expense' | 'repayment' | 'tip' | 'debt' | 'sheet' | 'carpets' | 'payday' | 'client-debts'>('transaction');
+  const [activeTab, setActiveTab] = useState<'transaction' | 'expense' | 'repayment' | 'tip' | 'debt' | 'sheet' | 'carpets' | 'payday' | 'client-debts' | 'arrivals'>('transaction');
   const [debts, setDebts] = useState<any[]>([]);
   const [debtForm, setDebtForm] = useState({
     employee_id: '', amount: 0, service: '', paid: 0, paid_date: '', notes: ''
   });
+  // Auto-calculated shortfalls can be corrected too: edit the amount, or mark
+  // them paid in full or in part.
+  const [editingDebt, setEditingDebt] = useState<number | null>(null);
+  const [debtEdit, setDebtEdit] = useState({ amount: 0, paid: 0 });
+  const [arrivals, setArrivals] = useState<any[]>([]);
   const [sheet, setSheet] = useState<any>({ summary: null, employees: [], expenses: [] });
   const [settlementLogs, setSettlementLogs] = useState<any[]>([]);
   const [settlementResult, setSettlementResult] = useState<any>(null);
@@ -92,6 +97,23 @@ export default function ManagerPanel() {
   const abbrMap = Object.fromEntries(employees.map(e => [e.id, e.abbreviation]));
   const plateCategories = ['car', 'taxi', 'midrange', 'lorry'];
   const showsPlate = plateCategories.includes(form.category);
+
+  // Duplicate guard for the day sheet: same plate, same employee, same expected
+  // price, same total paid. These rows are almost always double-taps, so they
+  // are tinted yellow for the manager to edit, remove, or keep as they are.
+  const duplicateTxIds = useMemo(() => {
+    const seen = new Map<string, number[]>();
+    transactions.forEach((tx: any) => {
+      const item = tx.category === 'carpet'
+        ? (tx.carpet_characteristics || 'Carpet')
+        : (tx.plate_number || tx.custom_category || '-');
+      const key = [item, tx.washer_id, tx.expected_price, tx.total_paid].join('|');
+      seen.set(key, [...(seen.get(key) || []), tx.id]);
+    });
+    const dupes = new Set<number>();
+    seen.forEach(ids => { if (ids.length > 1) ids.forEach(id => dupes.add(id)); });
+    return dupes;
+  }, [transactions]);
 
   useEffect(() => {
     api.get('/stats/employees').then(res => setEmployees(res.data));
@@ -173,12 +195,16 @@ export default function ManagerPanel() {
     try {
       if (form.category === 'carpet') {
         if (carpetMode === 'received') {
+          if (!carpetImage) {
+            alert('Take a photo of the carpet first — it is required on arrival.');
+            return;
+          }
           await api.post('/carpets/', {
-            receiver_id: toNum(form.receiver_id),
+            receiver_id: form.receiver_id ? toNum(form.receiver_id) : null,
             characteristics: form.carpet_characteristics,
             client_name: form.client_name || null,
             customer_phone: form.customer_phone || null,
-            image_data: carpetImage || null,
+            image_data: carpetImage,
             expected_price: toNum(form.expected_price),
             cash_paid: toNum(form.cash_paid),
             mpesa_paid: toNum(form.mpesa_paid)
@@ -290,6 +316,21 @@ export default function ManagerPanel() {
     } catch { alert('Error deleting transaction'); }
   };
 
+  // Compact in-place fix for a row in the day sheet (used to correct a duplicate
+  // or a mistyped amount without leaving the sheet).
+  const saveSheetEdit = async (txId: number) => {
+    try {
+      await api.put(`/transactions/${txId}`, {
+        washer_id: parseInt(editForm.washer_id),
+        expected_price: toNum(editForm.expected_price),
+        cash_paid: toNum(editForm.cash_paid),
+        mpesa_paid: toNum(editForm.mpesa_paid),
+      });
+      setEditingTx(null);
+      fetchTransactions();
+    } catch (e: any) { alert(e.response?.data?.detail || 'Error updating transaction'); }
+  };
+
   const handleExpenseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -334,14 +375,36 @@ export default function ManagerPanel() {
     } catch { alert('Error marking carpet'); }
   };
 
-  const handleCarpetRelease = async (carpetId: number, price: number) => {
-    const amount = prompt(`Release carpet — Cash received (Ksh, expected ${price}):`, String(price));
-    if (amount === null) return;
+  // The receiver can be assigned days after the carpet arrived.
+  const handleCarpetAssign = async (carpetId: number, employeeId: string) => {
     try {
-      await api.post(`/carpets/${carpetId}/release`, { cash_paid: toNum(amount) });
+      await api.patch(`/carpets/${carpetId}`, {
+        receiver_id: employeeId === '' ? null : Number(employeeId),
+      });
+      fetchCarpets();
+    } catch (e: any) { alert(e.response?.data?.detail || 'Error assigning carpet'); }
+  };
+
+  // Releasing does not require a wash or a full payment — whoever does the work
+  // gets the commission, and any unpaid balance goes to the client-debt list.
+  const handleCarpetRelease = async (carpetId: number, price: number, washerId: number | null) => {
+    const amount = prompt(`Release carpet — Cash received (Ksh, expected ${price}). Enter 0 if unpaid:`, String(price));
+    if (amount === null) return;
+    const who = prompt(
+      `Who washed it? Enter 1-${employees.length} for the employee number, or leave blank to use the receiver.`,
+      washerId ? String(employees.findIndex((e: any) => e.id === washerId) + 1) : '',
+    );
+    if (who === null) return;
+    const idx = parseInt(who, 10);
+    const picked = Number.isInteger(idx) && idx >= 1 && idx <= employees.length ? employees[idx - 1].id : washerId;
+    try {
+      await api.post(`/carpets/${carpetId}/release`, {
+        cash_paid: toNum(amount),
+        washer_id: picked ?? null,
+      });
       fetchCarpets();
       alert('Carpet released (auto-deletes after 1 day)');
-    } catch { alert('Error releasing carpet'); }
+    } catch (e: any) { alert(e.response?.data?.detail || 'Error releasing carpet'); }
   };
 
   const handleCarpetDelete = async (carpetId: number) => {
@@ -360,6 +423,53 @@ export default function ManagerPanel() {
   };
 
   useEffect(() => { fetchDebts(); }, []);
+
+  // Edit an auto-calculated shortfall (or any debt): fix the amount, or mark it
+  // paid in full or in part.
+  const saveDebtEdit = async (debtId: number) => {
+    try {
+      await api.put(`/debts/${debtId}`, { amount: toNum(debtEdit.amount), paid: toNum(debtEdit.paid) });
+      setEditingDebt(null);
+      fetchDebts();
+      api.get('/stats/employees').then(res => setEmployees(res.data));
+    } catch (e: any) { alert(e.response?.data?.detail || 'Could not update the debt'); }
+  };
+
+  const markDebtPaid = async (debtId: number, full: boolean, amount: number) => {
+    try {
+      await api.put(`/debts/${debtId}`, { paid: full ? amount : Math.floor(amount / 2) });
+      fetchDebts();
+      api.get('/stats/employees').then(res => setEmployees(res.data));
+    } catch (e: any) { alert(e.response?.data?.detail || 'Could not update the debt'); }
+  };
+
+  const deleteDebt = async (debtId: number) => {
+    if (!confirm('Remove this debt/shortfall record?')) return;
+    try {
+      await api.delete(`/debts/${debtId}`);
+      fetchDebts();
+      api.get('/stats/employees').then(res => setEmployees(res.data));
+    } catch { alert('Error removing debt'); }
+  };
+
+  const fetchArrivals = async () => {
+    try { const res = await api.get('/vehicles/'); setArrivals(res.data); } catch {}
+  };
+
+  useEffect(() => { fetchArrivals(); }, [activeTab]);
+
+  // Manager can take the payment on behalf of the employee who logged it.
+  const settleArrivalFor = async (id: number, cash: number, mpesa: number, washerId: number | null) => {
+    try {
+      await api.post(`/vehicles/${id}/settle`, {
+        cash_paid: cash,
+        mpesa_paid: mpesa,
+        ...(washerId ? { washer_id: washerId } : {}),
+      });
+      fetchArrivals();
+      fetchTransactions();
+    } catch (e: any) { alert(e.response?.data?.detail || 'Could not record the payment'); }
+  };
 
   const handleDebtSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -451,6 +561,7 @@ export default function ManagerPanel() {
         <button onClick={() => setActiveTab('carpets')} className={`px-6 py-2 font-medium ${activeTab === 'carpets' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-gray-500'}`}>Carpets</button>
         <button onClick={() => setActiveTab('payday')} className={`px-6 py-2 font-medium ${activeTab === 'payday' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-gray-500'}`}>Payday</button>
         <button onClick={() => setActiveTab('client-debts')} className={`px-6 py-2 font-medium ${activeTab === 'client-debts' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-gray-500'}`}>Client Debts</button>
+        <button onClick={() => setActiveTab('arrivals')} className={`px-6 py-2 font-medium ${activeTab === 'arrivals' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-gray-500'}`}>Arrivals</button>
       </div>
 
       <div className="flex items-center space-x-2 overflow-x-auto pb-2">
@@ -734,12 +845,12 @@ export default function ManagerPanel() {
                   {carpetImage ? (
                     <img src={carpetImage} alt="carpet" className="h-14 w-14 object-cover rounded border" />
                   ) : (
-                    <span className="text-xs text-gray-400">Optional photo of the carpet</span>
+                    <span className="text-xs text-red-500 font-medium">A photo is required on arrival</span>
                   )}
                 </div>
                 <select className="w-full p-2 border rounded dark:bg-slate-700" value={form.receiver_id}
-                  onChange={e => setForm({...form, receiver_id: e.target.value})} required>
-                  <option value="">Receiver (Employee)</option>
+                  onChange={e => setForm({...form, receiver_id: e.target.value})}>
+                  <option value="">Receiver — pick now or later</option>
                   {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                 </select>
               </>
@@ -851,30 +962,76 @@ export default function ManagerPanel() {
           <button type="submit" className="w-full bg-red-600 text-white font-bold py-3 rounded hover:bg-red-700">Log Debt</button>
         </form>
         <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
-          <h2 className="text-xl font-semibold mb-4">Debt Records</h2>
+          <h2 className="text-xl font-semibold mb-1">Debt Records</h2>
+          <p className="text-sm text-gray-500 mb-4">
+            Includes shortfalls calculated automatically. Correct the amount if the maths was wrong, or mark
+            any of them paid in full or in part.
+          </p>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b">
                   <th className="py-2">Employee</th>
-                  <th className="py-2">Amount</th>
+                  <th className="py-2 text-right">Amount</th>
                   <th className="py-2">Service</th>
                   <th className="py-2">Date</th>
-                  <th className="py-2">Paid</th>
-                  <th className="py-2">Paid Date</th>
-                  <th className="py-2">Balance</th>
+                  <th className="py-2 text-right">Paid</th>
+                  <th className="py-2 text-right">Balance</th>
+                  <th className="py-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {debts.map(d => (
                   <tr key={d.id} className="border-b">
                     <td className="py-2">{empMap[d.employee_id] || d.employee_id}</td>
-                    <td className="py-2 font-mono">Ksh {d.amount}</td>
-                    <td className="py-2">{d.service || '-'}</td>
-                    <td className="py-2 text-sm">{format(new Date(d.date), 'EEE dd/MM/yy')}</td>
-                    <td className="py-2 font-mono">Ksh {d.paid}</td>
-                    <td className="py-2 text-sm">{d.paid_date ? format(new Date(d.paid_date), 'EEE dd/MM/yy') : '-'}</td>
-                    <td className="py-2 font-bold text-red-600">Ksh {d.balance}</td>
+                    {editingDebt === d.id ? (
+                      <>
+                        <td className="py-2">
+                          <input type="number" min="0" className="w-24 p-1 text-sm border rounded dark:bg-slate-700"
+                            value={debtEdit.amount} onChange={e => setDebtEdit({...debtEdit, amount: toNum(e.target.value)})} />
+                        </td>
+                        <td className="py-2 text-xs text-gray-500" colSpan={2}>
+                          {d.service || '-'}{d.notes ? <div className="text-gray-400">{d.notes}</div> : null}
+                        </td>
+                        <td className="py-2">
+                          <input type="number" min="0" className="w-24 p-1 text-sm border rounded dark:bg-slate-700"
+                            value={debtEdit.paid} onChange={e => setDebtEdit({...debtEdit, paid: toNum(e.target.value)})} />
+                        </td>
+                        <td className="py-2 font-bold text-red-600">Ksh {Math.max(0, debtEdit.amount - debtEdit.paid)}</td>
+                        <td className="py-2">
+                          <div className="flex space-x-1">
+                            <button onClick={() => saveDebtEdit(d.id)} className="px-2 py-1 text-xs bg-green-600 text-white rounded">Save</button>
+                            <button onClick={() => setEditingDebt(null)} className="px-2 py-1 text-xs bg-gray-400 text-white rounded">Cancel</button>
+                          </div>
+                        </td>
+                      </>
+                    ) : (
+                      <>
+                        <td className="py-2 font-mono">Ksh {d.amount}</td>
+                        <td className="py-2">
+                          {d.service || '-'}
+                          {d.notes ? <div className="text-xs text-gray-400">{d.notes}</div> : null}
+                        </td>
+                        <td className="py-2 text-sm">{format(new Date(d.date), 'EEE dd/MM/yy')}</td>
+                        <td className="py-2 font-mono">Ksh {d.paid}</td>
+                        <td className="py-2 font-bold text-red-600">Ksh {d.balance}</td>
+                        <td className="py-2">
+                          <div className="flex flex-wrap space-x-1">
+                            <button onClick={() => { setEditingDebt(d.id); setDebtEdit({ amount: d.amount, paid: d.paid }); }}
+                              className="px-2 py-1 text-xs bg-blue-600 text-white rounded">Edit</button>
+                            {d.balance > 0 && (
+                              <>
+                                <button onClick={() => markDebtPaid(d.id, true, d.amount)}
+                                  className="px-2 py-1 text-xs bg-green-600 text-white rounded">Paid</button>
+                                <button onClick={() => markDebtPaid(d.id, false, d.balance)}
+                                  className="px-2 py-1 text-xs bg-emerald-700 text-white rounded">Half</button>
+                              </>
+                            )}
+                            <button onClick={() => deleteDebt(d.id)} className="px-2 py-1 text-xs bg-red-600 text-white rounded">Del</button>
+                          </div>
+                        </td>
+                      </>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -1069,6 +1226,69 @@ export default function ManagerPanel() {
           </div>
         </div>
       </div>
+      ) : activeTab === 'arrivals' ? (
+      <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
+        <h2 className="text-xl font-bold text-sky-600 mb-1">Vehicles Waiting for Payment</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Every employee sees their own arrivals; this is the full list. Red rows passed 24 hours and have
+          already been charged to that employee as a shortfall.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="py-2">Arrived</th>
+                <th className="py-2">Plate</th>
+                <th className="py-2">Type</th>
+                <th className="py-2">Logged by</th>
+                <th className="py-2 text-right">Expected</th>
+                <th className="py-2 text-right">Paid</th>
+                <th className="py-2">Status</th>
+                <th className="py-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {arrivals.length === 0 && (
+                <tr><td colSpan={8} className="py-6 text-center text-gray-400">No arrivals logged.</td></tr>
+              )}
+              {arrivals.map(a => (
+                <tr key={a.id} className={`border-b ${a.status === 'settled' ? '' : a.overdue ? 'bg-red-100 dark:bg-red-900/40' : ''}`}>
+                  <td className="py-2 text-xs">{format(new Date(a.created_at), 'EEE dd/MM HH:mm')}</td>
+                  <td className="py-2 font-mono">{a.plate_number}</td>
+                  <td className="py-2 capitalize">{a.category}</td>
+                  <td className="py-2">{abbrMap[a.submitter_id] || empMap[a.submitter_id] || a.submitter_id}</td>
+                  <td className="py-2 font-mono text-right">Ksh {a.expected_price}</td>
+                  <td className="py-2 font-mono text-right">Ksh {(a.cash_paid || 0) + (a.mpesa_paid || 0)}</td>
+                  <td className="py-2 text-xs">
+                    {a.status === 'settled' ? <span className="text-green-600">Paid</span>
+                      : a.status === 'expired' ? <span className="text-red-600 font-semibold">Overdue (charged)</span>
+                      : a.overdue ? <span className="text-red-600 font-semibold">Overdue</span>
+                      : <span className="text-amber-600">Waiting</span>}
+                  </td>
+                  <td className="py-2">
+                    {a.status !== 'settled' && (
+                      <button onClick={() => {
+                        const cash = prompt(`Payment for ${a.plate_number} — cash (Ksh):`, '0');
+                        if (cash === null) return;
+                        const mpesa = prompt('M-Pesa (Ksh):', '0');
+                        if (mpesa === null) return;
+                        const who = prompt(
+                          `Washer for the commission (1-${employees.length}, blank = whoever logged it):`,
+                          a.washer_id ? String(employees.findIndex((e: any) => e.id === a.washer_id) + 1) : '',
+                        );
+                        if (who === null) return;
+                        const idx = parseInt(who, 10);
+                        const picked = Number.isInteger(idx) && idx >= 1 && idx <= employees.length ? employees[idx - 1].id : null;
+                        settleArrivalFor(a.id, toNum(cash), toNum(mpesa), picked);
+                      }} className="px-2 py-1 text-xs bg-emerald-600 text-white rounded">Take payment</button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
       ) : null}
 
       {activeTab === 'carpets' && (
@@ -1111,7 +1331,18 @@ export default function ManagerPanel() {
                           className="h-12 w-12 object-cover rounded border cursor-pointer" />
                       ) : <span className="text-gray-400">—</span>}
                     </td>
-                    <td className="py-2 font-medium">{empMap[c.receiver_id] || c.receiver_id}</td>
+                    <td className="py-2">
+                      {c.status === 'received' ? (
+                        <select value={c.receiver_id ?? ''} onChange={e => handleCarpetAssign(c.id, e.target.value)}
+                          className="text-xs p-1 border rounded dark:bg-slate-700">
+                          <option value="">Pick receiver…</option>
+                          {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                        </select>
+                      ) : (
+                        <span className="font-medium">{empMap[c.receiver_id] || '—'}</span>
+                      )}
+                      {c.submitter_id && <div className="text-xs text-gray-400">logged by {abbrMap[c.submitter_id] || empMap[c.submitter_id]}</div>}
+                    </td>
                     <td className="py-2 font-mono text-right">Ksh {c.expected_price}</td>
                     <td className="py-2 font-mono text-right">Ksh {c.cash_paid + c.mpesa_paid}</td>
                     <td className="py-2">
@@ -1128,7 +1359,7 @@ export default function ManagerPanel() {
                     <td className="py-2">
                       <div className="flex space-x-1">
                         {c.status === 'received' && (
-                          <button onClick={() => handleCarpetRelease(c.id, c.expected_price)}
+                          <button onClick={() => handleCarpetRelease(c.id, c.expected_price, c.receiver_id)}
                             className="px-2 py-1 text-xs bg-green-600 text-white rounded">Release</button>
                         )}
                         <button onClick={() => handleCarpetDelete(c.id)} className="px-2 py-1 text-xs bg-red-600 text-white rounded">Del</button>
@@ -1150,6 +1381,12 @@ export default function ManagerPanel() {
               <h2 className="text-xl font-semibold">Day Sheet {viewMode === 'day' ? `- ${format(selectedDay, 'PPPP')}` : `- Week ${format(weekStart, 'w yyyy')}`}</h2>
               <span className="text-xs text-gray-400">e.g. car KCA182M-L 200ksh → Car | KCA182M | L | Ksh 200</span>
             </div>
+            {duplicateTxIds.size > 0 && (
+              <div className="px-6 pt-2 text-xs text-amber-700 dark:text-amber-400">
+                {duplicateTxIds.size} highlighted row(s) look like duplicates (same plate, employee, expected and paid).
+                Edit or remove the extra one — or leave them if they are genuinely separate jobs.
+              </div>
+            )}
             <div className="overflow-x-auto mt-3">
               <table className="w-full text-sm border-collapse">
                 <thead>
@@ -1161,15 +1398,43 @@ export default function ManagerPanel() {
                     <th className="border border-gray-300 dark:border-slate-600 px-3 py-1.5">Emp</th>
                     <th className="border border-gray-300 dark:border-slate-600 px-3 py-1.5 text-right">Paid (Ksh)</th>
                     <th className="border border-gray-300 dark:border-slate-600 px-3 py-1.5 text-right">Shortfall (Ksh)</th>
+                    <th className="border border-gray-300 dark:border-slate-600 px-3 py-1.5">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {transactions.length === 0 && (
-                    <tr><td colSpan={7} className="border border-gray-300 dark:border-slate-600 text-center py-6 text-gray-400">No activities recorded.</td></tr>
+                    <tr><td colSpan={8} className="border border-gray-300 dark:border-slate-600 text-center py-6 text-gray-400">No activities recorded.</td></tr>
                   )}
-                  {transactions.map((tx, i) => (
-                    <tr key={tx.id}>
-                      <td className="border border-gray-300 dark:border-slate-600 px-2 py-1 text-center text-gray-400">{i + 1}</td>
+                  {transactions.map((tx, i) => editingTx === tx.id ? (
+                    <tr key={tx.id} className="bg-yellow-100 dark:bg-yellow-900/30">
+                      <td className="border border-gray-300 dark:border-slate-600 px-2 py-1 text-center text-gray-400" colSpan={2}>Fixing</td>
+                      <td className="border border-gray-300 dark:border-slate-600 px-2 py-1" colSpan={2}>
+                        <select className="w-full p-1 text-xs border rounded dark:bg-slate-700" value={editForm.washer_id}
+                          onChange={e => setEditForm({ ...editForm, washer_id: e.target.value })}>
+                          {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                        </select>
+                      </td>
+                      <td className="border border-gray-300 dark:border-slate-600 px-2 py-1 font-mono text-xs" colSpan={2}>
+                        {tx.plate_number || tx.custom_category || tx.carpet_characteristics || '-'}
+                      </td>
+                      <td className="border border-gray-300 dark:border-slate-600 px-2 py-1" colSpan={3}>
+                        <div className="flex flex-wrap items-center gap-1">
+                          <input type="number" min="0" title="Expected" className="w-20 p-1 text-xs border rounded dark:bg-slate-700"
+                            value={editForm.expected_price} onChange={e => setEditForm({ ...editForm, expected_price: e.target.value })} />
+                          <input type="number" min="0" title="Cash" className="w-20 p-1 text-xs border rounded dark:bg-slate-700"
+                            value={editForm.cash_paid} onChange={e => setEditForm({ ...editForm, cash_paid: e.target.value })} />
+                          <input type="number" min="0" title="M-Pesa" className="w-20 p-1 text-xs border rounded dark:bg-slate-700"
+                            value={editForm.mpesa_paid} onChange={e => setEditForm({ ...editForm, mpesa_paid: e.target.value })} />
+                          <button onClick={() => saveSheetEdit(tx.id)} className="px-2 py-0.5 text-xs bg-green-600 text-white rounded">Save</button>
+                          <button onClick={() => setEditingTx(null)} className="px-2 py-0.5 text-xs bg-gray-400 text-white rounded">Cancel</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : (
+                    <tr key={tx.id} className={duplicateTxIds.has(tx.id) ? 'bg-yellow-200 dark:bg-yellow-900/50' : ''}>
+                      <td className="border border-gray-300 dark:border-slate-600 px-2 py-1 text-center text-gray-400">
+                        {i + 1}{duplicateTxIds.has(tx.id) ? ' ⚠' : ''}
+                      </td>
                       <td className="border border-gray-300 dark:border-slate-600 px-3 py-1 font-mono text-xs">{format(new Date(tx.timestamp), 'EEE HH:mm')}</td>
                       <td className="border border-gray-300 dark:border-slate-600 px-3 py-1 capitalize">{tx.custom_category || tx.category}</td>
                       <td className="border border-gray-300 dark:border-slate-600 px-3 py-1 font-mono text-xs">
@@ -1180,6 +1445,12 @@ export default function ManagerPanel() {
                       <td className="border border-gray-300 dark:border-slate-600 px-3 py-1 font-bold">{abbrMap[tx.washer_id] || empMap[tx.washer_id] || tx.washer_id}</td>
                       <td className="border border-gray-300 dark:border-slate-600 px-3 py-1 font-mono text-right">{tx.total_paid}</td>
                       <td className="border border-gray-300 dark:border-slate-600 px-3 py-1 font-mono text-right text-red-600">{tx.shortfall > 0 ? tx.shortfall : ''}</td>
+                      <td className="border border-gray-300 dark:border-slate-600 px-3 py-1">
+                        <div className="flex space-x-1">
+                          <button onClick={() => handleEdit(tx)} className="px-2 py-0.5 text-xs bg-blue-600 text-white rounded">Edit</button>
+                          <button onClick={() => handleDelete(tx.id)} className="px-2 py-0.5 text-xs bg-red-600 text-white rounded">Remove</button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                   {transactions.length > 0 && (
@@ -1187,6 +1458,7 @@ export default function ManagerPanel() {
                       <td className="border border-gray-300 dark:border-slate-600 px-2 py-1.5 text-center text-gray-500" colSpan={5}>Total</td>
                       <td className="border border-gray-300 dark:border-slate-600 px-3 py-1.5 font-mono text-right">{transactions.reduce((s, t) => s + (t.total_paid || 0), 0)}</td>
                       <td className="border border-gray-300 dark:border-slate-600 px-3 py-1.5 font-mono text-right text-red-600">{transactions.reduce((s, t) => s + (t.shortfall > 0 ? t.shortfall : 0), 0) || ''}</td>
+                      <td className="border border-gray-300 dark:border-slate-600" />
                     </tr>
                   )}
                 </tbody>

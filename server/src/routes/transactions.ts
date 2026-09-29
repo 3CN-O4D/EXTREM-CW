@@ -107,7 +107,11 @@ export interface CreateResult {
 }
 
 // Shared core used by POST /transactions/ and the carpet release flow.
-export async function createTransactionCore(data: CreateData, actor: UserRow): Promise<CreateResult> {
+export async function createTransactionCore(
+  data: CreateData,
+  actor: UserRow,
+  opts: { employeeBearsShortfall?: boolean } = {},
+): Promise<CreateResult> {
   const result = calculateTransaction(data);
   validateMisc(data);
 
@@ -117,6 +121,11 @@ export async function createTransactionCore(data: CreateData, actor: UserRow): P
   const md = data.carpet_metadata;
   const week_id = getCurrentWeekId();
   const now = new Date();
+
+  // Carpets: the employee earns their commission for the wash regardless of how
+  // much the customer has paid; the unpaid balance is tracked as a client debt
+  // (collected via the Debtors list) instead of charging the employee shortfall.
+  const employeeBearsShortfall = opts.employeeBearsShortfall ?? true;
 
   const client = await pool.connect();
   try {
@@ -163,14 +172,18 @@ export async function createTransactionCore(data: CreateData, actor: UserRow): P
     );
     const tx = insert.rows[0] as TxRow;
 
-    const credit = result.ledger_routing.credit_employee_wages;
-    const debit = result.ledger_routing.debit_employee_debt;
+    const credit = employeeBearsShortfall
+      ? result.ledger_routing.credit_employee_wages
+      : result.employee_financials.calculated_commission;
+    const debit = employeeBearsShortfall ? result.ledger_routing.debit_employee_debt : 0;
     await client.query(
       'UPDATE users SET payable_balance = payable_balance + $1, debt_balance = debt_balance + $2 WHERE id = $3',
       [credit, debit, data.washer_id],
     );
 
-    await syncShortfallDebt(client, tx.id, data.washer_id, debit, tx);
+    if (employeeBearsShortfall) {
+      await syncShortfallDebt(client, tx.id, data.washer_id, debit, tx);
+    }
 
     await syncChaiExpense(client, tx, result.transaction_summary.isolated_tip, washer.full_name ?? '');
     await client.query('COMMIT');

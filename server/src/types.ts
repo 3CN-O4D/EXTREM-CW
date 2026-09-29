@@ -113,7 +113,8 @@ export interface WeeklyLogRow {
 export interface CarpetRow {
   id: number;
   created_at: Date;
-  receiver_id: number;
+  receiver_id: number | null;
+  submitter_id: number | null;
   characteristics: string | null;
   client_name: string | null;
   customer_phone: string | null;
