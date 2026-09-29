@@ -18,8 +18,9 @@ export default function ManagerPanel() {
     bicycle: 50, motorcycle: 70, taxi: 150, car: 200,
     midrange: 300, lorry: 500, carpet: 300, other: 0
   };
-  const VACUUM_TIERS = [0, 200, 300];
-  const ENGINE_TIERS = [0, 200, 300];
+  const VACUUM_TIERS = [0, 300];
+  const ENGINE_TIERS = [0, 300];
+  const COMBO_PRICE = 600;
   const TAXI_TIER = 150;
 
   const [form, setForm] = useState({
@@ -44,15 +45,25 @@ export default function ManagerPanel() {
   const vacuumTiers = form.category === 'taxi' ? [0, TAXI_TIER, ...VACUUM_TIERS.filter(t => t > 0)] : VACUUM_TIERS;
   const engineTiers = form.category === 'taxi' ? [0, TAXI_TIER, ...ENGINE_TIERS.filter(t => t > 0)] : ENGINE_TIERS;
 
+  const computePrice = (cat: any, vacuum: number, engine: number) => {
+    if (vacuum > 0 && engine > 0) return COMBO_PRICE;
+    if (vacuum > 0 || engine > 0) return (standardPrices[cat] || 0) + (vacuum > 0 ? vacuum : engine);
+    return standardPrices[cat] || 0;
+  };
+
   const setTier = (key: 'vacuum_tier' | 'engine_tier', value: number) => {
-    setForm(f => ({ ...f, [key]: value, expected_price: Math.max(0, toNum(f.expected_price) + value - (f[key] || 0)) }));
+    setForm(f => {
+      const vacuum = key === 'vacuum_tier' ? value : f.vacuum_tier;
+      const engine = key === 'engine_tier' ? value : f.engine_tier;
+      return { ...f, [key]: value, expected_price: computePrice(f.category, vacuum, engine) };
+    });
   };
 
   const setCat = (cat: any) => {
     setForm(f => {
       const vacuum = f.vacuum_tier === TAXI_TIER && cat !== 'taxi' ? 0 : f.vacuum_tier;
       const engine = f.engine_tier === TAXI_TIER && cat !== 'taxi' ? 0 : f.engine_tier;
-      return { ...f, category: cat, vacuum_tier: vacuum, engine_tier: engine, expected_price: (standardPrices[cat] || 0) + vacuum + engine };
+      return { ...f, category: cat, vacuum_tier: vacuum, engine_tier: engine, expected_price: computePrice(cat, vacuum, engine) };
     });
   };
 
@@ -64,12 +75,18 @@ export default function ManagerPanel() {
   const [tipForm, setTipForm] = useState({ employee_id: '', amount: 0, method: 'wages' });
   const [expenseForm, setExpenseForm] = useState({ description: '', amount: 0, category: 'General' });
   const [repaymentForm, setRepaymentForm] = useState({ employee_id: '', amount: 0 });
-  const [activeTab, setActiveTab] = useState<'transaction' | 'expense' | 'repayment' | 'tip' | 'debt' | 'sheet' | 'carpets'>('transaction');
+  const [activeTab, setActiveTab] = useState<'transaction' | 'expense' | 'repayment' | 'tip' | 'debt' | 'sheet' | 'carpets' | 'payday' | 'client-debts'>('transaction');
   const [debts, setDebts] = useState<any[]>([]);
   const [debtForm, setDebtForm] = useState({
     employee_id: '', amount: 0, service: '', paid: 0, paid_date: '', notes: ''
   });
   const [sheet, setSheet] = useState<any>({ summary: null, employees: [], expenses: [] });
+  const [settlementLogs, setSettlementLogs] = useState<any[]>([]);
+  const [settlementResult, setSettlementResult] = useState<any>(null);
+  const [clientDebts, setClientDebts] = useState<any[]>([]);
+  const [clientDebtForm, setClientDebtForm] = useState({
+    client_name: '', customer_phone: '', description: '', amount: 0, date: format(new Date(), 'yyyy-MM-dd')
+  });
 
   const empMap = Object.fromEntries(employees.map(e => [e.id, e.name]));
   const abbrMap = Object.fromEntries(employees.map(e => [e.id, e.abbreviation]));
@@ -362,6 +379,63 @@ export default function ManagerPanel() {
 
   const weekStart = startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
   const weekDays = [...Array(7)].map((_, i) => addDays(weekStart, i));
+  const weekId = format(weekStart, 'yyyy-II');
+
+  const fetchSettlements = async () => {
+    try { const res = await api.get('/settlements/'); setSettlementLogs(res.data); } catch {}
+  };
+  const fetchClientDebts = async () => {
+    try { const res = await api.get('/client-debts/'); setClientDebts(res.data); } catch {}
+  };
+
+  useEffect(() => { fetchSettlements(); fetchClientDebts(); }, []);
+
+  const handleSettleWeek = async () => {
+    if (!confirm(`Run payday for the week of ${format(weekStart, 'PPP')} (${weekId})?\n\nEveryone's weekly wages are paid out after covering ALL open debts. Anything short carries forward; payable balance resets to zero so Monday starts fresh. A week can only be settled once.\n\nContinue?`)) return;
+    try {
+      const res = await api.post('/settlements/', { week_id: weekId });
+      setSettlementResult(res.data);
+      alert('Payday complete! See the breakdown below.');
+      fetchSettlements();
+      api.get('/stats/employees').then(r => setEmployees(r.data));
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Could not settle this week');
+      fetchSettlements();
+    }
+  };
+
+  const handleClientDebtSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await api.post('/client-debts/', {
+        client_name: clientDebtForm.client_name,
+        customer_phone: clientDebtForm.customer_phone || null,
+        description: clientDebtForm.description || null,
+        amount: toNum(clientDebtForm.amount),
+        date: clientDebtForm.date || null
+      });
+      alert('Client debt logged!');
+      setClientDebtForm({ client_name: '', customer_phone: '', description: '', amount: 0, date: format(new Date(), 'yyyy-MM-dd') });
+      fetchClientDebts();
+    } catch { alert('Error logging client debt'); }
+  };
+
+  const handleClientDebtPaid = async (cd: any) => {
+    const extra = prompt(`Extra payment for ${cd.client_name} (paid so far Ksh ${cd.paid}, balance Ksh ${cd.balance}):`, String(cd.balance));
+    if (extra === null) return;
+    try {
+      await api.put(`/client-debts/${cd.id}`, { paid: cd.paid + toNum(extra), paid_date: format(new Date(), 'yyyy-MM-dd') });
+      fetchClientDebts();
+    } catch { alert('Error recording payment'); }
+  };
+
+  const handleClientDebtDelete = async (cd: any) => {
+    if (!confirm(`Delete client debt for "${cd.client_name}"? This removes the record.`)) return;
+    try {
+      await api.delete(`/client-debts/${cd.id}`);
+      fetchClientDebts();
+    } catch { alert('Error deleting client debt'); }
+  };
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8">
@@ -375,6 +449,8 @@ export default function ManagerPanel() {
         <button onClick={() => setActiveTab('debt')} className={`px-6 py-2 font-medium ${activeTab === 'debt' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-gray-500'}`}>Log Debt</button>
         <button onClick={() => setActiveTab('sheet')} className={`px-6 py-2 font-medium ${activeTab === 'sheet' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-gray-500'}`}>Day Sheet</button>
         <button onClick={() => setActiveTab('carpets')} className={`px-6 py-2 font-medium ${activeTab === 'carpets' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-gray-500'}`}>Carpets</button>
+        <button onClick={() => setActiveTab('payday')} className={`px-6 py-2 font-medium ${activeTab === 'payday' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-gray-500'}`}>Payday</button>
+        <button onClick={() => setActiveTab('client-debts')} className={`px-6 py-2 font-medium ${activeTab === 'client-debts' ? 'border-b-2 border-primary-600 text-primary-600' : 'text-gray-500'}`}>Client Debts</button>
       </div>
 
       <div className="flex items-center space-x-2 overflow-x-auto pb-2">
@@ -791,6 +867,177 @@ export default function ManagerPanel() {
         </div>
         <button type="submit" className="w-full bg-green-600 text-white font-bold py-3 rounded hover:bg-green-700">Confirm Repayment</button>
       </form>
+      ) : activeTab === 'payday' ? (
+      <div className="space-y-4">
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <h2 className="text-xl font-bold text-emerald-600">Weekly Payday</h2>
+              <p className="text-sm text-gray-500">Week {weekId} · {format(weekStart, 'EEE dd/MM/yyyy')} → {format(addDays(weekStart, 6), 'EEE dd/MM/yyyy')}</p>
+            </div>
+            <button onClick={handleSettleWeek} className="bg-emerald-600 text-white font-bold px-5 py-2.5 rounded hover:bg-emerald-700 whitespace-nowrap">
+              Settle {weekId}
+            </button>
+          </div>
+          <p className="text-sm text-gray-500">
+            Sunday-evening payday: each employee's weekly wages (commission + wages-tips) are paid out after covering
+            ALL open debts. Anything short carries forward; payable balance resets to zero so Monday starts fresh.
+            A week can only be settled once.
+          </p>
+        </div>
+
+        {settlementResult && (
+          <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow space-y-3">
+            <h3 className="text-lg font-semibold">Payday result — Week {settlementResult.week_id}</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="bg-gray-50 dark:bg-slate-900 p-3 rounded text-center">
+                <p className="text-xs text-gray-500">Cash Paid Out</p>
+                <p className="text-xl font-bold font-mono text-green-600">Ksh {settlementResult.cash_paid_total}</p>
+              </div>
+              <div className="bg-gray-50 dark:bg-slate-900 p-3 rounded text-center">
+                <p className="text-xs text-gray-500">Debt Carried Forward</p>
+                <p className="text-xl font-bold font-mono text-amber-600">Ksh {settlementResult.debt_carried_total}</p>
+              </div>
+              <div className="bg-gray-50 dark:bg-slate-900 p-3 rounded text-center">
+                <p className="text-xs text-gray-500">Week Profit</p>
+                <p className="text-xl font-bold font-mono text-blue-600">Ksh {settlementResult.total_profit}</p>
+              </div>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b">
+                    <th className="py-2">Employee</th>
+                    <th className="py-2 text-right">Wages (tx)</th>
+                    <th className="py-2 text-right">Wages (tips)</th>
+                    <th className="py-2 text-right">Debts Covered</th>
+                    <th className="py-2 text-right">Cash Paid</th>
+                    <th className="py-2 text-right">Carried Forward</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {settlementResult.employees.map((e: any) => (
+                    <tr key={e.id} className="border-b">
+                      <td className="py-2 font-medium">{e.full_name} <span className="text-gray-400 text-xs">({e.abbreviation})</span></td>
+                      <td className="py-2 font-mono text-right">{e.wages}</td>
+                      <td className="py-2 font-mono text-right">{e.tips_wages}</td>
+                      <td className="py-2 font-mono text-right text-red-600">{e.debts_covered}</td>
+                      <td className="py-2 font-mono text-right text-green-600">{e.cash_paid}</td>
+                      <td className="py-2 font-mono text-right text-amber-600">{e.carried_forward}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
+          <h2 className="text-xl font-semibold mb-4">Settlement History</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="py-2">Week</th>
+                  <th className="py-2">Range</th>
+                  <th className="py-2 text-right">Revenue</th>
+                  <th className="py-2 text-right">Expenses</th>
+                  <th className="py-2 text-right">Labor</th>
+                  <th className="py-2 text-right">Profit</th>
+                  <th className="py-2 text-right">Cash Paid</th>
+                  <th className="py-2 text-right">Debt Carried</th>
+                </tr>
+              </thead>
+              <tbody>
+                {settlementLogs.length === 0 && (
+                  <tr><td colSpan={8} className="py-6 text-center text-gray-400">No weeks settled yet.</td></tr>
+                )}
+                {settlementLogs.map((log: any) => (
+                  <tr key={log.id} className="border-b">
+                    <td className="py-2 font-mono">{log.week_id}</td>
+                    <td className="py-2 text-xs">{format(new Date(log.start_date), 'dd/MM/yy')} → {format(new Date(log.end_date), 'dd/MM/yy')}</td>
+                    <td className="py-2 font-mono text-right">{log.total_revenue}</td>
+                    <td className="py-2 font-mono text-right text-red-600">{log.total_expenses}</td>
+                    <td className="py-2 font-mono text-right">{log.total_labor_expense}</td>
+                    <td className="py-2 font-mono text-right text-blue-600">{log.total_profit}</td>
+                    <td className="py-2 font-mono text-right text-green-600">{log.data?.cash_paid_total ?? '-'}</td>
+                    <td className="py-2 font-mono text-right text-amber-600">{log.data?.debt_carried_total ?? '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      ) : activeTab === 'client-debts' ? (
+      <div className="space-y-4">
+        <form onSubmit={handleClientDebtSubmit} className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow space-y-4">
+          <h2 className="text-xl font-bold text-indigo-600">Log Client Debt</h2>
+          <p className="text-sm text-gray-500">Money a customer owes the business (e.g. unpaid carpet wash). Cleared any day — separate from employee debts.</p>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="block text-sm font-medium">Client Name</label>
+              <input className="w-full p-2 border rounded dark:bg-slate-700" value={clientDebtForm.client_name}
+                onChange={e => setClientDebtForm({...clientDebtForm, client_name: e.target.value})} required /></div>
+            <div><label className="block text-sm font-medium">Amount (Ksh)</label>
+              <input type="number" min="0" className="w-full p-2 border rounded dark:bg-slate-700" value={clientDebtForm.amount}
+                onChange={e => setClientDebtForm({...clientDebtForm, amount: toNum(e.target.value)})} required /></div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div><label className="block text-sm font-medium">Phone (optional)</label>
+              <input className="w-full p-2 border rounded dark:bg-slate-700" placeholder="0712 345 678"
+                value={clientDebtForm.customer_phone} onChange={e => setClientDebtForm({...clientDebtForm, customer_phone: e.target.value})} /></div>
+            <div><label className="block text-sm font-medium">Date</label>
+              <input type="date" className="w-full p-2 border rounded dark:bg-slate-700" value={clientDebtForm.date}
+                onChange={e => setClientDebtForm({...clientDebtForm, date: e.target.value})} /></div>
+          </div>
+          <div><label className="block text-sm font-medium">Description (optional)</label>
+            <input className="w-full p-2 border rounded dark:bg-slate-700" placeholder="e.g. Carpet wash, missed payment"
+              value={clientDebtForm.description} onChange={e => setClientDebtForm({...clientDebtForm, description: e.target.value})} /></div>
+          <button type="submit" className="w-full bg-indigo-600 text-white font-bold py-3 rounded hover:bg-indigo-700">Log Client Debt</button>
+        </form>
+
+        <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
+          <h2 className="text-xl font-semibold mb-4">Client Debt Records</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b">
+                  <th className="py-2">Date</th>
+                  <th className="py-2">Client</th>
+                  <th className="py-2">Description</th>
+                  <th className="py-2 text-right">Amount</th>
+                  <th className="py-2 text-right">Paid</th>
+                  <th className="py-2 text-right">Balance</th>
+                  <th className="py-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clientDebts.length === 0 && (
+                  <tr><td colSpan={7} className="py-6 text-center text-gray-400">No client debts logged.</td></tr>
+                )}
+                {clientDebts.map(cd => (
+                  <tr key={cd.id} className="border-b">
+                    <td className="py-2 text-xs">{format(new Date(cd.date), 'EEE dd/MM/yy')}</td>
+                    <td className="py-2 font-medium">{cd.client_name}</td>
+                    <td className="py-2">{cd.description || '-'}</td>
+                    <td className="py-2 font-mono text-right">Ksh {cd.amount}</td>
+                    <td className="py-2 font-mono text-right text-green-600">Ksh {cd.paid}</td>
+                    <td className="py-2 font-mono text-right font-bold text-red-600">Ksh {cd.balance}</td>
+                    <td className="py-2">
+                      <div className="flex space-x-1">
+                        <button onClick={() => handleClientDebtPaid(cd)}
+                          className="px-2 py-1 text-xs bg-green-600 text-white rounded">Pay</button>
+                        <button onClick={() => handleClientDebtDelete(cd)}
+                          className="px-2 py-1 text-xs bg-red-600 text-white rounded">Del</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
       ) : null}
 
       {activeTab === 'carpets' && (

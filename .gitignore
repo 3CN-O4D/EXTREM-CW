@@ -2,3 +2,6 @@
 .env
 *.log
 __pycache__/
+frontend/dist/
+server/node_modules/
+frontend/node_modules/

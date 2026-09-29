@@ -16,21 +16,21 @@ const base = (over: Record<string, unknown> = {}) => ({
 });
 
 describe('calculateTransaction', () => {
-  it('full package floor: expected 500 -> 600, commission 180, shortfall 100, wage 80', () => {
+  it('full package floor: expected 500 -> 600, commission 180, shortfall forgiven by 200 makes allowance, wage 180', () => {
     const r = calculateTransaction(
       base({ expected_price: 500, cash_paid: 500, has_car_wash: true, has_vacuum: true, has_engine_wash: true }),
     );
     expect(r.transaction_summary.expected_price).toBe(600);
     expect(r.transaction_summary.net_business_remittance).toBe(500);
-    expect(r.transaction_summary.shortfall_detected).toBe(100);
+    expect(r.transaction_summary.shortfall_detected).toBe(0);
     expect(r.employee_financials.calculated_commission).toBe(180);
-    expect(r.employee_financials.net_wage_before_tip).toBe(80);
-    expect(r.employee_financials.final_payout_output).toBe(80);
-    // Ledger: wage credited 80, no debt
-    expect(r.ledger_routing.credit_employee_wages).toBe(80);
+    expect(r.employee_financials.net_wage_before_tip).toBe(180);
+    expect(r.employee_financials.final_payout_output).toBe(180);
+    // Ledger: wage credited 180, no debt
+    expect(r.ledger_routing.credit_employee_wages).toBe(180);
     expect(r.ledger_routing.debit_employee_debt).toBe(0);
     expect(r.ledger_routing.business_gross_revenue).toBe(500);
-    expect(r.ledger_routing.business_labor_expense).toBe(80);
+    expect(r.ledger_routing.business_labor_expense).toBe(180);
   });
 
   it('motorcycle flat rate: 70 -> commission 30', () => {
@@ -106,5 +106,16 @@ describe('calculateTransaction', () => {
     expect(r.employee_financials.calculated_commission).toBe(70);
     expect(r.employee_financials.final_payout_output).toBe(-30);
     expect(r.ledger_routing.debit_employee_debt).toBe(30);
+  });
+
+  it('makes allowance forgives up to 200 of a shortfall, and only the excess counts', () => {
+    // car + engine = 500 (expected), only 200 collected
+    const r = calculateTransaction(base({ expected_price: 500, cash_paid: 200, has_engine_wash: true }));
+    expect(r.transaction_summary.shortfall_detected).toBe(100); // 300 gross - 200 allowance
+    expect(r.employee_financials.calculated_commission).toBe(150);
+    expect(r.employee_financials.final_payout_output).toBe(50); // 150 - 100
+    // a plain car with the same gap keeps the full shortfall (no allowance)
+    const p = calculateTransaction(base({ expected_price: 500, cash_paid: 200 }));
+    expect(p.transaction_summary.shortfall_detected).toBe(300);
   });
 });

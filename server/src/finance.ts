@@ -75,7 +75,12 @@ export function calculateTransaction(data: FinanceInput): FinanceResult {
   isolated_tip += data.manual_tip;
 
   const net_business_remittance = total_paid - isolated_tip;
-  const shortfall = Math.max(0.0, expected_price - net_business_remittance);
+  const gross_shortfall = Math.max(0.0, expected_price - net_business_remittance);
+
+  // Vacuum / engine wash are flexible: Ksh 300 or Ksh 200 are both acceptable,
+  // so up to Ksh 200 of recorded shortfall on makes never counts as a debt.
+  const makes_allowance = data.has_vacuum || data.has_engine_wash ? 200.0 : 0.0;
+  const shortfall = Math.max(0.0, gross_shortfall - makes_allowance);
 
   // 4. Shortfall & Zero-Remittance Penalties
   let net_wage_before_tip = 0.0;

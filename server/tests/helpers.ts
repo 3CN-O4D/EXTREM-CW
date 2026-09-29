@@ -134,6 +134,11 @@ export async function restoreDb(snap: ReturnType<typeof snapshotDb> extends Prom
   }
 }
 
+export async function clearSettlement(weekId: string) {
+  const { pool } = await import('../src/db');
+  await pool.query('DELETE FROM weekly_logs WHERE week_id = $1', [weekId]);
+}
+
 export async function startServer() {
   const app = createApp();
   const server = await new Promise<import('http').Server>((resolve) => {

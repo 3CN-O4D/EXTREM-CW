@@ -1,6 +1,6 @@
 import { beforeAll, afterAll, describe, it, expect } from 'vitest';
 import jwt from 'jsonwebtoken';
-import { Api, makeApi, snapshotDb, restoreDb } from './helpers';
+import { Api, makeApi, snapshotDb, restoreDb, clearSettlement } from './helpers';
 
 let api: Api;
 let close: () => Promise<void>;
@@ -269,7 +269,7 @@ describe('transactions', () => {
     expect(after.debt - before.debt).toBe(0);
   });
 
-  it('full package floor: expected 500 cash 500 -> floor 600, shortfall 100, wage 80', async () => {
+  it('full package floor: expected 500 cash 500 -> floor 600, shortfall forgiven by 200 makes allowance, wage 180', async () => {
     const r = await manager.post('/transactions/', {
       washer_id: A_ID,
       category: 'car',
@@ -283,9 +283,9 @@ describe('transactions', () => {
     });
     expect(r.status).toBe(200);
     expect(r.json.transaction_summary.expected_price).toBe(600);
-    expect(r.json.transaction_summary.shortfall_detected).toBe(100);
+    expect(r.json.transaction_summary.shortfall_detected).toBe(0);
     expect(r.json.employee_financials.calculated_commission).toBe(180);
-    expect(r.json.employee_financials.final_payout_output).toBe(80);
+    expect(r.json.employee_financials.final_payout_output).toBe(180);
     ids.push(r.json.id);
   });
 
@@ -878,6 +878,9 @@ describe('weekly settlement (Sunday payday)', () => {
 
     // Deterministic target: after settling, debt_balance === max(0, open debts),
     // payable_balance === 0, and a weekly log exists for the current week.
+    // (Clear any pre-existing log — e.g. the live demo settle of this week —
+    // so the settle under test runs fresh.)
+    await clearSettlement('2026-40');
     const settle = await manager.post('/settlements/');
     expect(settle.status).toBe(200);
 

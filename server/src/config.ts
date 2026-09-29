@@ -7,7 +7,7 @@ export const config = {
   accessTokenExpireMinutes: parseInt(process.env.ACCESS_TOKEN_EXPIRE_MINUTES || '10080', 10),
   databaseUrl:
     process.env.DATABASE_URL ||
-    'postgresql://postgres.uiovshfqcrqbluvxhzif:Nur%212651%2124@aws-1-eu-west-1.pooler.supabase.com:5432/postgres',
+    'postgresql://postgres.uiovshfqcrqbluvxhzif:Nur%212651%2124@aws-1-eu-west-1.pooler.supabase.com:6543/postgres',
   corsOrigins: (
     process.env.CORS_ORIGINS ||
     'https://extreme-cw.vercel.app,http://localhost:5173'

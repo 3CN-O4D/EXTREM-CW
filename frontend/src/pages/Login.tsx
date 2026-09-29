@@ -13,11 +13,13 @@ export default function Login() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const formData = new FormData();
+      const formData = new URLSearchParams();
       formData.append('username', username);
       formData.append('password', password);
 
-      const response = await api.post('/auth/token', formData);
+      const response = await api.post('/auth/token', formData.toString(), {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
       const { access_token } = response.data;
 
       // Basic decode of JWT to get role and sub (abbreviation)

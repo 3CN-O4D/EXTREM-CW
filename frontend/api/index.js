@@ -33936,7 +33936,7 @@ var config = {
   secretKey: process.env.SECRET_KEY || "03f2b7c6d91e4aa58c1f9be4d7a2c6b8e5f304a17d92b6c48a1d0e9f3c7b5a2d",
   algorithm: "HS256",
   accessTokenExpireMinutes: parseInt(process.env.ACCESS_TOKEN_EXPIRE_MINUTES || "10080", 10),
-  databaseUrl: process.env.DATABASE_URL || "postgresql://postgres.uiovshfqcrqbluvxhzif:Nur%212651%2124@aws-1-eu-west-1.pooler.supabase.com:5432/postgres",
+  databaseUrl: process.env.DATABASE_URL || "postgresql://postgres.uiovshfqcrqbluvxhzif:Nur%212651%2124@aws-1-eu-west-1.pooler.supabase.com:6543/postgres",
   corsOrigins: (process.env.CORS_ORIGINS || "https://extreme-cw.vercel.app,http://localhost:5173").split(",").map((o) => o.trim()).filter(Boolean)
 };
 
@@ -34078,7 +34078,9 @@ function calculateTransaction(data) {
   }
   isolated_tip += data.manual_tip;
   const net_business_remittance = total_paid - isolated_tip;
-  const shortfall = Math.max(0, expected_price - net_business_remittance);
+  const gross_shortfall = Math.max(0, expected_price - net_business_remittance);
+  const makes_allowance = data.has_vacuum || data.has_engine_wash ? 200 : 0;
+  const shortfall = Math.max(0, gross_shortfall - makes_allowance);
   let net_wage_before_tip = 0;
   if (net_business_remittance === 0) {
     net_wage_before_tip = -expected_price;
