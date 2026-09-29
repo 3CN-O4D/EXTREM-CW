@@ -607,6 +607,37 @@ export default function ManagerPanel() {
           </div>
         )}
 
+        {form.category !== 'carpet' && (
+          <div className="p-4 border rounded bg-fuchsia-50 dark:bg-slate-900 border-fuchsia-200 space-y-2">
+            <p className="text-sm font-semibold text-fuchsia-700 dark:text-fuchsia-400">💵 Employee Tip</p>
+            <div className="flex flex-wrap gap-x-6 gap-y-1">
+              <label className="flex items-center space-x-2 text-sm">
+                <input type="radio" name="tip_method" value="cash" checked={form.tip_method === 'cash'}
+                  onChange={e => setForm({...form, tip_method: e.target.value})} />
+                <span>Cash tip — hand it over now, auto-logged as an expense</span>
+              </label>
+              <label className="flex items-center space-x-2 text-sm">
+                <input type="radio" name="tip_method" value="wages" checked={form.tip_method === 'wages'}
+                  onChange={e => setForm({...form, tip_method: e.target.value})} />
+                <span>Add to wages (paid out on payday)</span>
+              </label>
+            </div>
+            <div className="grid grid-cols-2 gap-2 items-end">
+              <div>
+                <label className="block text-xs font-medium">Tip amount (Ksh)</label>
+                <input type="number" min="0" className="w-full p-2 border rounded dark:bg-slate-700 text-sm"
+                  value={form.manual_tip} onChange={e => setForm({...form, manual_tip: toNum(e.target.value)})}
+                  placeholder="e.g. 50" />
+              </div>
+              <p className="text-xs text-gray-500">
+                {extra > 0 && extraChoice === 'tip'
+                  ? `The Ksh ${extra} overpayment above is also a tip and follows this choice.`
+                  : 'Overpayments count as tips by default (see the Extra box above).'}
+              </p>
+            </div>
+          </div>
+        )}
+
         {form.mpesa_paid > 0 && (
           <div className="grid grid-cols-2 gap-4 p-4 border rounded bg-green-50 dark:bg-slate-900 border-green-200">
             <div><label className="block text-sm font-medium">M-Pesa Sender Name</label>
@@ -1291,6 +1322,18 @@ export default function ManagerPanel() {
                               value={editForm.misc_description} onChange={e => setEditForm({...editForm, misc_description: e.target.value})} />
                           </div>
                         )}
+                        {editForm.category !== 'carpet' && (
+                          <div className="flex items-center gap-1 mt-1">
+                            <input type="number" min="0" className="w-16 p-1 text-xs border rounded dark:bg-slate-700"
+                              title="Manual tip amount" placeholder="Tip"
+                              value={editForm.manual_tip} onChange={e => setEditForm({...editForm, manual_tip: e.target.value})} />
+                            <select className="p-1 text-xs border rounded dark:bg-slate-700" title="Tip handling"
+                              value={editForm.tip_method} onChange={e => setEditForm({...editForm, tip_method: e.target.value})}>
+                              <option value="cash">Cash (expense)</option>
+                              <option value="wages">Wages</option>
+                            </select>
+                          </div>
+                        )}
                       </td>
                      <td className="py-2 text-xs">-</td>
                      <td className="py-2">
@@ -1307,6 +1350,12 @@ export default function ManagerPanel() {
                      <td className="py-2 capitalize">{tx.custom_category || tx.category}</td>
                      <td className="py-2 font-mono text-xs">{tx.category === 'carpet' || tx.category === 'other' ? '-' : (tx.plate_number || '-')}</td>
 <td className="py-2 font-mono">Ksh {tx.total_paid}
+                      {tx.isolated_tip > 0 && (
+                        <span className={`ml-1 text-[10px] rounded px-1 py-0.5 font-medium ${tx.tip_method === 'wages' ? 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900 dark:text-fuchsia-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'}`}
+                          title={tx.tip_method === 'wages' ? 'Tip added to wages (payday)' : 'Tip given as cash (logged as expense)'}>
+                          ❤ Tip {tx.isolated_tip} · {tx.tip_method === 'wages' ? 'Wages' : 'Cash'}
+                        </span>
+                      )}
                       {tx.misc_amount > 0 && (
                         <span className="ml-1 text-[10px] bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300 rounded px-1 py-0.5 font-medium" title={tx.misc_description || 'Misc'}>
                           Misc {tx.misc_amount}{tx.misc_description ? ` · ${tx.misc_description}` : ''}
