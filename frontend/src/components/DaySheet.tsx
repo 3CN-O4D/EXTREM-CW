@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../services/api';
+import { compressVariants } from '../utils/image';
 import { parsePaymentSms } from '../utils/smsParser';
 import { InlineError } from './States';
 
@@ -22,11 +23,11 @@ export interface DaySheetProps {
 }
 
 const STANDARD: Record<string, number> = {
-  bicycle: 50, motorcycle: 70, taxi: 150, car: 200, midrange: 300, lorry: 500, carpet: 300, other: 0,
+  bicycle: 50, motorcycle: 70, taxi: 150, car: 200, midrange: 300, lorry: 500, carpet: 300, vacuum: 300, engine: 300, other: 0,
 };
 const CATEGORY_LABELS: Record<string, string> = {
   bicycle: 'Bicycle', motorcycle: 'Motorcycle', taxi: 'Taxi', car: 'Car',
-  midrange: 'Midrange', lorry: 'Lorry', carpet: 'Carpet', other: 'Other',
+  midrange: 'Midrange', lorry: 'Lorry', carpet: 'Carpet', vacuum: 'Vacuum', engine: 'Engine Wash', other: 'Other',
 };
 const PLATE_CATS = ['car', 'taxi', 'midrange', 'lorry'];
 
@@ -51,29 +52,6 @@ type SheetRow = {
 };
 function nowHHmm(): string {
   return format(new Date(), 'HH:mm');
-}
-
-function compressVariants(file: File): Promise<{ data: string; thumb: string }> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    const url = URL.createObjectURL(file);
-    img.onload = () => {
-      const draw = (maxW: number, quality: number) => {
-        const scale = Math.min(1, maxW / img.width);
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.round(img.width * scale);
-        canvas.height = Math.round(img.height * scale);
-        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
-        return canvas.toDataURL('image/jpeg', quality);
-      };
-      const data = draw(800, 0.72); // full photo, kept for detail views
-      const thumb = draw(120, 0.6); // small thumbnail for list/gallery payloads
-      URL.revokeObjectURL(url);
-      resolve({ data, thumb });
-    };
-    img.onerror = reject;
-    img.src = url;
-  });
 }
 
 const toNum = (v: any) => {
@@ -150,7 +128,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         const drafts = prev.filter((r) => r.draft && !r.saving);
         return [...txRes.data.map(txToRow), ...drafts];
       });
-      setCarpets(carpetRes.data.filter((c: any) => c.status === 'received'));
+      setCarpets(carpetRes.data.filter((c: any) => c.status !== 'released'));
       setSummary(sumRes.data);
       setLoadError('');
     } catch (err: any) {
@@ -197,9 +175,9 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         tip_method: 'cash',
         misc_amount: 0,
         misc_description: null,
-        has_car_wash: true,
-        has_vacuum: false,
-        has_engine_wash: false,
+        has_car_wash: PLATE_CATS.includes(cat),
+        has_vacuum: cat === 'vacuum',
+        has_engine_wash: cat === 'engine',
         plate_number: PLATE_CATS.includes(cat) ? merged.item || null : null,
         custom_category: cat === 'other' ? merged.item || null : null,
         carpet_metadata: null,
@@ -242,7 +220,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
     );
   };
 
-  const addDraft = (category: string) => {
+  const addDraft = (category: string, expected?: number) => {
     setRows((prev) => [
       ...prev,
       {
@@ -257,7 +235,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         sender: '',
         ref: '',
         time: nowHHmm(),
-        expected: STANDARD[category] || 0,
+        expected: expected !== undefined ? expected : STANDARD[category] || 0,
       },
     ]);
   };
@@ -519,17 +497,21 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-200/80 bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-900/60">
           <span className="mr-1 text-xs font-bold uppercase tracking-wider text-slate-400">Add row:</span>
           {[
-            ['car', 'Car · 200'],
-            ['taxi', 'Taxi · 150'],
-            ['midrange', 'Mid · 300'],
-            ['lorry', 'Lorry · 500'],
-            ['motorcycle', 'Bike · 70'],
-            ['bicycle', 'Cycle · 50'],
-            ['other', 'Other'],
-          ].map(([cat, label]) => (
+            { cat: 'car', label: 'Car · 200', expected: 200 },
+            { cat: 'taxi', label: 'Taxi · 150', expected: 150 },
+            { cat: 'midrange', label: 'Mid · 300', expected: 300 },
+            { cat: 'lorry', label: 'Lorry · 500', expected: 500 },
+            { cat: 'motorcycle', label: 'Bike · 70', expected: 70 },
+            { cat: 'bicycle', label: 'Cycle · 50', expected: 50 },
+            { cat: 'other', label: 'Other', expected: 0 },
+            { cat: 'vacuum', label: 'Vacuum · 300', expected: 300 },
+            { cat: 'vacuum', label: 'Vacuum · 200', expected: 200 },
+            { cat: 'engine', label: 'Engine · 300', expected: 300 },
+            { cat: 'engine', label: 'Engine · 200', expected: 200 },
+          ].map(({ cat, label, expected }) => (
             <button
-              key={cat}
-              onClick={() => addDraft(cat)}
+              key={`${cat}-${expected}`}
+              onClick={() => addDraft(cat, expected)}
               className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand-300 hover:text-brand-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:text-white"
             >
               <Plus size={12} className="mr-1 inline" />{label}
@@ -557,7 +539,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
           <div className="flex items-center justify-between border-b border-slate-200/80 px-5 py-3 dark:border-white/10">
             <div>
               <h3 className="text-sm font-black tracking-tight">Carpets in the shop ({carpets.length})</h3>
-              <p className="muted text-xs">Received carpets waiting to be washed or released.</p>
+              <p className="muted text-xs">Carpets in the shop — received, washed or ready to release.</p>
             </div>
             <button onClick={() => setShowRelease(true)} className="btn-primary px-3 py-1.5 text-xs">
               Release
@@ -566,8 +548,8 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
           <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
             {carpets.map((c) => (
               <div key={c.id} className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/5">
-                {c.image_thumb || c.image_data ? (
-                  <img src={c.image_thumb || c.image_data} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" />
+                {c.image_thumb ? (
+                  <img src={c.image_thumb} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" />
                 ) : (
                   <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400 dark:bg-white/5">
                     <ImageIcon size={20} />
@@ -749,8 +731,8 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
                         }`}
                       >
                         <div className="relative aspect-square w-full overflow-hidden bg-slate-100 dark:bg-white/5">
-                          {c.image_thumb || c.image_data ? (
-                            <img src={c.image_thumb || c.image_data} alt="" className="h-full w-full object-cover transition group-hover:scale-105" />
+                          {c.image_thumb ? (
+                            <img src={c.image_thumb} alt="" className="h-full w-full object-cover transition group-hover:scale-105" />
                           ) : (
                             <span className="flex h-full w-full items-center justify-center text-slate-400"><ImageIcon size={22} /></span>
                           )}

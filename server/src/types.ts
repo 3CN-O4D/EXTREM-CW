@@ -65,7 +65,8 @@ export interface RepaymentRow {
 
 export interface DebtRow {
   id: number;
-  employee_id: number;
+  employee_id: number | null;
+  other_name: string | null;
   amount: number;
   service: string | null;
   date: Date;
@@ -120,11 +121,17 @@ export interface CarpetRow {
   customer_phone: string | null;
   image_data: string | null;
   image_thumb: string | null;
+  image_washed: string | null;
+  image_washed_thumb: string | null;
+  image_ready: string | null;
+  image_ready_thumb: string | null;
   expected_price: number;
   cash_paid: number;
   mpesa_paid: number;
   is_washed: boolean;
-  status: string; // 'received' | 'released'
+  status: string; // 'received' | 'washed' | 'ready' | 'released'
+  washed_at: Date | null;
+  ready_at: Date | null;
   released_at: Date | null;
 }
 

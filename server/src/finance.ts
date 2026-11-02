@@ -53,18 +53,22 @@ export function calculateTransaction(data: FinanceInput): FinanceResult {
   // 2. Commission Calculation
   let commission = 0.0;
   if (expected_price < 70) {
-    commission = 0.0;
-  } else if (data.category === 'taxi' && expected_price === 100) {
-    commission = 0.0;
+    commission = 0.0; // motorcycle paid 50 -> 0 commission
   } else if (data.category === 'motorcycle' && expected_price === 70) {
-    commission = 30.0;
+    commission = 30.0; // motorcycle paid 70 -> 30 commission
   } else if (data.category === 'taxi' && expected_price === 150) {
-    // 30% of 150 is 45; we give 50 as motivation.
+    // "cars ext or taxi" = 50ksh flat commission (30% of 150 is 45; we give 50 as motivation).
     commission = 50.0;
   } else if (data.category === 'car' && expected_price === 200 && !(data.has_vacuum || data.has_engine_wash)) {
-    commission = 70.0;
+    commission = 70.0; // plain car = 35% of 200
+  } else if (data.category === 'carpet') {
+    commission = expected_price * 0.3; // all carpets = 30%
+  } else if (data.category === 'vacuum' || data.category === 'engine') {
+    commission = expected_price * 0.3; // vacuum / engine wash = 30% (300->90, 200->60, 500->150, 400->120)
+  } else if (data.has_car_wash && data.has_vacuum && data.has_engine_wash) {
+    commission = expected_price * 0.3; // full package = 30%
   } else {
-    commission = expected_price * 0.3;
+    commission = expected_price * 0.3; // default 30%
   }
 
   // 3. Tip Isolation

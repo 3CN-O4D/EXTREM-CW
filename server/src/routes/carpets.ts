@@ -44,7 +44,7 @@ router.get(
       params.push(user.id);
       conds.push(`(receiver_id = $${params.length} OR submitter_id = $${params.length})`);
     }
-    if (status === 'received' || status === 'released') {
+    if (status && ['received', 'washed', 'ready', 'released'].includes(status)) {
       params.push(status);
       conds.push(`status = $${params.length}`);
     }
@@ -154,12 +154,18 @@ router.patch(
     if (!Number.isInteger(id)) throw new HttpError(404, 'Carpet not found');
     const carpet = await queryOne<CarpetRow>('SELECT * FROM carpets WHERE id = $1', [id]);
     if (!carpet) throw new HttpError(404, 'Carpet not found');
-    const up = await pool.query('UPDATE carpets SET is_washed = true WHERE id = $1 RETURNING *', [id]);
+    const now = new Date().toISOString().replace('T', ' ').replace('Z', '');
+    const up = await pool.query(
+      `UPDATE carpets SET is_washed = true, status = 'washed', washed_at = COALESCE(washed_at, $2)
+       WHERE id = $1 RETURNING *`,
+      [id, now],
+    );
     res.json(serializeCarpet(up.rows[0] as CarpetRow));
   }),
 );
 
-// PATCH /carpets/:id (admin/manager: pick receiver later, correct details, mark washed/paid)
+// PATCH /carpets/:id (admin/manager: pick receiver later, correct details,
+// advance the status flow received -> washed -> ready, add per-status photos)
 router.patch(
   '/:id',
   wrap(async (req: AuthRequest, res) => {
@@ -173,12 +179,51 @@ router.patch(
     const body = req.body || {};
     const sets: string[] = [];
     const params: any[] = [];
+    const now = new Date().toISOString().replace('T', ' ').replace('Z', '');
     const put = (k: string, v: any) => {
       if (v !== undefined) {
         params.push(v);
         sets.push(`${k} = $${params.length}`);
       }
     };
+    // Status flow. 'released' is done through the dedicated release action so
+    // the payment / client-debt side effects stay in one place.
+    if (body.status !== undefined) {
+      const st = asOptStr(body.status)?.toLowerCase();
+      if (!st || !['received', 'washed', 'ready'].includes(st)) {
+        throw new HttpError(422, 'status must be one of: received, washed, ready (released is done via release)');
+      }
+      if (st === 'washed') {
+        put('status', 'washed');
+        put('is_washed', true);
+        put('washed_at', now);
+      } else if (st === 'ready') {
+        put('status', 'ready');
+        put('is_washed', true);
+        put('ready_at', now);
+        put('washed_at', now); // being ready implies it went through the wash
+      } else {
+        put('status', 'received');
+      }
+    }
+    // Optional washed photo (full + thumbnail).
+    const optPhoto = (fullKey: string, thumbKey: string, label: string) => {
+      if (body[fullKey] !== undefined && body[fullKey] !== null && body[fullKey] !== '') {
+        const v = asOptStr(body[fullKey])!;
+        if (v.length < 20) throw new HttpError(422, `${label} photo is too short`);
+        put(fullKey, v);
+        if (body[thumbKey] === undefined || body[thumbKey] === null || body[thumbKey] === '') {
+          put(thumbKey, v);
+        }
+      }
+      if (body[thumbKey] !== undefined && body[thumbKey] !== null && body[thumbKey] !== '') {
+        const v = asOptStr(body[thumbKey])!;
+        if (v.length < 20) throw new HttpError(422, `${label} photo is too short`);
+        put(thumbKey, v);
+      }
+    };
+    optPhoto('image_washed', 'image_washed_thumb', 'washed');
+    optPhoto('image_ready', 'image_ready_thumb', 'ready');
     if (body.is_washed !== undefined) put('is_washed', asBool(body.is_washed, 'is_washed'));
     if (body.receiver_id !== undefined && body.receiver_id !== null && body.receiver_id !== '') {
       const rid = Number(body.receiver_id);

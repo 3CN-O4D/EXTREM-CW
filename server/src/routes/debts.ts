@@ -39,14 +39,24 @@ router.get(
   }),
 );
 
-// POST /debts
+// POST /debts  - record a debt for an employee (deducted from Sunday wages) or
+// an "other" (specified) debtor that is tracked until cleared.
 router.post(
   '/',
   wrap(async (req: AuthRequest, res) => {
     await requireRole(req, M);
     const body = req.body || {};
-    const employee_id = Number(body.employee_id);
-    if (!Number.isInteger(employee_id)) throw new HttpError(422, 'employee_id must be an integer');
+    let employee_id: number | null = null;
+    if (body.employee_id !== undefined && body.employee_id !== null && body.employee_id !== '') {
+      employee_id = Number(body.employee_id);
+      if (!Number.isInteger(employee_id)) throw new HttpError(422, 'employee_id must be an integer');
+      const emp = await queryOne<UserRow>('SELECT * FROM users WHERE id = $1', [employee_id]);
+      if (!emp) throw new HttpError(404, 'Employee not found');
+    }
+    const other_name = asOptStr(body.other_name);
+    if (employee_id === null && (!other_name || !other_name.trim())) {
+      throw new HttpError(422, 'choose an employee or enter a debtor name');
+    }
     const amount = asFloat(body.amount, 'amount');
     if (amount < 0) throw new HttpError(422, 'amount must be >= 0');
     const paid = asOptFloat(body.paid, 'paid') ?? 0;
@@ -54,9 +64,6 @@ router.post(
     const service = asOptStr(body.service);
     const notes = asOptStr(body.notes);
     const paidDateStr = asOptStr(body.paid_date);
-
-    const emp = await queryOne<UserRow>('SELECT * FROM users WHERE id = $1', [employee_id]);
-    if (!emp) throw new HttpError(404, 'Employee not found');
 
     // datetime.fromisoformat tolerant parse (accepts YYYY-MM-DD or full ISO)
     let paidDate: string | null = null;
@@ -75,15 +82,17 @@ router.post(
       await client.query('BEGIN');
       const row = (
         await client.query(
-          `INSERT INTO debts (employee_id, amount, service, date, paid, paid_date, notes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-          [employee_id, amount, service, now, paid, paidDate, notes],
+          `INSERT INTO debts (employee_id, other_name, amount, service, date, paid, paid_date, notes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+          [employee_id, other_name, amount, service, now, paid, paidDate, notes],
         )
       ).rows[0] as DebtRow;
-      await client.query('UPDATE users SET debt_balance = debt_balance + $1 WHERE id = $2', [
-        amount - paid,
-        employee_id,
-      ]);
+      if (employee_id !== null) {
+        await client.query('UPDATE users SET debt_balance = debt_balance + $1 WHERE id = $2', [
+          amount - paid,
+          employee_id,
+        ]);
+      }
       await client.query('COMMIT');
       res.json(serializeDebt(row));
     } catch (e) {
@@ -119,6 +128,7 @@ router.put(
     if (paid > amount) throw new HttpError(422, 'paid cannot exceed amount');
     const service = asOptStr(body.service) ?? debt.service;
     const notes = asOptStr(body.notes) ?? debt.notes;
+    const other_name = asOptStr(body.other_name) ?? debt.other_name;
     const paidDateStr = asOptStr(body.paid_date);
 
     let paidDate = debt.paid_date
@@ -139,18 +149,16 @@ router.put(
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('UPDATE debts SET amount = $1, paid = $2, paid_date = $3, service = $4, notes = $5 WHERE id = $6', [
-        amount,
-        paid,
-        paidDate,
-        service,
-        notes,
-        id,
-      ]);
-      await client.query('UPDATE users SET debt_balance = GREATEST(0, debt_balance + $1) WHERE id = $2', [
-        delta,
-        debt.employee_id,
-      ]);
+      await client.query(
+        'UPDATE debts SET amount = $1, paid = $2, paid_date = $3, service = $4, notes = $5, other_name = $6 WHERE id = $7',
+        [amount, paid, paidDate, service, notes, other_name, id],
+      );
+      if (debt.employee_id !== null) {
+        await client.query('UPDATE users SET debt_balance = GREATEST(0, debt_balance + $1) WHERE id = $2', [
+          delta,
+          debt.employee_id,
+        ]);
+      }
       await client.query('COMMIT');
       const updated = await queryOne<DebtRow>('SELECT * FROM debts WHERE id = $1', [id]);
       res.json(serializeDebt(updated!));
@@ -176,10 +184,12 @@ router.delete(
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query('UPDATE users SET debt_balance = GREATEST(0, debt_balance - $1) WHERE id = $2', [
-        debt.amount - debt.paid,
-        debt.employee_id,
-      ]);
+      if (debt.employee_id !== null) {
+        await client.query('UPDATE users SET debt_balance = GREATEST(0, debt_balance - $1) WHERE id = $2', [
+          debt.amount - debt.paid,
+          debt.employee_id,
+        ]);
+      }
       await client.query('DELETE FROM debts WHERE id = $1', [id]);
       await client.query('COMMIT');
     } catch (e) {

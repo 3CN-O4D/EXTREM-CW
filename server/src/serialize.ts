@@ -96,6 +96,7 @@ export function serializeDebt(d: DebtRow): Record<string, unknown> {
   return {
     id: d.id,
     employee_id: d.employee_id,
+    other_name: d.other_name ?? null,
     amount: d.amount,
     service: d.service,
     date: iso(d.date),
@@ -159,16 +160,24 @@ function carpetJson(c: CarpetRow, includeImage: boolean): Record<string, unknown
     client_name: c.client_name,
     customer_phone: c.customer_phone,
     image_thumb: c.image_thumb,
+    image_washed_thumb: c.image_washed_thumb,
+    image_ready_thumb: c.image_ready_thumb,
     expected_price: c.expected_price,
     cash_paid: c.cash_paid,
     mpesa_paid: c.mpesa_paid,
     is_washed: c.is_washed,
     status: c.status,
+    washed_at: iso(c.washed_at),
+    ready_at: iso(c.ready_at),
     released_at: iso(c.released_at),
   };
   // Full photos ride along only on detail responses; list payloads stay small
   // so GET /carpets never risks Vercel's ~4.5MB response cap.
-  if (includeImage) out.image_data = c.image_data;
+  if (includeImage) {
+    out.image_data = c.image_data;
+    out.image_washed = c.image_washed;
+    out.image_ready = c.image_ready;
+  }
   return out;
 }
 

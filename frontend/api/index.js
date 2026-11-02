@@ -34085,14 +34085,18 @@ function calculateTransaction(data) {
   let commission = 0;
   if (expected_price < 70) {
     commission = 0;
-  } else if (data.category === "taxi" && expected_price === 100) {
-    commission = 0;
   } else if (data.category === "motorcycle" && expected_price === 70) {
     commission = 30;
   } else if (data.category === "taxi" && expected_price === 150) {
     commission = 50;
   } else if (data.category === "car" && expected_price === 200 && !(data.has_vacuum || data.has_engine_wash)) {
     commission = 70;
+  } else if (data.category === "carpet") {
+    commission = expected_price * 0.3;
+  } else if (data.category === "vacuum" || data.category === "engine") {
+    commission = expected_price * 0.3;
+  } else if (data.has_car_wash && data.has_vacuum && data.has_engine_wash) {
+    commission = expected_price * 0.3;
   } else {
     commission = expected_price * 0.3;
   }
@@ -34328,6 +34332,7 @@ function serializeDebt(d) {
   return {
     id: d.id,
     employee_id: d.employee_id,
+    other_name: d.other_name ?? null,
     amount: d.amount,
     service: d.service,
     date: iso(d.date),
@@ -34376,14 +34381,22 @@ function carpetJson(c, includeImage) {
     client_name: c.client_name,
     customer_phone: c.customer_phone,
     image_thumb: c.image_thumb,
+    image_washed_thumb: c.image_washed_thumb,
+    image_ready_thumb: c.image_ready_thumb,
     expected_price: c.expected_price,
     cash_paid: c.cash_paid,
     mpesa_paid: c.mpesa_paid,
     is_washed: c.is_washed,
     status: c.status,
+    washed_at: iso(c.washed_at),
+    ready_at: iso(c.ready_at),
     released_at: iso(c.released_at)
   };
-  if (includeImage) out.image_data = c.image_data;
+  if (includeImage) {
+    out.image_data = c.image_data;
+    out.image_washed = c.image_washed;
+    out.image_ready = c.image_ready;
+  }
   return out;
 }
 function serializeCarpet(c) {
@@ -35411,8 +35424,17 @@ router7.post(
   wrap(async (req, res) => {
     await requireRole(req, M5);
     const body = req.body || {};
-    const employee_id = Number(body.employee_id);
-    if (!Number.isInteger(employee_id)) throw new HttpError(422, "employee_id must be an integer");
+    let employee_id = null;
+    if (body.employee_id !== void 0 && body.employee_id !== null && body.employee_id !== "") {
+      employee_id = Number(body.employee_id);
+      if (!Number.isInteger(employee_id)) throw new HttpError(422, "employee_id must be an integer");
+      const emp = await queryOne("SELECT * FROM users WHERE id = $1", [employee_id]);
+      if (!emp) throw new HttpError(404, "Employee not found");
+    }
+    const other_name = asOptStr(body.other_name);
+    if (employee_id === null && (!other_name || !other_name.trim())) {
+      throw new HttpError(422, "choose an employee or enter a debtor name");
+    }
     const amount = asFloat(body.amount, "amount");
     if (amount < 0) throw new HttpError(422, "amount must be >= 0");
     const paid = asOptFloat(body.paid, "paid") ?? 0;
@@ -35420,8 +35442,6 @@ router7.post(
     const service = asOptStr(body.service);
     const notes = asOptStr(body.notes);
     const paidDateStr = asOptStr(body.paid_date);
-    const emp = await queryOne("SELECT * FROM users WHERE id = $1", [employee_id]);
-    if (!emp) throw new HttpError(404, "Employee not found");
     let paidDate = null;
     if (paidDateStr) {
       const m = /^(\d{4}-\d{2}-\d{2})(?:[T ](\d{2}:\d{2}:\d{2}(?:\.\d+)?))?/.exec(paidDateStr);
@@ -35436,14 +35456,16 @@ router7.post(
     try {
       await client.query("BEGIN");
       const row = (await client.query(
-        `INSERT INTO debts (employee_id, amount, service, date, paid, paid_date, notes)
-           VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
-        [employee_id, amount, service, now, paid, paidDate, notes]
+        `INSERT INTO debts (employee_id, other_name, amount, service, date, paid, paid_date, notes)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+        [employee_id, other_name, amount, service, now, paid, paidDate, notes]
       )).rows[0];
-      await client.query("UPDATE users SET debt_balance = debt_balance + $1 WHERE id = $2", [
-        amount - paid,
-        employee_id
-      ]);
+      if (employee_id !== null) {
+        await client.query("UPDATE users SET debt_balance = debt_balance + $1 WHERE id = $2", [
+          amount - paid,
+          employee_id
+        ]);
+      }
       await client.query("COMMIT");
       res.json(serializeDebt(row));
     } catch (e) {
@@ -35473,6 +35495,7 @@ router7.put(
     if (paid > amount) throw new HttpError(422, "paid cannot exceed amount");
     const service = asOptStr(body.service) ?? debt.service;
     const notes = asOptStr(body.notes) ?? debt.notes;
+    const other_name = asOptStr(body.other_name) ?? debt.other_name;
     const paidDateStr = asOptStr(body.paid_date);
     let paidDate = debt.paid_date ? new Date(debt.paid_date).toISOString().replace("T", " ").replace("Z", "") : null;
     if (paidDateStr !== void 0) {
@@ -35489,18 +35512,16 @@ router7.put(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query("UPDATE debts SET amount = $1, paid = $2, paid_date = $3, service = $4, notes = $5 WHERE id = $6", [
-        amount,
-        paid,
-        paidDate,
-        service,
-        notes,
-        id
-      ]);
-      await client.query("UPDATE users SET debt_balance = GREATEST(0, debt_balance + $1) WHERE id = $2", [
-        delta,
-        debt.employee_id
-      ]);
+      await client.query(
+        "UPDATE debts SET amount = $1, paid = $2, paid_date = $3, service = $4, notes = $5, other_name = $6 WHERE id = $7",
+        [amount, paid, paidDate, service, notes, other_name, id]
+      );
+      if (debt.employee_id !== null) {
+        await client.query("UPDATE users SET debt_balance = GREATEST(0, debt_balance + $1) WHERE id = $2", [
+          delta,
+          debt.employee_id
+        ]);
+      }
       await client.query("COMMIT");
       const updated = await queryOne("SELECT * FROM debts WHERE id = $1", [id]);
       res.json(serializeDebt(updated));
@@ -35523,10 +35544,12 @@ router7.delete(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query("UPDATE users SET debt_balance = GREATEST(0, debt_balance - $1) WHERE id = $2", [
-        debt.amount - debt.paid,
-        debt.employee_id
-      ]);
+      if (debt.employee_id !== null) {
+        await client.query("UPDATE users SET debt_balance = GREATEST(0, debt_balance - $1) WHERE id = $2", [
+          debt.amount - debt.paid,
+          debt.employee_id
+        ]);
+      }
       await client.query("DELETE FROM debts WHERE id = $1", [id]);
       await client.query("COMMIT");
     } catch (e) {
@@ -35568,7 +35591,7 @@ router8.get(
       params.push(user.id);
       conds.push(`(receiver_id = $${params.length} OR submitter_id = $${params.length})`);
     }
-    if (status === "received" || status === "released") {
+    if (status && ["received", "washed", "ready", "released"].includes(status)) {
       params.push(status);
       conds.push(`status = $${params.length}`);
     }
@@ -35663,7 +35686,12 @@ router8.patch(
     if (!Number.isInteger(id)) throw new HttpError(404, "Carpet not found");
     const carpet = await queryOne("SELECT * FROM carpets WHERE id = $1", [id]);
     if (!carpet) throw new HttpError(404, "Carpet not found");
-    const up = await pool.query("UPDATE carpets SET is_washed = true WHERE id = $1 RETURNING *", [id]);
+    const now = (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").replace("Z", "");
+    const up = await pool.query(
+      `UPDATE carpets SET is_washed = true, status = 'washed', washed_at = COALESCE(washed_at, $2)
+       WHERE id = $1 RETURNING *`,
+      [id, now]
+    );
     res.json(serializeCarpet(up.rows[0]));
   })
 );
@@ -35679,12 +35707,48 @@ router8.patch(
     const body = req.body || {};
     const sets = [];
     const params = [];
+    const now = (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").replace("Z", "");
     const put = (k, v) => {
       if (v !== void 0) {
         params.push(v);
         sets.push(`${k} = $${params.length}`);
       }
     };
+    if (body.status !== void 0) {
+      const st = asOptStr(body.status)?.toLowerCase();
+      if (!st || !["received", "washed", "ready"].includes(st)) {
+        throw new HttpError(422, "status must be one of: received, washed, ready (released is done via release)");
+      }
+      if (st === "washed") {
+        put("status", "washed");
+        put("is_washed", true);
+        put("washed_at", now);
+      } else if (st === "ready") {
+        put("status", "ready");
+        put("is_washed", true);
+        put("ready_at", now);
+        put("washed_at", now);
+      } else {
+        put("status", "received");
+      }
+    }
+    const optPhoto = (fullKey, thumbKey, label) => {
+      if (body[fullKey] !== void 0 && body[fullKey] !== null && body[fullKey] !== "") {
+        const v = asOptStr(body[fullKey]);
+        if (v.length < 20) throw new HttpError(422, `${label} photo is too short`);
+        put(fullKey, v);
+        if (body[thumbKey] === void 0 || body[thumbKey] === null || body[thumbKey] === "") {
+          put(thumbKey, v);
+        }
+      }
+      if (body[thumbKey] !== void 0 && body[thumbKey] !== null && body[thumbKey] !== "") {
+        const v = asOptStr(body[thumbKey]);
+        if (v.length < 20) throw new HttpError(422, `${label} photo is too short`);
+        put(thumbKey, v);
+      }
+    };
+    optPhoto("image_washed", "image_washed_thumb", "washed");
+    optPhoto("image_ready", "image_ready_thumb", "ready");
     if (body.is_washed !== void 0) put("is_washed", asBool(body.is_washed, "is_washed"));
     if (body.receiver_id !== void 0 && body.receiver_id !== null && body.receiver_id !== "") {
       const rid = Number(body.receiver_id);
