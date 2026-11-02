@@ -34109,7 +34109,12 @@ function calculateTransaction(data) {
   isolated_tip += data.manual_tip;
   const net_business_remittance = total_paid - isolated_tip;
   const gross_shortfall = Math.max(0, expected_price - net_business_remittance);
-  const makes_allowance = (data.category === "vacuum" ? 200 : 0) + (data.category === "engine" ? 200 : 0);
+  let makes_allowance = 0;
+  if (data.category === "vacuum" || data.category === "engine") {
+    makes_allowance = 200;
+  } else if (data.category === "car" && data.has_vacuum !== data.has_engine_wash) {
+    makes_allowance = 100;
+  }
   const shortfall = Math.max(0, gross_shortfall - makes_allowance);
   let net_wage_before_tip = 0;
   if (net_business_remittance === 0) {

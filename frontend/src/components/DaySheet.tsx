@@ -112,14 +112,22 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
     setRows((prev) =>
       prev.map((r) => {
         if (r._key !== key) return r;
-        const patch: Partial<SheetRow> = {
+        // Recompute expected from category + new add-on flags
+        let expected = 0;
+        if (r.category === 'car') {
+          expected = 200 + (isVac ? 300 : 0) + (isEng ? 300 : 0);
+          if (isVac && isEng) expected = 600; // full package cap
+        } else if (PLATE_CATS.includes(r.category)) {
+          expected = STANDARD[r.category] + (isVac ? 300 : 0) + (isEng ? 300 : 0);
+        } else {
+          expected = r.expected || 0;
+        }
+        return {
+          ...r,
           has_vacuum: isVac,
           has_engine_wash: isEng,
+          expected,
         };
-        // bump expected price by the add-on cost (only once per add-on type)
-        if (!r.has_vacuum && isVac) patch.expected = (r.expected || 0) + 300;
-        if (!r.has_engine_wash && isEng) patch.expected = (r.expected || 0) + 300;
-        return { ...r, ...patch };
       }),
     );
     setAddonOpen(null);
@@ -129,16 +137,23 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
     setRows((prev) =>
       prev.map((r) => {
         if (r._key !== key) return r;
-        const patch: Partial<SheetRow> = {};
-        if (type === 'vacuum' && r.has_vacuum) {
-          patch.has_vacuum = false;
-          patch.expected = Math.max(0, (r.expected || 0) - 300);
+        const newVac = type === 'vacuum' ? false : r.has_vacuum;
+        const newEng = type === 'engine' ? false : r.has_engine_wash;
+        let expected = 0;
+        if (r.category === 'car') {
+          expected = 200 + (newVac ? 300 : 0) + (newEng ? 300 : 0);
+          if (newVac && newEng) expected = 600;
+        } else if (PLATE_CATS.includes(r.category)) {
+          expected = STANDARD[r.category] + (newVac ? 300 : 0) + (newEng ? 300 : 0);
+        } else {
+          expected = r.expected || 0;
         }
-        if (type === 'engine' && r.has_engine_wash) {
-          patch.has_engine_wash = false;
-          patch.expected = Math.max(0, (r.expected || 0) - 300);
-        }
-        return { ...r, ...patch };
+        return {
+          ...r,
+          has_vacuum: newVac,
+          has_engine_wash: newEng,
+          expected,
+        };
       }),
     );
     setAddonOpen(null);
