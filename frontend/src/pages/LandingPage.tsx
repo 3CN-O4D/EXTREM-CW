@@ -51,6 +51,14 @@ const SERVICES = [
     icon: Car,
   },
   {
+    name: 'Pressurised Machine Wash',
+    price: '300',
+    unit: 'Ksh',
+    desc: 'High-pressure machine wash for a deep, thorough clean.',
+    img: '/images/enginewash3.jpeg',
+    icon: Droplets,
+  },
+  {
     name: 'Midrange & Lorry',
     price: '300+',
     unit: 'Ksh',
