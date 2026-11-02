@@ -549,7 +549,12 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
             {carpets.map((c) => (
               <div key={c.id} className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/5">
                 {c.image_thumb ? (
-                  <img src={c.image_thumb} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" />
+                  <img
+                    src={c.image_thumb}
+                    alt=""
+                    className="h-16 w-16 shrink-0 rounded-xl object-cover"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
                 ) : (
                   <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400 dark:bg-white/5">
                     <ImageIcon size={20} />
@@ -732,7 +737,12 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
                       >
                         <div className="relative aspect-square w-full overflow-hidden bg-slate-100 dark:bg-white/5">
                           {c.image_thumb ? (
-                            <img src={c.image_thumb} alt="" className="h-full w-full object-cover transition group-hover:scale-105" />
+                            <img
+                              src={c.image_thumb}
+                              alt=""
+                              className="h-full w-full object-cover transition group-hover:scale-105"
+                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                            />
                           ) : (
                             <span className="flex h-full w-full items-center justify-center text-slate-400"><ImageIcon size={22} /></span>
                           )}

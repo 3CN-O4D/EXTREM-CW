@@ -34,10 +34,13 @@ export default function CarpetsPanel() {
   const [showReceive, setShowReceive] = useState(false);
   const [receive, setReceive] = useState({ ...EMPTY_RECEIVE });
   const [receiveBusy, setReceiveBusy] = useState(false);
+  const [receiveCompressing, setReceiveCompressing] = useState(false);
+  const [receiveError, setReceiveError] = useState('');
 
   // change status (washed / ready) with optional photo
   const [statusModal, setStatusModal] = useState<{ carpet: any; status: 'washed' | 'ready'; image: string; thumb: string } | null>(null);
   const [statusBusy, setStatusBusy] = useState(false);
+  const [statusCompressing, setStatusCompressing] = useState(false);
 
   // release
   const [releaseModal, setReleaseModal] = useState<{ carpet: any; cash: string; mpesa: string; washer: string } | null>(null);
@@ -77,6 +80,7 @@ export default function CarpetsPanel() {
     e.preventDefault();
     if (!receive.image) { alert('A photo of the carpet is required on arrival'); return; }
     setReceiveBusy(true);
+    setReceiveError('');
     try {
       await api.post('/carpets/', {
         image_data: receive.image,
@@ -89,9 +93,10 @@ export default function CarpetsPanel() {
       });
       setShowReceive(false);
       setReceive({ ...EMPTY_RECEIVE });
+      setReceiveError('');
       await fetchCarpets();
     } catch (err: any) {
-      alert(err?.response?.data?.detail || 'Could not save the carpet');
+      setReceiveError(err?.response?.data?.detail || 'Could not save the carpet — your photo is kept, tap Save carpet again to retry.');
     } finally {
       setReceiveBusy(false);
     }
@@ -116,7 +121,7 @@ export default function CarpetsPanel() {
       setStatusModal(null);
       await fetchCarpets();
     } catch (err: any) {
-      alert(err?.response?.data?.detail || 'Could not update the status');
+      alert(err?.response?.data?.detail || 'Could not update the status — your photo is kept, tap Confirm again to retry.');
     } finally {
       setStatusBusy(false);
     }
@@ -179,7 +184,13 @@ export default function CarpetsPanel() {
       {[c.image_thumb, c.image_washed_thumb, c.image_ready_thumb].map((src, i) => (
         <div key={i} className="relative h-12 w-12 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-white/10 dark:bg-white/5">
           {src ? (
-            <img src={src} alt="" onClick={() => openPhoto(c)} className="h-full w-full cursor-pointer object-cover" />
+            <img
+              src={src}
+              alt=""
+              onClick={() => openPhoto(c)}
+              className="h-full w-full cursor-pointer object-cover"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
           ) : (
             <span className="flex h-full w-full items-center justify-center text-slate-300 dark:text-slate-600"><ImageIcon size={14} /></span>
           )}
@@ -206,7 +217,14 @@ export default function CarpetsPanel() {
             <div className="flex flex-wrap gap-2">
               {readyCarpets.slice(0, 5).map((c) => (
                 <div key={c.id} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 dark:border-white/10 dark:bg-white/5">
-                  {c.image_thumb && <img src={c.image_thumb} alt="" className="h-8 w-8 rounded-lg object-cover" />}
+                  {c.image_thumb && (
+                    <img
+                      src={c.image_thumb}
+                      alt=""
+                      className="h-8 w-8 rounded-lg object-cover"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  )}
                   <div className="text-xs">
                     <p className="font-bold">{c.client_name || 'Client'}</p>
                     <p className="text-slate-500">{c.characteristics || 'Carpet'}</p>
@@ -216,6 +234,9 @@ export default function CarpetsPanel() {
                       <Phone size={12} /> Call
                     </a>
                   )}
+                  <button onClick={() => openPhoto(c)} className="ml-1 inline-flex items-center gap-1 rounded-lg bg-violet-600 px-2 py-1 text-xs font-bold text-white hover:bg-violet-700">
+                    View
+                  </button>
                 </div>
               ))}
               {readyCarpets.length > 5 && <span className="self-center text-xs text-slate-500">+{readyCarpets.length - 5} more</span>}
@@ -310,6 +331,8 @@ export default function CarpetsPanel() {
                             className="rounded-lg bg-slate-200 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-white/10 dark:text-slate-200">Status</button>
                         </>
                       )}
+                      <button onClick={() => openPhoto(c)}
+                        className="rounded-lg bg-violet-600 px-2 py-1 text-xs font-bold text-white hover:bg-violet-700">View</button>
                       <button onClick={() => deleteCarpet(c)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white hover:bg-red-700"><Trash2 size={12} /></button>
                     </div>
                   </td>
@@ -335,11 +358,20 @@ export default function CarpetsPanel() {
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
-                  const { data, thumb } = await compressVariants(file);
-                  setReceive((r) => ({ ...r, image: data, thumb }));
+                  setReceiveCompressing(true);
+                  setReceiveError('');
+                  try {
+                    const { data, thumb } = await compressVariants(file);
+                    setReceive((r) => ({ ...r, image: data, thumb }));
+                  } catch {
+                    setReceiveError('Could not process the image. Try a smaller file.');
+                  } finally {
+                    setReceiveCompressing(false);
+                  }
                 }}
                 className="input-base file:mr-2 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-white"
               />
+              {receiveCompressing && <span className="mt-1 text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
               {receive.image && <img src={receive.image} alt="" className="mt-2 h-24 w-24 rounded-xl object-cover ring-1 ring-violet-300" />}
             </label>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -372,6 +404,11 @@ export default function CarpetsPanel() {
                 </select>
               </label>
             </div>
+            {receiveError && (
+              <div className="col-span-2">
+                <span className="text-xs text-red-600 dark:text-red-400">{receiveError}</span>
+              </div>
+            )}
             <div className="flex gap-2">
               <button type="submit" disabled={receiveBusy} className="btn-primary flex-1 justify-center">
                 {receiveBusy && <Loader2 size={15} className="animate-spin" />} Save carpet
@@ -404,11 +441,19 @@ export default function CarpetsPanel() {
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
-                  const { data, thumb } = await compressVariants(file);
-                  setStatusModal((m) => (m ? { ...m, image: data, thumb } : m));
+                  setStatusCompressing(true);
+                  try {
+                    const { data, thumb } = await compressVariants(file);
+                    setStatusModal((m) => (m ? { ...m, image: data, thumb } : m));
+                  } catch {
+                    alert('Could not process the image. Try a smaller file.');
+                  } finally {
+                    setStatusCompressing(false);
+                  }
                 }}
                 className="input-base file:mr-2 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-white"
               />
+              {statusCompressing && <span className="mt-1 text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
               {statusModal.image && <img src={statusModal.image} alt="" className="mt-2 h-24 w-24 rounded-xl object-cover ring-1 ring-violet-300" />}
             </label>
             <div className="flex gap-2">
