@@ -10,8 +10,10 @@ import ManagerPanel from './pages/ManagerPanel';
 import EmployeeManagement from './pages/EmployeeManagement';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 import CarpetsPanel from './pages/CarpetsPanel';
+import PricesPanel from './pages/PricesPanel';
 import {
   Calculator,
+  DollarSign,
   Image,
   KeyRound,
   LayoutDashboard,
@@ -34,6 +36,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Dashboard', icon: <LayoutDashboard size={19} />, roles: ['admin', 'manager', 'employee'] },
   { to: '/manage', label: 'Manager panel', icon: <Calculator size={19} />, roles: ['admin', 'manager'] },
   { to: '/carpets', label: 'Carpets', icon: <Image size={19} />, roles: ['admin', 'manager'] },
+  { to: '/prices', label: 'Prices', icon: <DollarSign size={19} />, roles: ['admin', 'manager'] },
   { to: '/employees', label: 'Employees', icon: <Users size={19} />, roles: ['admin'] },
 ];
 
@@ -305,6 +308,7 @@ function AppContent() {
             <Route path="/login" element={<Navigate to="/" replace />} />
             <Route path="/manage" element={user.role === 'admin' || user.role === 'manager' ? <ManagerPanel /> : <Navigate to="/" replace />} />
             <Route path="/carpets" element={user.role === 'admin' || user.role === 'manager' ? <CarpetsPanel /> : <Navigate to="/" replace />} />
+            <Route path="/prices" element={user.role === 'admin' || user.role === 'manager' ? <PricesPanel /> : <Navigate to="/" replace />} />
             <Route path="/employees" element={user.role === 'admin' ? <EmployeeManagement /> : <Navigate to="/" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

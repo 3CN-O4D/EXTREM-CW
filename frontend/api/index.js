@@ -18085,17 +18085,17 @@ var require_router = __commonJS({
     var toString = Object.prototype.toString;
     var proto = module2.exports = function(options) {
       var opts = options || {};
-      function router12(req, res, next) {
-        router12.handle(req, res, next);
+      function router13(req, res, next) {
+        router13.handle(req, res, next);
       }
-      setPrototypeOf(router12, proto);
-      router12.params = {};
-      router12._params = [];
-      router12.caseSensitive = opts.caseSensitive;
-      router12.mergeParams = opts.mergeParams;
-      router12.strict = opts.strict;
-      router12.stack = [];
-      return router12;
+      setPrototypeOf(router13, proto);
+      router13.params = {};
+      router13._params = [];
+      router13.caseSensitive = opts.caseSensitive;
+      router13.mergeParams = opts.mergeParams;
+      router13.strict = opts.strict;
+      router13.stack = [];
+      return router13;
     };
     proto.param = function param(name, fn) {
       if (typeof name === "function") {
@@ -20704,7 +20704,7 @@ var require_application = __commonJS({
   "server/node_modules/express/lib/application.js"(exports2, module2) {
     "use strict";
     var finalhandler = require_finalhandler();
-    var Router12 = require_router();
+    var Router13 = require_router();
     var methods = require_methods();
     var middleware = require_init();
     var query2 = require_query();
@@ -20769,7 +20769,7 @@ var require_application = __commonJS({
     };
     app.lazyrouter = function lazyrouter() {
       if (!this._router) {
-        this._router = new Router12({
+        this._router = new Router13({
           caseSensitive: this.enabled("case sensitive routing"),
           strict: this.enabled("strict routing")
         });
@@ -20778,17 +20778,17 @@ var require_application = __commonJS({
       }
     };
     app.handle = function handle(req, res, callback) {
-      var router12 = this._router;
+      var router13 = this._router;
       var done = callback || finalhandler(req, res, {
         env: this.get("env"),
         onerror: logerror.bind(this)
       });
-      if (!router12) {
+      if (!router13) {
         debug("no routes defined on app");
         done();
         return;
       }
-      router12.handle(req, res, done);
+      router13.handle(req, res, done);
     };
     app.use = function use(fn) {
       var offset = 0;
@@ -20808,15 +20808,15 @@ var require_application = __commonJS({
         throw new TypeError("app.use() requires a middleware function");
       }
       this.lazyrouter();
-      var router12 = this._router;
+      var router13 = this._router;
       fns.forEach(function(fn2) {
         if (!fn2 || !fn2.handle || !fn2.set) {
-          return router12.use(path, fn2);
+          return router13.use(path, fn2);
         }
         debug(".use app under %s", path);
         fn2.mountpath = path;
         fn2.parent = this;
-        router12.use(path, function mounted_app(req, res, next) {
+        router13.use(path, function mounted_app(req, res, next) {
           var orig = req.app;
           fn2.handle(req, res, function(err) {
             setPrototypeOf(req, orig.request);
@@ -22633,7 +22633,7 @@ var require_express = __commonJS({
     var mixin = require_merge_descriptors();
     var proto = require_application();
     var Route = require_route();
-    var Router12 = require_router();
+    var Router13 = require_router();
     var req = require_request();
     var res = require_response();
     exports2 = module2.exports = createApplication;
@@ -22656,7 +22656,7 @@ var require_express = __commonJS({
     exports2.request = req;
     exports2.response = res;
     exports2.Route = Route;
-    exports2.Router = Router12;
+    exports2.Router = Router13;
     exports2.json = bodyParser.json;
     exports2.query = require_query();
     exports2.raw = bodyParser.raw;
@@ -30291,27 +30291,27 @@ var require_range2 = __commonJS({
       return comp;
     };
     var isX = (id) => !id || id.toLowerCase() === "x" || id === "*";
-    var invalidXRangeOrder = (M10, m, p) => isX(M10) && !isX(m) || isX(m) && p && !isX(p);
+    var invalidXRangeOrder = (M11, m, p) => isX(M11) && !isX(m) || isX(m) && p && !isX(p);
     var replaceTildes = (comp, options) => {
       return comp.trim().split(/\s+/).map((c) => replaceTilde(c, options)).join(" ");
     };
     var replaceTilde = (comp, options) => {
       const r = options.loose ? re[t.TILDELOOSE] : re[t.TILDE];
       const z = options.includePrerelease ? "-0" : "";
-      return comp.replace(r, (_, M10, m, p, pr) => {
-        debug("tilde", comp, _, M10, m, p, pr);
+      return comp.replace(r, (_, M11, m, p, pr) => {
+        debug("tilde", comp, _, M11, m, p, pr);
         let ret;
-        if (isX(M10)) {
+        if (isX(M11)) {
           ret = "";
         } else if (isX(m)) {
-          ret = `>=${M10}.0.0${z} <${+M10 + 1}.0.0-0`;
+          ret = `>=${M11}.0.0${z} <${+M11 + 1}.0.0-0`;
         } else if (isX(p)) {
-          ret = `>=${M10}.${m}.0${z} <${M10}.${+m + 1}.0-0`;
+          ret = `>=${M11}.${m}.0${z} <${M11}.${+m + 1}.0-0`;
         } else if (pr) {
           debug("replaceTilde pr", pr);
-          ret = `>=${M10}.${m}.${p}-${pr} <${M10}.${+m + 1}.0-0`;
+          ret = `>=${M11}.${m}.${p}-${pr} <${M11}.${+m + 1}.0-0`;
         } else {
-          ret = `>=${M10}.${m}.${p} <${M10}.${+m + 1}.0-0`;
+          ret = `>=${M11}.${m}.${p} <${M11}.${+m + 1}.0-0`;
         }
         debug("tilde return", ret);
         return ret;
@@ -30324,40 +30324,40 @@ var require_range2 = __commonJS({
       debug("caret", comp, options);
       const r = options.loose ? re[t.CARETLOOSE] : re[t.CARET];
       const z = options.includePrerelease ? "-0" : "";
-      return comp.replace(r, (_, M10, m, p, pr) => {
-        debug("caret", comp, _, M10, m, p, pr);
+      return comp.replace(r, (_, M11, m, p, pr) => {
+        debug("caret", comp, _, M11, m, p, pr);
         let ret;
-        if (isX(M10)) {
+        if (isX(M11)) {
           ret = "";
         } else if (isX(m)) {
-          ret = `>=${M10}.0.0${z} <${+M10 + 1}.0.0-0`;
+          ret = `>=${M11}.0.0${z} <${+M11 + 1}.0.0-0`;
         } else if (isX(p)) {
-          if (M10 === "0") {
-            ret = `>=${M10}.${m}.0${z} <${M10}.${+m + 1}.0-0`;
+          if (M11 === "0") {
+            ret = `>=${M11}.${m}.0${z} <${M11}.${+m + 1}.0-0`;
           } else {
-            ret = `>=${M10}.${m}.0${z} <${+M10 + 1}.0.0-0`;
+            ret = `>=${M11}.${m}.0${z} <${+M11 + 1}.0.0-0`;
           }
         } else if (pr) {
           debug("replaceCaret pr", pr);
-          if (M10 === "0") {
+          if (M11 === "0") {
             if (m === "0") {
-              ret = `>=${M10}.${m}.${p}-${pr} <${M10}.${m}.${+p + 1}-0`;
+              ret = `>=${M11}.${m}.${p}-${pr} <${M11}.${m}.${+p + 1}-0`;
             } else {
-              ret = `>=${M10}.${m}.${p}-${pr} <${M10}.${+m + 1}.0-0`;
+              ret = `>=${M11}.${m}.${p}-${pr} <${M11}.${+m + 1}.0-0`;
             }
           } else {
-            ret = `>=${M10}.${m}.${p}-${pr} <${+M10 + 1}.0.0-0`;
+            ret = `>=${M11}.${m}.${p}-${pr} <${+M11 + 1}.0.0-0`;
           }
         } else {
           debug("no pr");
-          if (M10 === "0") {
+          if (M11 === "0") {
             if (m === "0") {
-              ret = `>=${M10}.${m}.${p} <${M10}.${m}.${+p + 1}-0`;
+              ret = `>=${M11}.${m}.${p} <${M11}.${m}.${+p + 1}-0`;
             } else {
-              ret = `>=${M10}.${m}.${p} <${M10}.${+m + 1}.0-0`;
+              ret = `>=${M11}.${m}.${p} <${M11}.${+m + 1}.0-0`;
             }
           } else {
-            ret = `>=${M10}.${m}.${p} <${+M10 + 1}.0.0-0`;
+            ret = `>=${M11}.${m}.${p} <${+M11 + 1}.0.0-0`;
           }
         }
         debug("caret return", ret);
@@ -30371,12 +30371,12 @@ var require_range2 = __commonJS({
     var replaceXRange = (comp, options) => {
       comp = comp.trim();
       const r = options.loose ? re[t.XRANGELOOSE] : re[t.XRANGE];
-      return comp.replace(r, (ret, gtlt, M10, m, p, pr) => {
-        debug("xRange", comp, ret, gtlt, M10, m, p, pr);
-        if (invalidXRangeOrder(M10, m, p)) {
+      return comp.replace(r, (ret, gtlt, M11, m, p, pr) => {
+        debug("xRange", comp, ret, gtlt, M11, m, p, pr);
+        if (invalidXRangeOrder(M11, m, p)) {
           return comp;
         }
-        const xM = isX(M10);
+        const xM = isX(M11);
         const xm = xM || isX(m);
         const xp = xm || isX(p);
         const anyX = xp;
@@ -30398,7 +30398,7 @@ var require_range2 = __commonJS({
           if (gtlt === ">") {
             gtlt = ">=";
             if (xm) {
-              M10 = +M10 + 1;
+              M11 = +M11 + 1;
               m = 0;
               p = 0;
             } else {
@@ -30408,7 +30408,7 @@ var require_range2 = __commonJS({
           } else if (gtlt === "<=") {
             gtlt = "<";
             if (xm) {
-              M10 = +M10 + 1;
+              M11 = +M11 + 1;
             } else {
               m = +m + 1;
             }
@@ -30416,11 +30416,11 @@ var require_range2 = __commonJS({
           if (gtlt === "<") {
             pr = "-0";
           }
-          ret = `${gtlt + M10}.${m}.${p}${pr}`;
+          ret = `${gtlt + M11}.${m}.${p}${pr}`;
         } else if (xm) {
-          ret = `>=${M10}.0.0${pr} <${+M10 + 1}.0.0-0`;
+          ret = `>=${M11}.0.0${pr} <${+M11 + 1}.0.0-0`;
         } else if (xp) {
-          ret = `>=${M10}.${m}.0${pr} <${M10}.${+m + 1}.0-0`;
+          ret = `>=${M11}.${m}.0${pr} <${M11}.${+m + 1}.0-0`;
         }
         debug("xRange return", ret);
         return ret;
@@ -33951,7 +33951,7 @@ __export(stdin_exports, {
 module.exports = __toCommonJS(stdin_exports);
 
 // server/src/app.ts
-var import_express12 = __toESM(require_express2());
+var import_express13 = __toESM(require_express2());
 var import_cors = __toESM(require_lib3());
 
 // server/src/config.ts
@@ -34112,8 +34112,8 @@ function calculateTransaction(data) {
   let makes_allowance = 0;
   if (data.category === "vacuum" || data.category === "engine") {
     makes_allowance = 200;
-  } else if (data.category === "car" && data.has_vacuum !== data.has_engine_wash) {
-    makes_allowance = 100;
+  } else if (data.category === "car" && (data.has_vacuum || data.has_engine_wash)) {
+    makes_allowance = 200;
   }
   const shortfall = Math.max(0, gross_shortfall - makes_allowance);
   let net_wage_before_tip = 0;
@@ -34374,6 +34374,18 @@ function serializeWeeklyLog(w) {
     total_labor_expense: w.total_labor_expense,
     total_profit: w.total_profit,
     data: w.data_json ? JSON.parse(w.data_json) : null
+  };
+}
+function serializePrice(p) {
+  return {
+    id: p.id,
+    category: p.category,
+    min_price: p.min_price,
+    max_price: p.max_price,
+    commission_percent: p.commission_percent,
+    is_active: p.is_active,
+    created_at: iso(p.created_at),
+    updated_at: iso(p.updated_at)
   };
 }
 function carpetJson(c, includeImage) {
@@ -36487,12 +36499,70 @@ router11.delete(
 );
 var vehicles_default = router11;
 
+// server/src/routes/prices.ts
+var import_express12 = __toESM(require_express2());
+var router12 = (0, import_express12.Router)();
+var M10 = ROLES.slice(0, 2);
+var ALLOWED_CATEGORIES = [
+  "bicycle",
+  "motorcycle",
+  "taxi",
+  "car",
+  "midrange",
+  "lorry",
+  "carpet",
+  "vacuum",
+  "engine",
+  "other"
+];
+router12.get(
+  "/",
+  wrap(async (req, res) => {
+    await requireRole(req, M10);
+    const rows = (await pool.query("SELECT * FROM prices ORDER BY category")).rows;
+    res.json(rows.map(serializePrice));
+  })
+);
+router12.put(
+  "/:category",
+  wrap(async (req, res) => {
+    await requireRole(req, ["ADMIN"]);
+    const category = req.params.category;
+    if (!ALLOWED_CATEGORIES.includes(category)) {
+      throw new HttpError(404, "Unknown category");
+    }
+    const body = req.body || {};
+    const min_price = asOptFloat(body.min_price, "min_price");
+    const max_price = asOptFloat(body.max_price, "max_price");
+    const commission_percent = asOptFloat(body.commission_percent, "commission_percent");
+    const is_active = asBool(body.is_active, "is_active");
+    if (min_price === void 0 || max_price === void 0 || commission_percent === void 0) {
+      throw new HttpError(422, "min_price, max_price and commission_percent are required");
+    }
+    if (min_price < 0 || max_price < 0) throw new HttpError(422, "prices must be >= 0");
+    if (commission_percent < 0 || commission_percent > 100) {
+      throw new HttpError(422, "commission_percent must be between 0 and 100");
+    }
+    const existing = await queryOne("SELECT * FROM prices WHERE category = $1", [category]);
+    if (!existing) throw new HttpError(404, "Price config not found");
+    const now = (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").replace("Z", "");
+    const row = (await pool.query(
+      `UPDATE prices
+          SET min_price = $1, max_price = $2, commission_percent = $3, is_active = $4, updated_at = $5
+        WHERE category = $6 RETURNING *`,
+      [min_price, max_price, commission_percent, is_active, now, category]
+    )).rows[0];
+    res.json(serializePrice(row));
+  })
+);
+var prices_default = router12;
+
 // server/src/app.ts
 function createApp() {
-  const app = (0, import_express12.default)();
+  const app = (0, import_express13.default)();
   app.use((0, import_cors.default)({ origin: config.corsOrigins, credentials: true }));
-  app.use(import_express12.default.json({ limit: "10mb" }));
-  app.use(import_express12.default.urlencoded({ extended: true, limit: "10mb" }));
+  app.use(import_express13.default.json({ limit: "10mb" }));
+  app.use(import_express13.default.urlencoded({ extended: true, limit: "10mb" }));
   app.get("/", (_req, res) => {
     res.json({ message: "Welcome to Carwash POS API" });
   });
@@ -36510,6 +36580,7 @@ function createApp() {
   app.use("/api/v1/client-debts", client_debts_default);
   app.use("/api/v1/settlements", settlements_default);
   app.use("/api/v1/vehicles", vehicles_default);
+  app.use("/api/v1/prices", prices_default);
   app.use((_req, res) => {
     res.status(404).json({ detail: "Not Found" });
   });

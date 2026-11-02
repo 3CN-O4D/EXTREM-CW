@@ -86,13 +86,12 @@ export function calculateTransaction(data: FinanceInput): FinanceResult {
 
   // Shortfall allowance:
   // - Standalone vacuum/engine: 200 (300 or 200 both acceptable as full price)
-  // - Car + one add-on (vacuum XOR engine): 100 (expected 500, shortfall starts below 400)
-  // - Car + both add-ons = full package 600: no allowance
+  // - Car + vacuum / car + engine / car + both: 200 (combo allowance)
   let makes_allowance = 0.0;
   if (data.category === 'vacuum' || data.category === 'engine') {
     makes_allowance = 200.0;
-  } else if (data.category === 'car' && data.has_vacuum !== data.has_engine_wash) {
-    makes_allowance = 100.0;
+  } else if (data.category === 'car' && (data.has_vacuum || data.has_engine_wash)) {
+    makes_allowance = 200.0;
   }
   const shortfall = Math.max(0.0, gross_shortfall - makes_allowance);
 

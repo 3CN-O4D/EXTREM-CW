@@ -111,6 +111,17 @@ export interface WeeklyLogRow {
   data_json: string | null;
 }
 
+export interface PriceRow {
+  id: number;
+  category: string;
+  min_price: number;
+  max_price: number;
+  commission_percent: number;
+  is_active: boolean;
+  created_at: Date | null;
+  updated_at: Date | null;
+}
+
 export interface CarpetRow {
   id: number;
   created_at: Date;

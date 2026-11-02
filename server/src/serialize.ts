@@ -8,6 +8,7 @@ import type {
   TipRow,
   ClientDebtRow,
   WeeklyLogRow,
+  PriceRow,
   CarpetRow,
   UserRow,
 } from './types';
@@ -147,6 +148,19 @@ export function serializeWeeklyLog(w: WeeklyLogRow): Record<string, unknown> {
     total_labor_expense: w.total_labor_expense,
     total_profit: w.total_profit,
     data: w.data_json ? JSON.parse(w.data_json) : null,
+  };
+}
+
+export function serializePrice(p: PriceRow): Record<string, unknown> {
+  return {
+    id: p.id,
+    category: p.category,
+    min_price: p.min_price,
+    max_price: p.max_price,
+    commission_percent: p.commission_percent,
+    is_active: p.is_active,
+    created_at: iso(p.created_at),
+    updated_at: iso(p.updated_at),
   };
 }
 

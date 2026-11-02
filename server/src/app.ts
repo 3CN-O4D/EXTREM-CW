@@ -13,6 +13,7 @@ import carpetsRouter from './routes/carpets';
 import clientDebtsRouter from './routes/client-debts';
 import settlementsRouter from './routes/settlements';
 import vehiclesRouter from './routes/vehicles';
+import pricesRouter from './routes/prices';
 
 export function createApp() {
   const app = express();
@@ -42,6 +43,7 @@ export function createApp() {
   app.use('/api/v1/client-debts', clientDebtsRouter);
   app.use('/api/v1/settlements', settlementsRouter);
   app.use('/api/v1/vehicles', vehiclesRouter);
+  app.use('/api/v1/prices', pricesRouter);
 
   // 404
   app.use((_req: Request, res: Response) => {

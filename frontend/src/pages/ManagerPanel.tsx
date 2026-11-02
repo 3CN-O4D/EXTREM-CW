@@ -4,6 +4,7 @@ import { format, startOfWeek, addDays, isSameDay, addWeeks } from 'date-fns';
 import { Trash2, Loader2 } from 'lucide-react';
 import { InlineError } from '../components/States';
 import DaySheet from '../components/DaySheet';
+import PricesPanel from './PricesPanel';
 
 const toNum = (v: any) => { const n = parseInt(v); return isNaN(n) ? 0 : Math.max(0, n); };
 
@@ -23,7 +24,7 @@ export default function ManagerPanel() {
   const [expenseForm, setExpenseForm] = useState({ description: '', amount: 0, category: 'General' });
   const [expenses, setExpenses] = useState<any[]>([]);
   const [repaymentForm, setRepaymentForm] = useState({ employee_id: '', amount: 0 });
-  const [activeTab, setActiveTab] = useState<'sheet' | 'expense' | 'repayment' | 'tip' | 'debt' | 'payday' | 'client-debts' | 'arrivals'>('sheet');
+  const [activeTab, setActiveTab] = useState<'sheet' | 'expense' | 'repayment' | 'tip' | 'debt' | 'payday' | 'client-debts' | 'arrivals' | 'prices'>('sheet');
   const [debts, setDebts] = useState<any[]>([]);
   const [debtForm, setDebtForm] = useState({
     debtor_type: 'employee', employee_id: '', other_name: '', amount: 0, service: '', paid: 0, paid_date: '', notes: ''
@@ -352,6 +353,7 @@ export default function ManagerPanel() {
     { id: 'payday', label: 'Payday' },
     { id: 'client-debts', label: 'Client Debts' },
     { id: 'arrivals', label: 'Arrivals' },
+    { id: 'prices', label: 'Prices' },
   ];
 
   const expByCat = expenses.reduce((acc: any, e) => {
@@ -919,6 +921,8 @@ export default function ManagerPanel() {
             </table>
           </div>
         </div>
+      ) : activeTab === 'prices' ? (
+        <PricesPanel />
       ) : null}
 
       {activeTab !== 'sheet' && (
