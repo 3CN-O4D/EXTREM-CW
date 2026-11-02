@@ -411,7 +411,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         kind: 'tx',
         draft: true,
         category,
-        item: PLATE_CATS.includes(category) || category === 'motorcycle' ? 'PIKIPIKI' : category === 'carpet' ? 'CARPET' : '',
+        item: category === 'motorcycle' ? 'PIKIPIKI' : category === 'carpet' ? 'CARPET' : '',
         washer_id: '',
         cash: 0,
         mpesa: 0,
