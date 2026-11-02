@@ -170,12 +170,28 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         api.get('/stats/summary', { params }),
       ]);
       setRows((prev) => {
-        // Keep unsaved local drafts that haven't hit the server yet, so a
-        // re-fetch from another row's auto-save never wipes mid-typed input.
+        // Merge server rows with local drafts / just-saved rows by id, so a row
+        // that was just POSTed keeps its local _key (no focus loss) and is never
+        // duplicated. Subsequent keystrokes PUT to this id instead of POSTing.
         const serverRows: SheetRow[] = txRes.data.map(txToRow);
-        const serverKeys = new Set(serverRows.map((r) => r._key));
-        const localDrafts = prev.filter((r) => r.draft && !serverKeys.has(r._key));
-        return [...serverRows, ...localDrafts];
+        const serverById = new Map<number, SheetRow>();
+        for (const sr of serverRows) if (sr.id != null) serverById.set(sr.id, sr);
+
+        const result: SheetRow[] = [];
+        const seenIds = new Set<number>();
+
+        for (const local of prev) {
+          if (local.id != null && serverById.has(local.id)) {
+            result.push({ ...serverById.get(local.id)!, _key: local._key });
+            seenIds.add(local.id);
+          } else {
+            result.push(local);
+          }
+        }
+        for (const sr of serverRows) {
+          if (sr.id != null && !seenIds.has(sr.id)) result.push(sr);
+        }
+        return result;
       });
       setCarpets(carpetRes.data.filter((c: any) => c.status !== 'released'));
       setSummary(sumRes.data);
@@ -234,7 +250,18 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
       const save = saved
         ? api.put(`/transactions/${saved.id}`, payload)
         : api.post('/transactions/', payload);
-      return save.then(() => reload());
+      return save.then((response) => {
+        if (!saved) {
+          // Draft was just created on the server. Stamp it with the real id and
+          // mark as saved so subsequent keystrokes PUT to this row instead of
+          // POSTing a brand-new transaction every 650ms.
+          const newId = response.data?.id;
+          setRows((prev) =>
+            prev.map((r) => (r._key === key ? { ...r, id: newId, draft: false, saving: false } : r)),
+          );
+        }
+        return reload();
+      });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [rows, reload],
