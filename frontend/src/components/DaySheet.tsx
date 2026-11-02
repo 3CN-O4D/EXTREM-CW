@@ -30,7 +30,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   bicycle: 'Bicycle', motorcycle: 'Motorcycle', taxi: 'Taxi', car: 'Car',
   midrange: 'Midrange', lorry: 'Lorry', carpet: 'Carpet', vacuum: 'Vacuum', engine: 'Engine Wash', exterior: 'Exterior Wash', other: 'Other',
 };
-const PLATE_CATS = ['car', 'taxi', 'midrange', 'lorry', 'exterior'];
+const PLATE_CATS = ['car', 'taxi', 'midrange', 'lorry', 'exterior', 'motorcycle'];
 
 type SheetRow = {
   _key: string;
@@ -105,6 +105,28 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const [addonOpen, setAddonOpen] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState<SheetRow | null>(null);
   const [editForm, setEditForm] = useState<any>({});
+
+  const [duplicates, setDuplicates] = useState<Set<string>>(new Set());
+
+  const computeDuplicates = (rowsToCheck: SheetRow[]) => {
+    const seen = new Map<string, string[]>();
+    rowsToCheck.forEach((r) => {
+      if (r.draft && !r.id) return; // skip unsaved drafts without server id
+      const key = `${r.category}|${(r.item || '').toUpperCase()}`;
+      if (!seen.has(key)) seen.set(key, []);
+      seen.get(key)!.push(r._key);
+    });
+    const dupes = new Set<string>();
+    seen.forEach((keys) => {
+      if (keys.length > 1) keys.forEach((k) => dupes.add(k));
+    });
+    setDuplicates(dupes);
+  };
+
+  // Recompute duplicates whenever rows change
+  useEffect(() => {
+    computeDuplicates(rows);
+  }, [rows]);
 
   const toggleAddon = (key: string) => setAddonOpen(addonOpen === key ? null : key);
 
@@ -389,7 +411,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         kind: 'tx',
         draft: true,
         category,
-        item: PLATE_CATS.includes(category) ? 'PIKIPIKI' : category === 'carpet' ? 'carpet' : '',
+        item: PLATE_CATS.includes(category) || category === 'motorcycle' ? 'PIKIPIKI' : category === 'carpet' ? 'CARPET' : '',
         washer_id: '',
         cash: 0,
         mpesa: 0,
@@ -649,6 +671,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
                     onSelectAddon={(type: 'vacuum' | 'engine' | 'engine+vacuum') => selectAddon(row._key, type)}
                     onRemoveAddon={(type: 'vacuum' | 'engine') => removeAddon(row._key, type)}
                     onEdit={() => openEdit(row)}
+                    isDuplicate={duplicates.has(row._key)}
                   />
                 );
               })}
@@ -1055,7 +1078,7 @@ function RowFragment({
   row, rowNumber, employees, isPlate, isOther, saving, error,
   smsOpen, smsText, onSmsText, onOpenSms, onFillSms, onPatch, onSaveDraft, onDelete,
   addonOpen, onToggleAddon, onSelectAddon, onRemoveAddon,
-  onEdit,
+  onEdit, isDuplicate,
 }: {
   row: SheetRow;
   rowNumber: number;
@@ -1077,12 +1100,13 @@ function RowFragment({
   onSelectAddon: (type: 'vacuum' | 'engine' | 'engine+vacuum') => void;
   onRemoveAddon: (type: 'vacuum' | 'engine') => void;
   onEdit: () => void;
+  isDuplicate: boolean;
 }) {
   const dirty = row.draft;
   const display = row.total_paid !== undefined ? `Ksh ${row.total_paid}` : '';
   return (
     <>
-      <tr className={`group transition ${dirty ? 'bg-amber-50/60 dark:bg-amber-400/5' : ''} ${error ? 'bg-red-50 dark:bg-red-500/5' : 'hover:bg-slate-50/70 dark:hover:bg-white/[0.03]'}`}>
+      <tr className={`group transition ${dirty ? 'bg-amber-50/60 dark:bg-amber-400/5' : ''} ${error ? 'bg-red-50 dark:bg-red-500/5' : ''} ${isDuplicate ? 'bg-red-100 dark:bg-red-900/30' : ''} ${!isDuplicate && !dirty && !error ? 'hover:bg-slate-50/70 dark:hover:bg-white/[0.03]' : ''}`}>
         <td className="border-b border-slate-200/70 px-2 py-1.5 text-center align-middle dark:border-white/10">
           {rowNumber}
         </td>
