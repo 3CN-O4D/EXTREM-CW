@@ -60,7 +60,7 @@ router.get(
   }),
 );
 
-// GET /carpets/stats - aggregate + per-employee carpet stats
+// GET /carpets/stats - aggregate + per-employee + per-day carpet stats
 router.get(
   '/stats',
   wrap(async (req: AuthRequest, res) => {
@@ -121,6 +121,32 @@ router.get(
       };
     });
 
+    // Daily breakdown for the last 7 days
+    const daily = (
+      await pool.query(
+        `SELECT
+          date(created_at) as day,
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE status = 'received') as received,
+          COUNT(*) FILTER (WHERE status = 'washed') as washed,
+          COUNT(*) FILTER (WHERE status = 'ready') as ready,
+          COUNT(*) FILTER (WHERE status = 'released') as released
+        FROM carpets
+        WHERE created_at >= NOW() - INTERVAL '7 days'
+        GROUP BY date(created_at)
+        ORDER BY date(created_at) DESC`,
+      )
+    ).rows;
+
+    const dailyStats = daily.map((d: any) => ({
+      date: d.day,
+      total: Number(d.total || 0),
+      received: Number(d.received || 0),
+      washed: Number(d.washed || 0),
+      ready: Number(d.ready || 0),
+      released: Number(d.released || 0),
+    }));
+
     res.json({
       total,
       received,
@@ -129,6 +155,7 @@ router.get(
       released,
       unwashed,
       employees,
+      daily: dailyStats,
     });
   }),
 );

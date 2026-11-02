@@ -328,6 +328,44 @@ export default function CarpetsPanel() {
         </div>
       )}
 
+      {/* Daily carpet stats */}
+      {carpetStats?.daily && carpetStats.daily.length > 0 && (
+        <div className="card overflow-hidden mt-5">
+          <div className="flex items-center justify-between border-b border-slate-200/80 bg-slate-50 px-5 py-3 dark:border-white/10 dark:bg-white/5">
+            <h3 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">Daily Stats (Last 7 Days)</h3>
+            <p className="muted text-xs text-slate-500 dark:text-slate-400">Carpets received per day</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200/70 bg-white dark:bg-slate-900/50">
+                  <th className="py-3 pr-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500">Date</th>
+                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Total</th>
+                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Received</th>
+                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Washed</th>
+                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Ready</th>
+                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Released</th>
+                </tr>
+              </thead>
+              <tbody>
+                {carpetStats.daily.map((d: any) => (
+                  <tr key={d.date} className="border-b border-slate-200/70 dark:border-white/10 hover:bg-slate-50/70 dark:hover:bg-white/[0.03]">
+                    <td className="py-3 pr-3 text-left text-xs font-medium text-slate-700 dark:text-slate-300">
+                      {new Date(d.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+                    </td>
+                    <td className="py-3 pr-3 text-right text-xs text-slate-900 dark:text-white">{d.total}</td>
+                    <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{d.received}</td>
+                    <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{d.washed}</td>
+                    <td className="py-3 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{d.ready}</td>
+                    <td className="py-3 pr-3 text-right text-xs text-slate-600 dark:text-slate-400">{d.released}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Ready for pickup banner */}
       {readyCarpets.length > 0 && (
         <div className="card-pad rounded-2xl border-l-4 border-emerald-500">

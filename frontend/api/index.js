@@ -35719,6 +35719,27 @@ router8.get(
         unwashed: un
       };
     });
+    const daily = (await pool.query(
+      `SELECT
+          date(created_at) as day,
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE status = 'received') as received,
+          COUNT(*) FILTER (WHERE status = 'washed') as washed,
+          COUNT(*) FILTER (WHERE status = 'ready') as ready,
+          COUNT(*) FILTER (WHERE status = 'released') as released
+        FROM carpets
+        WHERE created_at >= NOW() - INTERVAL '7 days'
+        GROUP BY date(created_at)
+        ORDER BY date(created_at) DESC`
+    )).rows;
+    const dailyStats = daily.map((d) => ({
+      date: d.day,
+      total: Number(d.total || 0),
+      received: Number(d.received || 0),
+      washed: Number(d.washed || 0),
+      ready: Number(d.ready || 0),
+      released: Number(d.released || 0)
+    }));
     res.json({
       total,
       received,
@@ -35726,7 +35747,8 @@ router8.get(
       ready,
       released,
       unwashed,
-      employees
+      employees,
+      daily: dailyStats
     });
   })
 );
