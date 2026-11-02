@@ -34096,6 +34096,8 @@ function calculateTransaction(data, prices) {
     } else {
       commission = 10 + 2 * (expected_price - (minP + 10));
     }
+  } else if (data.category === "car" && (data.has_vacuum || data.has_engine_wash)) {
+    commission = expected_price * 30 / 100;
   } else if (expected_price >= minP && minP > 0) {
     commission = expected_price * cp / 100;
   } else if (minP === 0) {
@@ -34129,7 +34131,7 @@ function calculateTransaction(data, prices) {
     if (total_paid < comboMin) {
       effectivePriceForShortfall = comboMin;
       makes_allowance = 0;
-      commission = comboMin * cp / 100;
+      commission = comboMin * 30 / 100;
     } else {
       makes_allowance = comboMax - comboMin;
     }

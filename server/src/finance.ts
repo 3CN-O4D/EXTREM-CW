@@ -74,6 +74,9 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
     } else {
       commission = 10.0 + 2.0 * (expected_price - (minP + 10));
     }
+  } else if (data.category === 'car' && (data.has_vacuum || data.has_engine_wash)) {
+    // Any car combo (car+vacuum, car+engine, car+both) earns flat 30% commission.
+    commission = expected_price * 30.0 / 100.0;
   } else if (expected_price >= minP && minP > 0) {
     commission = expected_price * cp / 100.0;
   } else if (minP === 0) {
@@ -119,10 +122,10 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
     const comboMin = minP + (data.has_vacuum ? vacuumCfg?.min_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.min_price ?? 0 : 0);
     const comboMax = maxP + (data.has_vacuum ? vacuumCfg?.max_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.max_price ?? 0 : 0);
     if (total_paid < comboMin) {
-      // Combo below min: commission based on comboMin × %, shortfall = comboMin - paid
+      // Combo below min: commission based on comboMin × 30%, shortfall = comboMin - paid
       effectivePriceForShortfall = comboMin;
       makes_allowance = 0.0;
-      commission = comboMin * cp / 100.0;
+      commission = comboMin * 30.0 / 100.0;
     } else {
       makes_allowance = comboMax - comboMin; // no shortfall once at/above min
     }
