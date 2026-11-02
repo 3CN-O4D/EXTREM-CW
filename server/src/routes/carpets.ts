@@ -395,19 +395,6 @@ router.post(
   }),
 );
 
-// DELETE /carpets/:id
-router.delete(
-  '/:id',
-  wrap(async (req: AuthRequest, res) => {
-    await requireRole(req, M);
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) throw new HttpError(404, 'Carpet not found');
-    const del = await pool.query('DELETE FROM carpets WHERE id = $1', [id]);
-    if (!del.rowCount) throw new HttpError(404, 'Carpet not found');
-    res.json({ message: 'Carpet deleted' });
-  }),
-);
-
 // GET /carpets/stats - aggregate + per-employee carpet stats
 router.get(
   '/stats',
@@ -478,6 +465,19 @@ router.get(
       unwashed,
       employees,
     });
+  }),
+);
+
+// DELETE /carpets/:id
+router.delete(
+  '/:id',
+  wrap(async (req: AuthRequest, res) => {
+    await requireRole(req, M);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) throw new HttpError(404, 'Carpet not found');
+    const del = await pool.query('DELETE FROM carpets WHERE id = $1', [id]);
+    if (!del.rowCount) throw new HttpError(404, 'Carpet not found');
+    res.json({ message: 'Carpet deleted' });
   }),
 );
 

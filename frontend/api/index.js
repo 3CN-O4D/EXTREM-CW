@@ -35963,17 +35963,6 @@ router8.post(
     }
   })
 );
-router8.delete(
-  "/:id",
-  wrap(async (req, res) => {
-    await requireRole(req, M6);
-    const id = Number(req.params.id);
-    if (!Number.isInteger(id)) throw new HttpError(404, "Carpet not found");
-    const del = await pool.query("DELETE FROM carpets WHERE id = $1", [id]);
-    if (!del.rowCount) throw new HttpError(404, "Carpet not found");
-    res.json({ message: "Carpet deleted" });
-  })
-);
 router8.get(
   "/stats",
   wrap(async (req, res) => {
@@ -36034,6 +36023,17 @@ router8.get(
       unwashed,
       employees
     });
+  })
+);
+router8.delete(
+  "/:id",
+  wrap(async (req, res) => {
+    await requireRole(req, M6);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) throw new HttpError(404, "Carpet not found");
+    const del = await pool.query("DELETE FROM carpets WHERE id = $1", [id]);
+    if (!del.rowCount) throw new HttpError(404, "Carpet not found");
+    res.json({ message: "Carpet deleted" });
   })
 );
 var carpets_default = router8;

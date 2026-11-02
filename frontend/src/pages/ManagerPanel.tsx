@@ -40,6 +40,7 @@ export default function ManagerPanel() {
   });
   const [, setSheetRows] = useState<any[]>([]);
   const [, setIsAdmin] = useState(false);
+  const [summary, setSummary] = useState<any>(null);
 
   const empMap = Object.fromEntries(employees.map(e => [e.id, e.name]));
   const abbrMap = Object.fromEntries(employees.map(e => [e.id, e.abbreviation]));
@@ -77,8 +78,23 @@ export default function ManagerPanel() {
     }
   };
 
+  const fetchSummary = async () => {
+    const params: any = {};
+    if (viewMode === 'day') {
+      params.day = format(selectedDay, 'yyyy-MM-dd');
+    } else {
+      const weekStart = startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
+      params.week_id = format(weekStart, 'yyyy-II');
+    }
+    try {
+      const res = await api.get('/stats/summary', { params });
+      setSummary(res.data);
+    } catch {}
+  };
+
   useEffect(() => {
     fetchTransactions();
+    fetchSummary();
   }, [selectedDay, viewMode, weekOffset]);
 
   const fetchDebts = async () => {
@@ -422,6 +438,35 @@ export default function ManagerPanel() {
           </>
         )}
       </div>
+
+      {/* Net cash stat */}
+      {summary && (
+        <div className="card-pad rounded-2xl border border-slate-200/80 bg-slate-50 dark:border-white/10 dark:bg-white/5">
+          <div className="flex flex-wrap items-center justify-between gap-4 px-4 py-3">
+            <div className="flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Net Cash</p>
+              <p className={`text-xl font-bold ${summary.total_cash_received >= summary.total_expenses ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                Ksh {summary.total_cash_received - summary.total_expenses}
+              </p>
+              <p className="text-[10px] text-slate-500">Cash {summary.total_cash_received} − Expenses {summary.total_expenses}</p>
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Paid</p>
+              <p className="text-xl font-bold text-slate-900 dark:text-white">Ksh {summary.total_paid_received}</p>
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Expenses</p>
+              <p className="text-xl font-bold text-red-600 dark:text-red-400">Ksh {summary.total_expenses}</p>
+            </div>
+            <div className="flex-1">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Balance</p>
+              <p className={`text-xl font-bold ${summary.balance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                Ksh {summary.balance}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {activeTab === 'sheet' ? (
         <DaySheet employees={employees} selectedDay={selectedDay} />
