@@ -207,7 +207,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
     (key: string, patch: Partial<SheetRow>): Promise<unknown> => {
       const existing = rows.find((r) => r._key === key);
       const saved = existing && !existing.draft ? existing : undefined;
-      const merged = { ...(saved || { _key: key, kind: 'tx' as const, draft: true, cash: 0, mpesa: 0, sender: '', ref: '', time: nowHHmm(), expected: 0 }), ...patch };
+      const merged = { ...(existing || { _key: key, kind: 'tx' as const, draft: true, cash: 0, mpesa: 0, sender: '', ref: '', time: nowHHmm(), expected: 0, category: 'car' }), ...patch };
       const cat = merged.category || 'car';
       const expected = merged.expected || STANDARD[cat] || (merged.cash || 0) + (merged.mpesa || 0);
       const payload: any = {
