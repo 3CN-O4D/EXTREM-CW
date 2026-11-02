@@ -483,6 +483,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
           { label: 'Jobs', value: `${rows.filter((r) => !r.draft).length}`, cls: 'text-slate-900 dark:text-white' },
           { label: 'Carpets in', value: `${carpets.length}`, cls: 'text-violet-600 dark:text-violet-300' },
           { label: 'Expenses', value: `Ksh ${summary?.total_expenses ?? 0}`, cls: 'text-red-600 dark:text-red-400' },
+          { label: 'Net Cash', value: `Ksh ${(summary?.total_cash_received ?? 0) - (summary?.total_expenses ?? 0)}`, cls: ((summary?.total_cash_received ?? 0) - (summary?.total_expenses ?? 0)) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' },
           { label: 'Balance', value: `Ksh ${summary?.balance ?? 0}`, cls: (summary?.balance ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' },
         ].map((s) => (
           <div key={s.label} className="card px-4 py-3">

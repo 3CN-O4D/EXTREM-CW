@@ -34088,13 +34088,14 @@ function calculateTransaction(data, prices) {
   const cp = Number(priceCfg?.commission_percent ?? 30);
   const minP = Number(priceCfg?.min_price ?? 0);
   const maxP = Number(priceCfg?.max_price ?? 0);
+  const total_paid = data.cash_paid + data.mpesa_paid;
   if (data.category === "motorcycle" && minP > 0) {
-    if (expected_price < minP) {
+    if (total_paid < minP) {
       commission = 0;
-    } else if (expected_price <= minP + 10) {
-      commission = expected_price - minP;
+    } else if (total_paid <= minP + 10) {
+      commission = total_paid - minP;
     } else {
-      commission = 10 + 2 * (expected_price - (minP + 10));
+      commission = 10 + 2 * (total_paid - (minP + 10));
     }
   } else if (data.category === "car" && (data.has_vacuum || data.has_engine_wash)) {
     commission = expected_price * 30 / 100;
@@ -34103,7 +34104,6 @@ function calculateTransaction(data, prices) {
   } else if (minP === 0) {
     commission = expected_price * cp / 100;
   }
-  const total_paid = data.cash_paid + data.mpesa_paid;
   const misc_amount = data.misc_amount || 0;
   let isolated_tip = 0;
   if (total_paid > expected_price) {
