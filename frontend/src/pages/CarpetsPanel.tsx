@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ImageIcon, Loader2, Phone, Plus, Trash2, X } from 'lucide-react';
 import { format } from 'date-fns';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { compressVariants } from '../utils/image';
 import { InlineError, PageError, PageLoading } from '../components/States';
@@ -23,6 +24,12 @@ const EMPTY_RECEIVE = {
 };
 
 export default function CarpetsPanel() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
+  const isManager = user?.role === 'manager';
+  const isEmployee = user?.role === 'employee';
+  const canManage = isAdmin || isManager;
+
   const [carpets, setCarpets] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
   const [carpetStats, setCarpetStats] = useState<any>(null);
@@ -59,7 +66,12 @@ export default function CarpetsPanel() {
         api.get('/carpets/'),
         api.get('/carpets/stats'),
       ]);
-      setCarpets(carpetsRes.data);
+      // Employees see only their own carpets (read-only)
+      const allCarpets = carpetsRes.data;
+      const myCarpets = isEmployee
+        ? allCarpets.filter((c: any) => c.receiver_id === user?.id || c.submitter_id === user?.id)
+        : allCarpets;
+      setCarpets(myCarpets);
       setCarpetStats(statsRes.data);
       setError('');
     } catch (err: any) {
@@ -67,7 +79,7 @@ export default function CarpetsPanel() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [user?.id, isEmployee]);
 
   useEffect(() => {
     void fetchCarpets();
@@ -267,29 +279,46 @@ export default function CarpetsPanel() {
                 </tr>
               </thead>
               <tbody>
-                {/* Aggregate total row */}
-                <tr className="border-b border-slate-200/70 bg-brand-50 dark:bg-brand-500/10 font-bold">
-                  <td className="py-3 pr-3 text-left text-xs text-slate-700 dark:text-slate-300">All carpets</td>
-                  <td className="py-3 pr-3 text-right text-xs text-slate-900 dark:text-white">{carpetStats.total}</td>
-                  <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{carpetStats.received}</td>
-                  <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{carpetStats.washed}</td>
-                  <td className="py-3 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{carpetStats.ready}</td>
-                  <td className="py-3 pr-3 text-right text-xs text-slate-600 dark:text-slate-400">{carpetStats.released}</td>
-                  <td className="py-3 pr-3 text-right text-xs text-red-600 dark:text-red-400">{carpetStats.unwashed}</td>
-                </tr>
-                {carpetStats.employees.map((e: any) => (
-                  <tr key={e.id} className="border-b border-slate-200/70 dark:border-white/10 hover:bg-slate-50/70 dark:hover:bg-white/[0.03]">
-                    <td className="py-3 pr-3 text-left text-xs font-medium text-slate-700 dark:text-slate-300">
-                      {e.name} {e.abbreviation ? `(${e.abbreviation})` : ''}
-                    </td>
-                    <td className="py-3 pr-3 text-right text-xs text-slate-900 dark:text-white">{e.total}</td>
-                    <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{e.received}</td>
-                    <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{e.washed}</td>
-                    <td className="py-3 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{e.ready}</td>
-                    <td className="py-3 pr-3 text-right text-xs text-slate-600 dark:text-slate-400">{e.released}</td>
-                    <td className="py-3 pr-3 text-right text-xs text-red-600 dark:text-red-400">{e.unwashed}</td>
-                  </tr>
-                ))}
+                {isEmployee
+                  ? carpetStats.employees.map((e: any) => (
+                      <tr key={e.id} className="border-b border-slate-200/70 dark:border-white/10 hover:bg-slate-50/70 dark:hover:bg-white/[0.03]">
+                        <td className="py-3 pr-3 text-left text-xs font-medium text-slate-700 dark:text-slate-300">
+                          {e.name} {e.abbreviation ? `(${e.abbreviation})` : ''}
+                        </td>
+                        <td className="py-3 pr-3 text-right text-xs text-slate-900 dark:text-white">{e.total}</td>
+                        <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{e.received}</td>
+                        <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{e.washed}</td>
+                        <td className="py-3 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{e.ready}</td>
+                        <td className="py-3 pr-3 text-right text-xs text-slate-600 dark:text-slate-400">{e.released}</td>
+                        <td className="py-3 pr-3 text-right text-xs text-red-600 dark:text-red-400">{e.unwashed}</td>
+                      </tr>
+                    ))
+                  : (
+                    <>
+                      <tr className="border-b border-slate-200/70 bg-brand-50 dark:bg-brand-500/10 font-bold">
+                        <td className="py-3 pr-3 text-left text-xs text-slate-700 dark:text-slate-300">All carpets</td>
+                        <td className="py-3 pr-3 text-right text-xs text-slate-900 dark:text-white">{carpetStats.total}</td>
+                        <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{carpetStats.received}</td>
+                        <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{carpetStats.washed}</td>
+                        <td className="py-3 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{carpetStats.ready}</td>
+                        <td className="py-3 pr-3 text-right text-xs text-slate-600 dark:text-slate-400">{carpetStats.released}</td>
+                        <td className="py-3 pr-3 text-right text-xs text-red-600 dark:text-red-400">{carpetStats.unwashed}</td>
+                      </tr>
+                      {carpetStats.employees.map((e: any) => (
+                        <tr key={e.id} className="border-b border-slate-200/70 dark:border-white/10 hover:bg-slate-50/70 dark:hover:bg-white/[0.03]">
+                          <td className="py-3 pr-3 text-left text-xs font-medium text-slate-700 dark:text-slate-300">
+                            {e.name} {e.abbreviation ? `(${e.abbreviation})` : ''}
+                          </td>
+                          <td className="py-3 pr-3 text-right text-xs text-slate-900 dark:text-white">{e.total}</td>
+                          <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{e.received}</td>
+                          <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{e.washed}</td>
+                          <td className="py-3 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{e.ready}</td>
+                          <td className="py-3 pr-3 text-right text-xs text-slate-600 dark:text-slate-400">{e.released}</td>
+                          <td className="py-3 pr-3 text-right text-xs text-red-600 dark:text-red-400">{e.unwashed}</td>
+                        </tr>
+                      ))}
+                    </>
+                  )}
               </tbody>
             </table>
           </div>
@@ -355,7 +384,7 @@ export default function CarpetsPanel() {
             </button>
           ))}
         </div>
-        <button onClick={() => setShowReceive(true)} className="btn-primary inline-flex items-center gap-2">
+        <button onClick={() => setShowReceive(true)} className={`btn-primary inline-flex items-center gap-2 ${!canManage ? 'hidden' : ''}`}>
           <Plus size={16} /> Receive carpet
         </button>
       </div>
@@ -405,36 +434,44 @@ export default function CarpetsPanel() {
                   </td>
                   <td className="py-3 text-right">
                     <div className="flex flex-wrap justify-end gap-1">
-                      {c.status === 'received' && (
-                        <button onClick={() => setStatusModal({ carpet: c, status: 'washed', image: '', thumb: '' })}
-                          className="rounded-lg bg-amber-600 px-2 py-1 text-xs font-bold text-white hover:bg-amber-700">Wash</button>
-                      )}
-                      {c.status === 'washed' && (
-                        <button onClick={() => setStatusModal({ carpet: c, status: 'ready', image: '', thumb: '' })}
-                          className="rounded-lg bg-emerald-600 px-2 py-1 text-xs font-bold text-white hover:bg-emerald-700">Ready</button>
-                      )}
-                      {c.status !== 'released' && (
+                      {canManage && (
                         <>
-                          <button onClick={() => setReleaseModal({ carpet: c, cash: String(c.expected_price || ''), mpesa: '', washer: '' })}
-                            className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-700">Release</button>
-                          <button onClick={() => setStatusModal({ carpet: c, status: c.status === 'received' ? 'washed' : 'ready', image: '', thumb: '' })}
-                            className="rounded-lg bg-slate-200 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-white/10 dark:text-slate-200">Status</button>
+                          {c.status === 'received' && (
+                            <button onClick={() => setStatusModal({ carpet: c, status: 'washed', image: '', thumb: '' })}
+                              className="rounded-lg bg-amber-600 px-2 py-1 text-xs font-bold text-white hover:bg-amber-700">Wash</button>
+                          )}
+                          {c.status === 'washed' && (
+                            <button onClick={() => setStatusModal({ carpet: c, status: 'ready', image: '', thumb: '' })}
+                              className="rounded-lg bg-emerald-600 px-2 py-1 text-xs font-bold text-white hover:bg-emerald-700">Ready</button>
+                          )}
+                          {c.status !== 'released' && (
+                            <>
+                              <button onClick={() => setReleaseModal({ carpet: c, cash: String(c.expected_price || ''), mpesa: '', washer: '' })}
+                                className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-700">Release</button>
+                              <button onClick={() => setStatusModal({ carpet: c, status: c.status === 'received' ? 'washed' : 'ready', image: '', thumb: '' })}
+                                className="rounded-lg bg-slate-200 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-white/10 dark:text-slate-200">Status</button>
+                            </>
+                          )}
                         </>
                       )}
                       <button onClick={() => openPhoto(c)}
                         className="rounded-lg bg-violet-600 px-2 py-1 text-xs font-bold text-white hover:bg-violet-700">View</button>
-                      <button onClick={() => setEditModal({
-                        carpet: c,
-                        receiver_id: String(c.receiver_id || ''),
-                        characteristics: c.characteristics || '',
-                        client_name: c.client_name || '',
-                        customer_phone: c.customer_phone || '',
-                        expected_price: String(c.expected_price || ''),
-                        image: c.image_data || '',
-                        thumb: c.image_thumb || '',
-                      })}
-                        className="rounded-lg bg-indigo-600 px-2 py-1 text-xs font-bold text-white hover:bg-indigo-700">Edit</button>
-                      <button onClick={() => deleteCarpet(c)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white hover:bg-red-700"><Trash2 size={12} /></button>
+                      {canManage && (
+                        <>
+                          <button onClick={() => setEditModal({
+                            carpet: c,
+                            receiver_id: String(c.receiver_id || ''),
+                            characteristics: c.characteristics || '',
+                            client_name: c.client_name || '',
+                            customer_phone: c.customer_phone || '',
+                            expected_price: String(c.expected_price || ''),
+                            image: c.image_data || '',
+                            thumb: c.image_thumb || '',
+                          })}
+                            className="rounded-lg bg-indigo-600 px-2 py-1 text-xs font-bold text-white hover:bg-indigo-700">Edit</button>
+                          <button onClick={() => deleteCarpet(c)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white hover:bg-red-700"><Trash2 size={12} /></button>
+                        </>
+                      )}
                     </div>
                   </td>
                 </tr>
