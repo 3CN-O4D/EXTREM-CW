@@ -320,7 +320,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         kind: 'tx',
         draft: true,
         category,
-        item: '',
+        item: PLATE_CATS.includes(category) ? 'PIKIPIKI' : category === 'carpet' ? 'carpet' : '',
         washer_id: '',
         cash: 0,
         mpesa: 0,
