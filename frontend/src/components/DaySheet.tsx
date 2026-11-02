@@ -49,6 +49,8 @@ type SheetRow = {
   total_paid?: number;
   saving?: boolean;
   error?: string;
+  has_vacuum?: boolean;
+  has_engine_wash?: boolean;
 };
 function nowHHmm(): string {
   return format(new Date(), 'HH:mm');
@@ -80,6 +82,8 @@ function txToRow(tx: any): SheetRow {
     expected: tx.expected_price,
     shortfall: tx.shortfall || 0,
     total_paid: tx.total_paid || 0,
+    has_vacuum: tx.has_vacuum || false,
+    has_engine_wash: tx.has_engine_wash || false,
   };
 }
 
@@ -96,6 +100,49 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const [smsText, setSmsText] = useState('');
   const [showReceive, setShowReceive] = useState(false);
   const [showRelease, setShowRelease] = useState(false);
+  const [addonOpen, setAddonOpen] = useState<string | null>(null);
+
+  const toggleAddon = (key: string) => setAddonOpen(addonOpen === key ? null : key);
+
+  const selectAddon = (key: string, type: 'vacuum' | 'engine' | 'engine+vacuum') => {
+    const row = rows.find((r) => r._key === key);
+    if (!row) return;
+    const isVac = type === 'vacuum' || type === 'engine+vacuum';
+    const isEng = type === 'engine' || type === 'engine+vacuum';
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r._key !== key) return r;
+        const patch: Partial<SheetRow> = {
+          has_vacuum: isVac,
+          has_engine_wash: isEng,
+        };
+        // bump expected price by the add-on cost (only once per add-on type)
+        if (!r.has_vacuum && isVac) patch.expected = (r.expected || 0) + 300;
+        if (!r.has_engine_wash && isEng) patch.expected = (r.expected || 0) + 300;
+        return { ...r, ...patch };
+      }),
+    );
+    setAddonOpen(null);
+  };
+
+  const removeAddon = (key: string, type: 'vacuum' | 'engine') => {
+    setRows((prev) =>
+      prev.map((r) => {
+        if (r._key !== key) return r;
+        const patch: Partial<SheetRow> = {};
+        if (type === 'vacuum' && r.has_vacuum) {
+          patch.has_vacuum = false;
+          patch.expected = Math.max(0, (r.expected || 0) - 300);
+        }
+        if (type === 'engine' && r.has_engine_wash) {
+          patch.has_engine_wash = false;
+          patch.expected = Math.max(0, (r.expected || 0) - 300);
+        }
+        return { ...r, ...patch };
+      }),
+    );
+    setAddonOpen(null);
+  };
 
   // carpet receive form
   const [receive, setReceive] = useState({
@@ -176,8 +223,8 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         misc_amount: 0,
         misc_description: null,
         has_car_wash: PLATE_CATS.includes(cat),
-        has_vacuum: cat === 'vacuum',
-        has_engine_wash: cat === 'engine',
+        has_vacuum: merged.has_vacuum ?? cat === 'vacuum',
+        has_engine_wash: merged.has_engine_wash ?? cat === 'engine',
         plate_number: PLATE_CATS.includes(cat) ? merged.item || null : null,
         custom_category: cat === 'other' ? merged.item || null : null,
         carpet_metadata: null,
@@ -439,13 +486,14 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
                 <th className="border-b border-slate-200/70 px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-slate-500 dark:border-white/10">M-PESA</th>
                 <th className="border-b border-slate-200/70 px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:border-white/10">MPESA NAME</th>
                 <th className="border-b border-slate-200/70 px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-slate-500 dark:border-white/10">PAYOUT</th>
+                <th className="border-b border-slate-200/70 px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:border-white/10">ADD-ONS</th>
                 <th className="border-b border-slate-200/70 px-2 py-2 dark:border-white/10" />
               </tr>
             </thead>
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="px-5 py-12 text-center">
+                  <td colSpan={9} className="px-5 py-12 text-center">
                     <p className="text-sm font-bold text-slate-500 dark:text-slate-400">No rows yet</p>
                     <p className="muted mt-1 text-xs">Use the buttons below the table to start logging the day.</p>
                   </td>
@@ -473,6 +521,10 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
                     onPatch={(patch) => (row.draft ? scheduleSave(row._key, patch) : scheduleSave(row._key, patch))}
                     onSaveDraft={() => saveDraftNow(row._key)}
                     onDelete={() => deleteRow(row)}
+                    addonOpen={addonOpen === row._key}
+                    onToggleAddon={() => toggleAddon(row._key)}
+                    onSelectAddon={(type: 'vacuum' | 'engine' | 'engine+vacuum') => selectAddon(row._key, type)}
+                    onRemoveAddon={(type: 'vacuum' | 'engine') => removeAddon(row._key, type)}
                   />
                 );
               })}
@@ -818,6 +870,7 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 function RowFragment({
   row, employees, isPlate, isOther, saving, error,
   smsOpen, smsText, onSmsText, onOpenSms, onFillSms, onPatch, onSaveDraft, onDelete,
+  addonOpen, onToggleAddon, onSelectAddon, onRemoveAddon,
 }: {
   row: SheetRow;
   employees: any[];
@@ -833,6 +886,10 @@ function RowFragment({
   onPatch: (patch: Partial<SheetRow>) => void;
   onSaveDraft: () => void;
   onDelete: () => void;
+  addonOpen: boolean;
+  onToggleAddon: () => void;
+  onSelectAddon: (type: 'vacuum' | 'engine' | 'engine+vacuum') => void;
+  onRemoveAddon: (type: 'vacuum' | 'engine') => void;
 }) {
   const dirty = row.draft;
   const display = row.total_paid !== undefined ? `Ksh ${row.total_paid}` : '';
@@ -855,6 +912,12 @@ function RowFragment({
             <span className="hidden rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold capitalize text-slate-500 sm:inline dark:bg-white/5 dark:text-slate-400">
               {CATEGORY_LABELS[row.category] || row.category}
             </span>
+            {row.has_vacuum && (
+              <span className="ml-1 inline rounded-full bg-blue-100 px-1.5 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">⚪ Vacuum</span>
+            )}
+            {row.has_engine_wash && (
+              <span className="ml-1 inline rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">⚙️ Engine</span>
+            )}
           </div>
         </td>
         <td className="border-b border-slate-200/70 px-2 py-1.5 dark:border-white/10">
@@ -912,6 +975,57 @@ function RowFragment({
             <Loader2 size={14} className="ml-auto animate-spin text-brand-500" />
           ) : (
             <span className="text-slate-300 dark:text-slate-600">—</span>
+          )}
+        </td>
+        <td className="border-b border-slate-200/70 px-3 py-1.5 text-right dark:border-white/10">
+          {isPlate && (
+            <div className="flex items-center justify-end gap-1">
+              {addonOpen ? (
+                <div className="flex flex-col items-end gap-1">
+                  <button onClick={onToggleAddon} className="rounded-lg p-1.5 text-violet-600 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-500/10">
+                    <Plus size={13} />
+                  </button>
+                  <div className="absolute right-0 mt-1 w-32 rounded-lg border border-slate-200 bg-white shadow-lg dark:border-white/10 dark:bg-slate-800 z-20">
+                    <button
+                      onClick={() => onSelectAddon('vacuum')}
+                      className="w-full text-left px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/10 border-b border-slate-100 dark:border-white/5 last:border-0"
+                    >
+                      Vacuum (+Ksh 300)
+                    </button>
+                    <button
+                      onClick={() => onSelectAddon('engine')}
+                      className="w-full text-left px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/10 border-b border-slate-100 dark:border-white/5 last:border-0"
+                    >
+                      Engine (+Ksh 300)
+                    </button>
+                    <button
+                      onClick={() => onSelectAddon('engine+vacuum')}
+                      className="w-full text-left px-2 py-1.5 text-xs text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/10"
+                    >
+                      Engine + Vacuum (+Ksh 600)
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button onClick={onToggleAddon} className="rounded-lg p-1.5 text-violet-600 hover:bg-violet-50 dark:text-violet-400 dark:hover:bg-violet-500/10">
+                  <Plus size={13} />
+                </button>
+              )}
+              {(row.has_vacuum || row.has_engine_wash) && (
+                <div className="flex items-center gap-1 ml-1">
+                  {row.has_vacuum && (
+                    <button onClick={() => onRemoveAddon('vacuum')} className="rounded px-1 py-0.5 text-[10px] text-blue-600 bg-blue-50 hover:bg-blue-100 dark:text-blue-400 dark:bg-blue-900/20">
+                      ✕ Vacuum
+                    </button>
+                  )}
+                  {row.has_engine_wash && (
+                    <button onClick={() => onRemoveAddon('engine')} className="rounded px-1 py-0.5 text-[10px] text-amber-600 bg-amber-50 hover:bg-amber-100 dark:text-amber-400 dark:bg-amber-900/20">
+                      ✕ Engine
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </td>
         <td className="border-b border-slate-200/70 px-2 py-1.5 text-right dark:border-white/10">
