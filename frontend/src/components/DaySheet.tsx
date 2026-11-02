@@ -7,6 +7,7 @@ import {
   Loader2,
   MessageSquareText,
   Plus,
+  Pencil,
   Save,
   Trash2,
   X,
@@ -102,6 +103,8 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const [showReceive, setShowReceive] = useState(false);
   const [showRelease, setShowRelease] = useState(false);
   const [addonOpen, setAddonOpen] = useState<string | null>(null);
+  const [editOpen, setEditOpen] = useState<SheetRow | null>(null);
+  const [editForm, setEditForm] = useState<any>({});
 
   const toggleAddon = (key: string) => setAddonOpen(addonOpen === key ? null : key);
 
@@ -158,6 +161,58 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
       }),
     );
     setAddonOpen(null);
+  };
+
+  const openEdit = (row: SheetRow) => {
+    setEditForm({
+      category: row.category,
+      item: row.item || '',
+      washer_id: row.washer_id || '',
+      cash: row.cash || 0,
+      mpesa: row.mpesa || 0,
+      sender: row.sender || '',
+      ref: row.ref || '',
+      expected: row.expected || 0,
+    });
+    setEditOpen(row);
+  };
+
+  const closeEdit = () => {
+    setEditOpen(null);
+    setEditForm({});
+  };
+
+  const saveEdit = async () => {
+    if (!editOpen) return;
+    try {
+      const payload: any = {
+        category: editForm.category,
+        expected_price: editForm.expected,
+        cash_paid: editForm.cash || 0,
+        mpesa_paid: editForm.mpesa || 0,
+        mpesa_transaction_id: editForm.ref || null,
+        mpesa_sender_name: editForm.sender || null,
+        manual_tip: 0,
+        tip_method: 'cash',
+        misc_amount: 0,
+        misc_description: null,
+        has_car_wash: PLATE_CATS.includes(editForm.category),
+        has_vacuum: editForm.category === 'vacuum',
+        has_engine_wash: editForm.category === 'engine',
+        plate_number: PLATE_CATS.includes(editForm.category) ? editForm.item || null : null,
+        custom_category: editForm.category === 'other' ? editForm.item || null : null,
+        carpet_metadata: null,
+      };
+      if (editOpen.id) {
+        await api.put(`/transactions/${editOpen.id}`, payload);
+      } else {
+        await api.post('/transactions/', payload);
+      }
+      closeEdit();
+      await reload();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Save failed');
+    }
   };
 
   // carpet receive form
@@ -303,7 +358,17 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   );
 
   const patchRow = (key: string, patch: Partial<SheetRow>) => {
-    setRows((r) => r.map((x) => (x._key === key ? { ...x, ...patch } : x)));
+    setRows((r) =>
+      r.map((x) => {
+        if (x._key !== key) return x;
+        const updated = { ...x, ...patch };
+        // Mark saved rows as draft when edited so they get synced
+        if (!x.draft && x.id !== null) {
+          updated.draft = true;
+        }
+        return updated;
+      }),
+    );
   };
 
   const addDraft = (category: string, expected?: number) => {
@@ -453,7 +518,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
     return { cash, mpesa, paid, shortfall, counts };
   }, [rows]);
 
-  const pendingDrafts = rows.filter((r) => r.draft || r.id === null).length;
+  const pendingDrafts = rows.filter((r) => r.draft).length;
 
   if (loading && rows.length === 0) {
     return (
@@ -576,6 +641,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
                     onToggleAddon={() => toggleAddon(row._key)}
                     onSelectAddon={(type: 'vacuum' | 'engine' | 'engine+vacuum') => selectAddon(row._key, type)}
                     onRemoveAddon={(type: 'vacuum' | 'engine') => removeAddon(row._key, type)}
+                    onEdit={() => openEdit(row)}
                   />
                 );
               })}
@@ -897,6 +963,65 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
           </div>
         </Modal>
       )}
+
+      {/* Edit row modal */}
+      {editOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black tracking-tight">Edit Row</h3>
+              <button onClick={closeEdit} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
+            </div>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Category</span>
+              <select className="input-base" value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
+                {['car', 'taxi', 'midrange', 'lorry', 'exterior', 'motorcycle', 'bicycle', 'carpet', 'vacuum', 'engine', 'other'].map((cat) => (
+                  <option key={cat} value={cat}>{CATEGORY_LABELS[cat] || cat}</option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Plate / Item</span>
+              <input className="input-base" value={editForm.item} onChange={(e) => setEditForm({ ...editForm, item: e.target.value.toUpperCase() })} />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Washer</span>
+              <select className="input-base" value={editForm.washer_id} onChange={(e) => setEditForm({ ...editForm, washer_id: e.target.value })}>
+                <option value="">—</option>
+                {employees.map((e) => <option key={e.id} value={e.id}>{e.name} ({e.abbreviation})</option>)}
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Cash (Ksh)</span>
+                <input type="number" min="0" className="input-base" value={editForm.cash} onChange={(e) => setEditForm({ ...editForm, cash: toNum(e.target.value) })} />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">M-Pesa (Ksh)</span>
+                <input type="number" min="0" className="input-base" value={editForm.mpesa} onChange={(e) => setEditForm({ ...editForm, mpesa: toNum(e.target.value) })} />
+              </label>
+            </div>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Payer Name</span>
+              <input className="input-base" value={editForm.sender} onChange={(e) => setEditForm({ ...editForm, sender: e.target.value })} />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Transaction ID</span>
+              <input className="input-base" value={editForm.ref} onChange={(e) => setEditForm({ ...editForm, ref: e.target.value })} />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Expected Price (Ksh)</span>
+              <input type="number" min="0" className="input-base" value={editForm.expected} onChange={(e) => setEditForm({ ...editForm, expected: toNum(e.target.value) })} />
+            </label>
+            <div className="flex gap-2">
+              <button onClick={saveEdit} className="btn-primary flex-1 justify-center bg-brand-600">
+                Save Changes
+              </button>
+              <button onClick={closeEdit} className="btn-secondary flex-1 justify-center">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -923,6 +1048,7 @@ function RowFragment({
   row, rowNumber, employees, isPlate, isOther, saving, error,
   smsOpen, smsText, onSmsText, onOpenSms, onFillSms, onPatch, onSaveDraft, onDelete,
   addonOpen, onToggleAddon, onSelectAddon, onRemoveAddon,
+  onEdit,
 }: {
   row: SheetRow;
   rowNumber: number;
@@ -943,6 +1069,7 @@ function RowFragment({
   onToggleAddon: () => void;
   onSelectAddon: (type: 'vacuum' | 'engine' | 'engine+vacuum') => void;
   onRemoveAddon: (type: 'vacuum' | 'engine') => void;
+  onEdit: () => void;
 }) {
   const dirty = row.draft;
   const display = row.total_paid !== undefined ? `Ksh ${row.total_paid}` : '';
@@ -1088,6 +1215,9 @@ function RowFragment({
                 <Check size={13} />
               </button>
             )}
+            <button onClick={onEdit} title="Edit this row" className="rounded-lg bg-indigo-600 p-1.5 text-white transition hover:bg-indigo-700">
+              <Pencil size={13} />
+            </button>
             <button onClick={onDelete} title="Delete row" className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-300">
               <Trash2 size={14} />
             </button>
