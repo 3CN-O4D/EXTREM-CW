@@ -1,0 +1,952 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  Camera,
+  Check,
+  ChevronDown,
+  ImageIcon,
+  Loader2,
+  MessageSquareText,
+  Plus,
+  Save,
+  Trash2,
+  X,
+} from 'lucide-react';
+import { format } from 'date-fns';
+import api from '../services/api';
+import { parsePaymentSms } from '../utils/smsParser';
+import { InlineError } from './States';
+
+export interface DaySheetProps {
+  employees: any[];
+  selectedDay: Date;
+}
+
+const STANDARD: Record<string, number> = {
+  bicycle: 50, motorcycle: 70, taxi: 150, car: 200, midrange: 300, lorry: 500, carpet: 300, other: 0,
+};
+const CATEGORY_LABELS: Record<string, string> = {
+  bicycle: 'Bicycle', motorcycle: 'Motorcycle', taxi: 'Taxi', car: 'Car',
+  midrange: 'Midrange', lorry: 'Lorry', carpet: 'Carpet', other: 'Other',
+};
+const PLATE_CATS = ['car', 'taxi', 'midrange', 'lorry'];
+
+type SheetRow = {
+  _key: string;
+  kind: 'tx';
+  draft?: boolean;
+  id?: number;
+  category: string;
+  item: string;
+  washer_id: string;
+  cash: number;
+  mpesa: number;
+  sender: string;
+  ref: string;
+  time: string;
+  expected: number;
+  shortfall?: number;
+  total_paid?: number;
+  saving?: boolean;
+  error?: string;
+};
+function nowHHmm(): string {
+  return format(new Date(), 'HH:mm');
+}
+
+function compressImage(file: File, maxW = 800, quality = 0.72): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxW / img.width);
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.round(img.width * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+const toNum = (v: any) => {
+  const n = parseFloat(v);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+};
+
+function txToRow(tx: any): SheetRow {
+  const item = tx.category === 'carpet'
+    ? (tx.carpet_characteristics || 'Carpet')
+    : tx.category === 'other'
+      ? (tx.custom_category || 'Other')
+      : (tx.plate_number || '');
+  return {
+    _key: `tx-${tx.id}`,
+    kind: 'tx',
+    id: tx.id,
+    category: tx.category,
+    item,
+    washer_id: tx.washer_id ? String(tx.washer_id) : '',
+    cash: tx.cash_paid || 0,
+    mpesa: tx.mpesa_paid || 0,
+    sender: tx.mpesa_sender_name || '',
+    ref: tx.mpesa_transaction_id || '',
+    time: format(new Date(tx.timestamp), 'HH:mm'),
+    expected: tx.expected_price,
+    shortfall: tx.shortfall || 0,
+    total_paid: tx.total_paid || 0,
+  };
+}
+
+export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
+  const [rows, setRows] = useState<SheetRow[]>([]);
+  const [carpets, setCarpets] = useState<any[]>([]);
+  const [summary, setSummary] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [savingAll, setSavingAll] = useState(false);
+
+  // drafts & popovers
+  const [smsOpen, setSmsOpen] = useState<string | null>(null);
+  const [smsText, setSmsText] = useState('');
+  const [showReceive, setShowReceive] = useState(false);
+  const [showRelease, setShowRelease] = useState(false);
+
+  // carpet receive form
+  const [receive, setReceive] = useState({
+    image: '', characteristics: '', client_name: '', customer_phone: '',
+    receiver_id: '', expected_price: 300,
+  });
+  const [receiveBusy, setReceiveBusy] = useState(false);
+
+  // carpet release form
+  const [releaseCarpetId, setReleaseCarpetId] = useState('');
+  const [releaseCash, setReleaseCash] = useState('');
+  const [releaseWasher, setReleaseWasher] = useState('');
+  const [releaseBusy, setReleaseBusy] = useState(false);
+  const [eodOpen, setEodOpen] = useState(false);
+
+  const timers = useRef<Map<string, number>>(new Map());
+  const dayStr = format(selectedDay, 'yyyy-MM-dd');
+
+  const reload = useCallback(async () => {
+    const params = { day: format(selectedDay, 'yyyy-MM-dd') };
+    try {
+      const [txRes, carpetRes, sumRes] = await Promise.all([
+        api.get('/transactions/', { params }),
+        api.get('/carpets/'),
+        api.get('/stats/summary', { params }),
+      ]);
+      setRows((prev) => {
+        // Keep unsaved drafts visible across re-fetches (a draft that is
+        // currently being saved is about to come back from the server).
+        const drafts = prev.filter((r) => r.draft && !r.saving);
+        return [...txRes.data.map(txToRow), ...drafts];
+      });
+      setCarpets(carpetRes.data.filter((c: any) => c.status === 'received'));
+      setSummary(sumRes.data);
+      setLoadError('');
+    } catch (err: any) {
+      setRows((prev) => prev.map((r) => ({ ...r, saving: false })));
+      setLoadError(
+        err?.response?.data?.detail ||
+        (err?.code === 'ECONNABORTED' ? 'The server took too long to respond.' : 'Could not reach the server.'),
+      );
+    } finally {
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dayStr]);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  const empName = (id: any) => {
+    const e = employees.find((x) => x.id === Number(id));
+    return e ? e.name : '';
+  };
+  const empAbbr = (id: any) => {
+    const e = employees.find((x) => x.id === Number(id));
+    return e ? e.abbreviation : '';
+  };
+
+  const persistRow = useCallback(
+    (key: string, patch: Partial<SheetRow>): Promise<unknown> => {
+      const existing = rows.find((r) => r._key === key);
+      const saved = existing && !existing.draft ? existing : undefined;
+      const merged = { ...(saved || { _key: key, kind: 'tx' as const, draft: true, cash: 0, mpesa: 0, sender: '', ref: '', time: nowHHmm(), expected: 0 }), ...patch };
+      const cat = merged.category || 'car';
+      const expected = merged.expected || STANDARD[cat] || (merged.cash || 0) + (merged.mpesa || 0);
+      const payload: any = {
+        washer_id: Number(merged.washer_id),
+        category: cat,
+        expected_price: expected,
+        cash_paid: merged.cash || 0,
+        mpesa_paid: merged.mpesa || 0,
+        mpesa_transaction_id: merged.ref || null,
+        mpesa_sender_name: merged.sender || null,
+        manual_tip: 0,
+        tip_method: 'cash',
+        misc_amount: 0,
+        misc_description: null,
+        has_car_wash: true,
+        has_vacuum: false,
+        has_engine_wash: false,
+        plate_number: PLATE_CATS.includes(cat) ? merged.item || null : null,
+        custom_category: cat === 'other' ? merged.item || null : null,
+        carpet_metadata: null,
+      };
+      const save = saved
+        ? api.put(`/transactions/${saved.id}`, payload)
+        : api.post('/transactions/', payload);
+      return save.then(() => reload());
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [rows, reload],
+  );
+
+  const flushSave = useCallback(
+    (key: string, patch: Partial<SheetRow>) => {
+      setRows((prev) => prev.map((r) => (r._key === key ? { ...r, ...patch, saving: true, error: '' } : r)));
+      persistRow(key, patch).catch((err: any) => {
+        setRows((prev) =>
+          prev.map((r) =>
+            r._key === key
+              ? { ...r, saving: false, error: err?.response?.data?.detail || 'Save failed' }
+              : r,
+          ),
+        );
+      });
+    },
+    [persistRow],
+  );
+
+  const scheduleSave = (key: string, patch: Partial<SheetRow>) => {
+    const prev = timers.current.get(key);
+    if (prev) window.clearTimeout(prev);
+    setRows((r) => r.map((x) => (x._key === key ? { ...x, ...patch } : x)));
+    timers.current.set(
+      key,
+      window.setTimeout(() => {
+        flushSave(key, patch);
+        timers.current.delete(key);
+      }, 650),
+    );
+  };
+
+  const addDraft = (category: string) => {
+    setRows((prev) => [
+      ...prev,
+      {
+        _key: `draft-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+        kind: 'tx',
+        draft: true,
+        category,
+        item: '',
+        washer_id: '',
+        cash: 0,
+        mpesa: 0,
+        sender: '',
+        ref: '',
+        time: nowHHmm(),
+        expected: STANDARD[category] || 0,
+      },
+    ]);
+  };
+
+  const deleteRow = async (row: SheetRow) => {
+    if (!row.id) {
+      setRows((prev) => prev.filter((r) => r._key !== row._key));
+      return;
+    }
+    if (!confirm('Delete this row? This reverses the employee balance and removes the record.')) return;
+    try {
+      await api.delete(`/transactions/${row.id}`);
+      await reload();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Could not delete the row');
+    }
+  };
+
+  const saveDraftNow = (key: string) => {
+    const row = rows.find((r) => r._key === key);
+    if (!row) return;
+    if (!row.washer_id) {
+      setRows((prev) =>
+        prev.map((r) => (r._key === key ? { ...r, error: 'Pick a washer first' } : r)),
+      );
+      return;
+    }
+    flushSave(key, {});
+  };
+
+  const fillSms = (key: string) => {
+    const parsed = parsePaymentSms(smsText);
+    if (!parsed) {
+      alert('Could not parse this message. Use an M-Pesa "Confirmed" or the bank "Dear..." announcement.');
+      return;
+    }
+    scheduleSave(key, {
+      mpesa: parsed.amount,
+      sender: parsed.senderName,
+      ref: parsed.transactionId,
+      expected: Math.max(rows.find((r) => r._key === key)?.expected || 0, parsed.amount),
+    });
+    setSmsOpen(null);
+    setSmsText('');
+  };
+
+  const submitReceive = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!receive.image) {
+      alert('Take a photo of the carpet first — it is required on arrival.');
+      return;
+    }
+    setReceiveBusy(true);
+    try {
+      await api.post('/carpets/', {
+        receiver_id: receive.receiver_id ? Number(receive.receiver_id) : null,
+        characteristics: receive.characteristics || 'Carpet',
+        client_name: receive.client_name || null,
+        customer_phone: receive.customer_phone || null,
+        image_data: receive.image,
+        expected_price: toNum(receive.expected_price),
+        cash_paid: 0,
+        mpesa_paid: 0,
+      });
+      setReceive({ image: '', characteristics: '', client_name: '', customer_phone: '', receiver_id: '', expected_price: 300 });
+      setShowReceive(false);
+      await reload();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Could not log the carpet');
+    } finally {
+      setReceiveBusy(false);
+    }
+  };
+
+  const submitRelease = async () => {
+    if (!releaseCarpetId) {
+      alert('Pick a carpet to release.');
+      return;
+    }
+    setReleaseBusy(true);
+    try {
+      await api.post(`/carpets/${releaseCarpetId}/release`, {
+        cash_paid: toNum(releaseCash),
+        ...(releaseWasher ? { washer_id: Number(releaseWasher) } : {}),
+      });
+      setShowRelease(false);
+      setReleaseCarpetId('');
+      setReleaseCash('');
+      setReleaseWasher('');
+      await reload();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Could not release the carpet');
+    } finally {
+      setReleaseBusy(false);
+    }
+  };
+
+  const saveTable = async () => {
+    setSavingAll(true);
+    const drafts = rows.filter((r) => r.draft && r.washer_id);
+    await Promise.all(drafts.map((d) => persistRow(d._key, {})));
+    await reload();
+    setSavingAll(false);
+    setEodOpen(true);
+  };
+
+  const totals = useMemo(() => {
+    let cash = 0, mpesa = 0, paid = 0, shortfall = 0;
+    const counts: Record<string, number> = {};
+    for (const r of rows) {
+      if (r.draft) continue;
+      cash += r.cash;
+      mpesa += r.mpesa;
+      paid += r.total_paid || 0;
+      shortfall += r.shortfall || 0;
+      counts[r.category] = (counts[r.category] || 0) + 1;
+    }
+    return { cash, mpesa, paid, shortfall, counts };
+  }, [rows]);
+
+  const pendingDrafts = rows.filter((r) => r.draft).length;
+
+  if (loading && rows.length === 0) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-6 text-sm font-medium text-slate-500 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-400">
+        <Loader2 size={18} className="animate-spin text-brand-500" /> Loading the day sheet…
+      </div>
+    );
+  }
+
+  const heldNames = (c: any) => empName(c.receiver_id) || empAbbr(c.receiver_id) || 'Unassigned';
+
+  return (
+    <div className="space-y-5">
+      {loadError && <InlineError message={loadError} onRetry={() => reload()} />}
+
+      {/* Live stats bar */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
+        {[
+          { label: 'Cash', value: `Ksh ${totals.cash}`, cls: 'text-emerald-600 dark:text-emerald-400' },
+          { label: 'M-Pesa', value: `Ksh ${totals.mpesa}`, cls: 'text-brand-600 dark:text-brand-300' },
+          { label: 'Total paid', value: `Ksh ${totals.paid}`, cls: 'text-slate-900 dark:text-white' },
+          { label: 'Shortfall', value: `Ksh ${shortfall0(totals.shortfall)}`, cls: 'text-red-600 dark:text-red-400' },
+          { label: 'Jobs', value: `${rows.filter((r) => !r.draft).length}`, cls: 'text-slate-900 dark:text-white' },
+          { label: 'Carpets in', value: `${carpets.length}`, cls: 'text-violet-600 dark:text-violet-300' },
+          { label: 'Expenses', value: `Ksh ${summary?.total_expenses ?? 0}`, cls: 'text-red-600 dark:text-red-400' },
+          { label: 'Balance', value: `Ksh ${summary?.balance ?? 0}`, cls: (summary?.balance ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' },
+        ].map((s) => (
+          <div key={s.label} className="card px-4 py-3">
+            <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">{s.label}</p>
+            <p className={`mt-1 truncate text-lg font-black ${s.cls}`}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Category chips */}
+      <div className="flex flex-wrap gap-1.5">
+        {Object.entries(totals.counts).length === 0 ? (
+          <span className="muted text-xs">No jobs logged yet today.</span>
+        ) : (
+          Object.entries(totals.counts).map(([cat, n]) => (
+            <span key={cat} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+              {CATEGORY_LABELS[cat] || cat}: {n}
+            </span>
+          ))
+        )}
+        {pendingDrafts > 0 && (
+          <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-700 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-300">
+            {pendingDrafts} unsaved {pendingDrafts === 1 ? 'row' : 'rows'}
+          </span>
+        )}
+      </div>
+
+      {/* Spreadsheet */}
+      <div className="card overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 px-5 py-3 dark:border-white/10">
+          <div>
+            <h2 className="text-lg font-black tracking-tight">Day Sheet — {format(selectedDay, 'EEEE, dd MMM yyyy')}</h2>
+            <p className="muted text-xs">Edit any cell — rows save as you go. Paste an M-Pesa message to auto-fill.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setEodOpen((v) => !v)} className="btn-secondary px-3 py-2 text-xs">
+              <MessageSquareText size={14} /> Day summary
+            </button>
+            <button onClick={saveTable} disabled={savingAll} className="btn-primary px-3 py-2 text-xs">
+              {savingAll ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+              Save table
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] border-collapse text-sm">
+            <thead>
+              <tr className="bg-slate-50 text-left dark:bg-white/5">
+                <th className="border-b border-slate-200/70 px-2 py-2 text-center text-xs font-bold uppercase tracking-wider text-slate-500 dark:border-white/10 w-12">#</th>
+                <th className="border-b border-slate-200/70 px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:border-white/10">ITEM</th>
+                <th className="border-b border-slate-200/70 px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:border-white/10">WASHER</th>
+                <th className="border-b border-slate-200/70 px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-slate-500 dark:border-white/10">CASH</th>
+                <th className="border-b border-slate-200/70 px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-slate-500 dark:border-white/10">M-PESA</th>
+                <th className="border-b border-slate-200/70 px-3 py-2 text-xs font-bold uppercase tracking-wider text-slate-500 dark:border-white/10">MPESA NAME</th>
+                <th className="border-b border-slate-200/70 px-3 py-2 text-right text-xs font-bold uppercase tracking-wider text-slate-500 dark:border-white/10">PAYOUT</th>
+                <th className="border-b border-slate-200/70 px-2 py-2 dark:border-white/10" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="px-5 py-12 text-center">
+                    <p className="text-sm font-bold text-slate-500 dark:text-slate-400">No rows yet</p>
+                    <p className="muted mt-1 text-xs">Use the buttons below the table to start logging the day.</p>
+                  </td>
+                </tr>
+              )}
+              {rows.map((row) => {
+                const saving = row.saving;
+                const editingMpesa = smsOpen === row._key;
+                const isPlate = PLATE_CATS.includes(row.category);
+                const isOther = row.category === 'other';
+                return (
+                  <RowFragment
+                    key={row._key}
+                    row={row}
+                    employees={employees}
+                    isPlate={isPlate}
+                    isOther={isOther}
+                    saving={!!saving}
+                    error={row.error}
+                    smsOpen={editingMpesa}
+                    smsText={smsText}
+                    onSmsText={setSmsText}
+                    onOpenSms={() => { setSmsOpen(editingMpesa ? null : row._key); setSmsText(''); }}
+                    onFillSms={() => fillSms(row._key)}
+                    onPatch={(patch) => (row.draft ? scheduleSave(row._key, patch) : scheduleSave(row._key, patch))}
+                    onSaveDraft={() => saveDraftNow(row._key)}
+                    onDelete={() => deleteRow(row)}
+                  />
+                );
+              })}
+              {rows.length > 0 && (
+                <tr className="bg-slate-50 font-bold dark:bg-white/5">
+                  <td className="border-b border-slate-200/70 px-2 py-2 text-center text-slate-500 dark:border-white/10" colSpan={2}>
+                    Totals
+                  </td>
+                  <td className="border-b border-slate-200/70 px-3 py-2 text-slate-500 dark:border-white/10">—</td>
+                  <td className="border-b border-slate-200/70 px-3 py-2 text-right font-mono text-emerald-600 dark:border-white/10 dark:text-emerald-400">{totals.cash}</td>
+                  <td className="border-b border-slate-200/70 px-3 py-2 text-right font-mono text-brand-600 dark:border-white/10 dark:text-brand-300">{totals.mpesa}</td>
+                  <td className="border-b border-slate-200/70 px-3 py-2 text-slate-500 dark:border-white/10">—</td>
+                  <td className="border-b border-slate-200/70 px-3 py-2 text-right font-mono text-slate-900 dark:border-white/10 dark:text-white">{totals.paid}</td>
+                  <td className="border-b border-slate-200/70 px-2 py-2 dark:border-white/10" />
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Add-row toolbar */}
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-200/80 bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-900/60">
+          <span className="mr-1 text-xs font-bold uppercase tracking-wider text-slate-400">Add row:</span>
+          {[
+            ['car', 'Car · 200'],
+            ['taxi', 'Taxi · 150'],
+            ['midrange', 'Mid · 300'],
+            ['lorry', 'Lorry · 500'],
+            ['motorcycle', 'Bike · 70'],
+            ['bicycle', 'Cycle · 50'],
+            ['other', 'Other'],
+          ].map(([cat, label]) => (
+            <button
+              key={cat}
+              onClick={() => addDraft(cat)}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 transition hover:border-brand-300 hover:text-brand-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:text-white"
+            >
+              <Plus size={12} className="mr-1 inline" />{label}
+            </button>
+          ))}
+          <span className="mx-1 h-5 w-px bg-slate-200 dark:bg-white/10" />
+          <button
+            onClick={() => setShowReceive(true)}
+            className="rounded-xl bg-violet-600 px-3 py-1.5 text-xs font-bold text-white shadow-md shadow-violet-500/20 transition hover:bg-violet-700"
+          >
+            <Camera size={12} className="mr-1 inline" /> Carpet received
+          </button>
+          <button
+            onClick={() => setShowRelease(true)}
+            className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-md shadow-emerald-500/20 transition hover:bg-emerald-700"
+          >
+            Release carpet
+          </button>
+        </div>
+      </div>
+
+      {/* Held carpets card */}
+      {carpets.length > 0 && (
+        <div className="card overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-200/80 px-5 py-3 dark:border-white/10">
+            <div>
+              <h3 className="text-sm font-black tracking-tight">Carpets in the shop ({carpets.length})</h3>
+              <p className="muted text-xs">Received carpets waiting to be washed or released.</p>
+            </div>
+            <button onClick={() => setShowRelease(true)} className="btn-primary px-3 py-1.5 text-xs">
+              Release
+            </button>
+          </div>
+          <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
+            {carpets.map((c) => (
+              <div key={c.id} className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/5">
+                {c.image_data ? (
+                  <img src={c.image_data} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" />
+                ) : (
+                  <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400 dark:bg-white/5">
+                    <ImageIcon size={20} />
+                  </span>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-bold">{c.characteristics || 'Carpet'}</p>
+                  <p className="muted truncate text-xs">{c.client_name || 'No name'}{c.customer_phone ? ` · ${c.customer_phone}` : ''}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    <span className="font-semibold">{heldNames(c)}</span> · Ksh {c.expected_price}
+                  </p>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <button
+                    onClick={() => { setReleaseCarpetId(String(c.id)); setReleaseCash(String(c.expected_price || '')); setReleaseWasher(c.receiver_id ? String(c.receiver_id) : ''); setShowRelease(true); }}
+                    className="rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white transition hover:bg-emerald-700"
+                  >
+                    Release
+                  </button>
+                  <button
+                    onClick={async () => { if (confirm('Delete this carpet record?')) { try { await api.delete(`/carpets/${c.id}`); await reload(); } catch { alert('Could not delete carpet'); } } }}
+                    className="rounded-lg bg-red-600 px-2 py-1 text-[11px] font-bold text-white transition hover:bg-red-700"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Day summary / end-of-day */}
+      {eodOpen && summary && (
+        <div className="card overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-200/80 bg-gradient-to-r from-brand-500/10 to-cyan-500/10 px-5 py-4 dark:border-white/10">
+            <div>
+              <h3 className="text-lg font-black tracking-tight">End of day — {format(selectedDay, 'dd MMM yyyy')}</h3>
+              <p className="muted text-xs">Wages are calculated from what is saved in the sheet.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={() => window.print()} className="btn-secondary px-3 py-1.5 text-xs">Print</button>
+              <button onClick={() => setEodOpen(false)} className="rounded-xl p-2 text-slate-400 hover:bg-white/5"><X size={16} /></button>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-px bg-slate-200 dark:bg-white/10 md:grid-cols-4">
+            {[
+              { label: 'Cash received', value: `Ksh ${summary.total_cash_received}`, cls: 'text-emerald-600' },
+              { label: 'M-Pesa received', value: `Ksh ${totals.mpesa}`, cls: 'text-brand-600' },
+              { label: 'Expenses', value: `Ksh ${summary.total_expenses}`, cls: 'text-red-600' },
+              { label: 'Labor (wages)', value: `Ksh ${summary.total_labor_expense}`, cls: 'text-violet-600' },
+            ].map((s) => (
+              <div key={s.label} className="bg-white p-4 dark:bg-slate-900">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{s.label}</p>
+                <p className={`mt-1 text-xl font-black ${s.cls}`}>{s.value}</p>
+              </div>
+            ))}
+          </div>
+          <div className="p-4">
+            <p className="mb-2 text-sm font-black">Wages by washer</p>
+            {summary.labor_breakdown?.length ? (
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {summary.labor_breakdown.map((e: any) => (
+                  <div key={e.abbreviation} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10">
+                    <span className="text-sm font-semibold">{e.name} <span className="muted">({e.abbreviation})</span></span>
+                    <span className="font-mono text-sm font-black text-emerald-600 dark:text-emerald-400">Ksh {e.wages}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted text-sm">No wages recorded yet.</p>
+            )}
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-white/10 dark:bg-white/5">
+              <span className="text-sm font-black">Business balance</span>
+              <span className={`text-2xl font-black ${summary.balance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                Ksh {summary.balance}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Carpet receive modal */}
+      {showReceive && (
+        <Modal onClose={() => setShowReceive(false)} title="Receive a carpet">
+          <form onSubmit={submitReceive} className="space-y-4">
+            <div className="flex items-center gap-4">
+              <label className="flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-violet-300 bg-violet-50/50 py-6 text-violet-700 transition hover:bg-violet-50 dark:border-violet-500/40 dark:bg-violet-500/5 dark:text-violet-300 dark:hover:bg-violet-500/10">
+                <Camera size={22} />
+                <span className="text-xs font-bold">{receive.image ? 'Change photo' : 'Take carpet photo'}</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  className="hidden"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const data = await compressImage(file);
+                    setReceive((r) => ({ ...r, image: data }));
+                  }}
+                />
+              </label>
+              {receive.image && (
+                <img src={receive.image} alt="" className="h-20 w-20 rounded-xl object-cover ring-1 ring-violet-300" />
+              )}
+            </div>
+
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Carpet description</span>
+              <input className="input-base" placeholder="e.g. Blue Persian, large" value={receive.characteristics} onChange={(e) => setReceive({ ...receive, characteristics: e.target.value })} />
+            </label>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Client name</span>
+                <input className="input-base" placeholder="Optional" value={receive.client_name} onChange={(e) => setReceive({ ...receive, client_name: e.target.value })} />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Owner phone</span>
+                <input className="input-base" placeholder="e.g. 0712..." value={receive.customer_phone} onChange={(e) => setReceive({ ...receive, customer_phone: e.target.value })} />
+              </label>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Receiver</span>
+                <select className="input-base" value={receive.receiver_id} onChange={(e) => setReceive({ ...receive, receiver_id: e.target.value })}>
+                  <option value="">Pick a washer…</option>
+                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name} ({e.abbreviation})</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Expected price</span>
+                <input type="number" min="0" className="input-base" value={receive.expected_price} onChange={(e) => setReceive({ ...receive, expected_price: toNum(e.target.value) })} />
+              </label>
+            </div>
+
+            <div className="flex gap-2 pt-1">
+              <button type="submit" disabled={receiveBusy} className="btn-primary flex-1 justify-center">
+                {receiveBusy && <Loader2 size={15} className="animate-spin" />}
+                Save carpet
+              </button>
+              <button type="button" onClick={() => setShowReceive(false)} className="btn-secondary justify-center"><X size={15} /> Cancel</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Carpet release modal */}
+      {showRelease && (
+        <Modal onClose={() => setShowRelease(false)} title="Release a carpet">
+          <div className="space-y-4">
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Choose the carpet to release</span>
+              <div className="relative">
+                <select
+                  className="input-base appearance-none pr-10"
+                  value={releaseCarpetId}
+                  onChange={(e) => { setReleaseCarpetId(e.target.value); const c = carpets.find((x) => String(x.id) === e.target.value); if (c) { setReleaseCash(String(c.expected_price || '')); setReleaseWasher(c.receiver_id ? String(c.receiver_id) : ''); } }}
+                >
+                  <option value="">Pick a carpet…</option>
+                  {carpets.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.characteristics || 'Carpet'} — {c.client_name || 'No name'} · {heldNames(c)} · Ksh {c.expected_price}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              </div>
+            </label>
+
+            {releaseCarpetId && (() => {
+              const c = carpets.find((x) => String(x.id) === releaseCarpetId);
+              return c ? (
+                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 p-3 dark:border-white/10">
+                  {c.image_data ? (
+                    <img src={c.image_data} alt="" className="h-16 w-16 rounded-xl object-cover" />
+                  ) : (
+                    <span className="flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 text-slate-400"><ImageIcon size={20} /></span>
+                  )}
+                  <div className="min-w-0 flex-1 text-sm">
+                    <p className="font-bold">{c.characteristics || 'Carpet'}</p>
+                    <p className="muted text-xs">{c.client_name || 'No name'}{c.customer_phone ? ` · ${c.customer_phone}` : ''}</p>
+                    <p className="text-xs">Receiver: <b>{heldNames(c)}</b></p>
+                  </div>
+                </div>
+              ) : null;
+            })()}
+
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Cash received</span>
+                <input type="number" min="0" className="input-base" value={releaseCash} onChange={(e) => setReleaseCash(e.target.value)} placeholder="Ksh 0" />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Who washed it</span>
+                <select className="input-base" value={releaseWasher} onChange={(e) => setReleaseWasher(e.target.value)}>
+                  <option value="">Use the receiver</option>
+                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name} ({e.abbreviation})</option>)}
+                </select>
+              </label>
+            </div>
+
+            <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-400/10 dark:text-amber-300">
+              Releasing creates the wash transaction (wages included). Any unpaid balance goes to the client-debt list, and the carpet photo is deleted after 7 days.
+            </p>
+
+            <div className="flex gap-2 pt-1">
+              <button onClick={submitRelease} disabled={releaseBusy} className="btn-primary flex-1 justify-center bg-emerald-600 from-emerald-500 to-teal-500 shadow-emerald-500/20 hover:bg-emerald-700">
+                {releaseBusy && <Loader2 size={15} className="animate-spin" />}
+                Confirm release
+              </button>
+              <button onClick={() => setShowRelease(false)} className="btn-secondary justify-center"><X size={15} /> Cancel</button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function shortfall0(v: number): number {
+  return v || 0;
+}
+
+function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-slate-900">
+        <div className="mb-4 flex items-center justify-between">
+          <h3 className="text-lg font-black tracking-tight">{title}</h3>
+          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function RowFragment({
+  row, employees, isPlate, isOther, saving, error,
+  smsOpen, smsText, onSmsText, onOpenSms, onFillSms, onPatch, onSaveDraft, onDelete,
+}: {
+  row: SheetRow;
+  employees: any[];
+  isPlate: boolean;
+  isOther: boolean;
+  saving: boolean;
+  error?: string;
+  smsOpen: boolean;
+  smsText: string;
+  onSmsText: (v: string) => void;
+  onOpenSms: () => void;
+  onFillSms: () => void;
+  onPatch: (patch: Partial<SheetRow>) => void;
+  onSaveDraft: () => void;
+  onDelete: () => void;
+}) {
+  const dirty = row.draft;
+  const display = row.total_paid !== undefined ? `Ksh ${row.total_paid}` : '';
+  return (
+    <>
+      <tr className={`group transition ${dirty ? 'bg-amber-50/60 dark:bg-amber-400/5' : ''} ${error ? 'bg-red-50 dark:bg-red-500/5' : 'hover:bg-slate-50/70 dark:hover:bg-white/[0.03]'}`}>
+        <td className="border-b border-slate-200/70 px-2 py-1.5 text-center align-middle dark:border-white/10">
+          {row.id ?? <span className="text-xs font-bold text-amber-500">new</span>}
+        </td>
+        <td className="border-b border-slate-200/70 px-2 py-1.5 dark:border-white/10">
+          <div className="flex items-center gap-1.5">
+            <input
+              value={row.item}
+              placeholder={isOther ? 'What was it?' : isPlate ? 'Plate e.g. KCA182M' : 'Details'}
+              className={`input-base w-36 px-2 py-1 text-xs font-mono uppercase ${row.category === 'carpet' ? 'text-violet-600 dark:text-violet-300' : ''}`}
+              onBlur={() => onPatch({ item: row.item.toUpperCase() })}
+              onChange={(e) => onPatch({ item: e.target.value.toUpperCase() })}
+              onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+            />
+            <span className="hidden rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-bold capitalize text-slate-500 sm:inline dark:bg-white/5 dark:text-slate-400">
+              {CATEGORY_LABELS[row.category] || row.category}
+            </span>
+          </div>
+        </td>
+        <td className="border-b border-slate-200/70 px-2 py-1.5 dark:border-white/10">
+          <select
+            value={row.washer_id}
+            onChange={(e) => onPatch({ washer_id: e.target.value })}
+            className="input-base w-32 px-2 py-1 text-xs"
+          >
+            <option value="">—</option>
+            {employees.map((e) => (
+              <option key={e.id} value={e.id}>{e.name} ({e.abbreviation})</option>
+            ))}
+          </select>
+        </td>
+        <td className="border-b border-slate-200/70 px-2 py-1.5 text-right dark:border-white/10">
+          <input
+            type="number" min="0" value={row.cash}
+            className="input-base w-20 px-2 py-1 text-right font-mono text-xs"
+            onBlur={(e) => onPatch({ cash: toNum(e.target.value) })}
+            onChange={(e) => onPatch({ cash: toNum(e.target.value) })}
+          />
+        </td>
+        <td className="border-b border-slate-200/70 px-2 py-1.5 text-right dark:border-white/10">
+          <div className="flex items-center justify-end gap-1">
+            <input
+              type="number" min="0" value={row.mpesa}
+              className="input-base w-20 px-2 py-1 text-right font-mono text-xs"
+              onBlur={(e) => onPatch({ mpesa: toNum(e.target.value) })}
+              onChange={(e) => onPatch({ mpesa: toNum(e.target.value) })}
+            />
+            <button
+              onClick={onOpenSms}
+              title="Paste M-Pesa message to fill amount & name"
+              className={`rounded-lg p-1.5 transition ${smsOpen ? 'bg-brand-100 text-brand-700 dark:bg-brand-500/20 dark:text-brand-300' : 'text-slate-400 hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-brand-500/10'}`}
+            >
+              <MessageSquareText size={14} />
+            </button>
+          </div>
+        </td>
+        <td className="border-b border-slate-200/70 px-2 py-1.5 dark:border-white/10">
+          <input
+            value={row.sender}
+            placeholder={row.mpesa > 0 ? 'Payer name' : '—'}
+            className="input-base w-36 px-2 py-1 text-xs"
+            onBlur={() => onPatch({ sender: row.sender })}
+            onChange={(e) => onPatch({ sender: e.target.value })}
+          />
+        </td>
+        <td className="border-b border-slate-200/70 px-2 py-1.5 text-right font-mono text-xs dark:border-white/10">
+          {row.total_paid !== undefined ? (
+            <span className={row.shortfall ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-white'}>
+              {display}{row.shortfall ? <span className="block text-[10px] font-bold">short {row.shortfall}</span> : null}
+            </span>
+          ) : saving ? (
+            <Loader2 size={14} className="ml-auto animate-spin text-brand-500" />
+          ) : (
+            <span className="text-slate-300 dark:text-slate-600">—</span>
+          )}
+        </td>
+        <td className="border-b border-slate-200/70 px-2 py-1.5 text-right dark:border-white/10">
+          <div className="flex items-center justify-end gap-1">
+            {dirty && (
+              <button onClick={onSaveDraft} title="Save this row" className="rounded-lg bg-brand-600 p-1.5 text-white transition hover:bg-brand-700">
+                <Check size={13} />
+              </button>
+            )}
+            <button onClick={onDelete} title="Delete row" className="rounded-lg p-1.5 text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-300">
+              <Trash2 size={14} />
+            </button>
+          </div>
+        </td>
+      </tr>
+      {smsOpen && (
+        <tr className="bg-brand-50/60 dark:bg-brand-500/5">
+          <td colSpan={8} className="px-3 py-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <textarea
+                rows={1}
+                autoFocus
+                placeholder="Paste the M-Pesa/bank payment message here — amount and payer name fill in automatically…"
+                className="input-base flex-1 resize-none font-mono text-xs"
+                value={smsText}
+                onChange={(e) => onSmsText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onFillSms(); } }}
+              />
+              <div className="flex gap-1.5">
+                <button onClick={onFillSms} className="btn-primary px-3 py-1.5 text-xs">
+                  <Check size={13} /> Fill
+                </button>
+                <button onClick={onOpenSms} className="btn-secondary px-3 py-1.5 text-xs">Close</button>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+      {error && (
+        <tr>
+          <td colSpan={8} className="px-3 py-1.5">
+            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-600 dark:text-red-400">
+              <AlertTriangle size={13} /> {error}
+            </span>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}

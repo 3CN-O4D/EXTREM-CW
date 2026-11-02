@@ -25,6 +25,12 @@ export function createApp() {
     res.json({ message: 'Welcome to Carwash POS API' });
   });
 
+  // Lightweight liveness probe — does not touch the database, so the frontend
+  // can distinguish "API unreachable" from "database unavailable".
+  app.get('/api/v1/health', (_req: Request, res: Response) => {
+    res.json({ status: 'ok', service: 'extrem-cw-api', time: new Date().toISOString() });
+  });
+
   app.use('/api/v1/auth', usersRouter);
   app.use('/api/v1/transactions', transactionsRouter);
   app.use('/api/v1/expenses', expensesRouter);

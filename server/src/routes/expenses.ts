@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { pool } from '../db';
+import { pool, queryOne } from '../db';
 import { HttpError, getCurrentWeekId, validateDay, wrap } from '../utils';
 import { asFloat, asOptStr } from '../finance';
 import { requireRole } from '../auth';
@@ -72,6 +72,48 @@ router.delete(
     const del = await pool.query('DELETE FROM expenses WHERE id = $1', [id]);
     if ((del.rowCount ?? 0) === 0) throw new HttpError(404, 'Expense not found');
     res.json({ message: 'Expense deleted' });
+  }),
+);
+
+// PUT /expenses/:id
+router.put(
+  '/:id',
+  wrap(async (req: AuthRequest, res) => {
+    await requireRole(req, M);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) throw new HttpError(404, 'Expense not found');
+
+    const body = req.body || {};
+    const sets: string[] = [];
+    const params: any[] = [];
+    if (body.description !== undefined) {
+      const d = asOptStr(body.description);
+      if (d === null) throw new HttpError(422, 'description is required');
+      params.push(d);
+      sets.push(`description = $${params.length}`);
+    }
+    if (body.amount !== undefined) {
+      const a = asFloat(body.amount, 'amount');
+      if (a < 0) throw new HttpError(422, 'amount must be >= 0');
+      params.push(a);
+      sets.push(`amount = $${params.length}`);
+    }
+    if (body.category !== undefined) {
+      const c = asOptStr(body.category) ?? 'Other';
+      params.push(c);
+      sets.push(`category = $${params.length}`);
+    }
+    if (!sets.length) {
+      const row = await queryOne<ExpenseRow>('SELECT * FROM expenses WHERE id = $1', [id]);
+      if (!row) throw new HttpError(404, 'Expense not found');
+      return res.json(serializeExpense(row));
+    }
+    params.push(id);
+    const rows = (
+      await pool.query(`UPDATE expenses SET ${sets.join(', ')} WHERE id = $${params.length} RETURNING *`, params)
+    ).rows as ExpenseRow[];
+    if (!rows.length) throw new HttpError(404, 'Expense not found');
+    res.json(serializeExpense(rows[0]));
   }),
 );
 

@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import { format } from 'date-fns';
-const logoImg = '/src/images/logo.jpeg';
+import { PageError, PageLoading, InlineError } from '../components/States';
+const logoImg = '/images/logo.jpeg';
 
 const weekId = format(new Date(), 'yyyy-II');
 
@@ -25,6 +26,8 @@ export default function EmployeeDashboard() {
   const [debts, setDebts] = useState<any[]>([]);
   const [repayments, setRepayments] = useState<any[]>([]);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   // Arrivals: log a vehicle when it arrives, take the money later.
   const [arrivals, setArrivals] = useState<any[]>([]);
@@ -37,12 +40,18 @@ export default function EmployeeDashboard() {
   const [settleMpesa, setSettleMpesa] = useState('');
 
   const loadArrivals = async () => {
-    const res = await api.get('/vehicles/');
-    setArrivals(res.data);
+    try {
+      const res = await api.get('/vehicles/');
+      setArrivals(res.data);
+    } catch {
+      // The arrivals widget should not block the rest of the dashboard.
+    }
   };
 
-  useEffect(() => {
-    const fetchEmpData = async () => {
+  const fetchEmpData = async () => {
+    setLoading(true);
+    setError('');
+    try {
       const res = await api.get('/stats/me');
       setStats(res.data);
 
@@ -59,9 +68,22 @@ export default function EmployeeDashboard() {
       setCarpetsOut(outRes.data);
       setDebts(debtRes.data);
       setRepayments(repRes.data);
-    };
-    fetchEmpData();
-    loadArrivals();
+    } catch (err: any) {
+      setError(
+        err?.response?.data?.detail ||
+        (err?.code === 'ECONNABORTED'
+          ? 'The server took too long to respond.'
+          : 'Could not reach the server. Check your connection and try again.')
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void fetchEmpData();
+    void loadArrivals();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
   const logArrival = async (e: any) => {
@@ -109,12 +131,15 @@ export default function EmployeeDashboard() {
     }
   };
 
-  if (!stats) return <div className="p-6">Loading your stats...</div>;
+  if (!stats && loading) return <PageLoading label="Loading your performance…" />;
+  if (!stats && error) return <PageError message={error} onRetry={fetchEmpData} />;
+  if (!stats) return <PageError message="No stats came back from the server." onRetry={fetchEmpData} />;
 
   const pendingArrivals = arrivals.filter(a => a.status !== 'settled');
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
+      {error && <InlineError message={error} onRetry={fetchEmpData} />}
       <div className="hidden print:flex print:items-center print:justify-center print:gap-4 print:mb-4 print:border-b print:pb-4">
         <img src={logoImg} alt="EXTREME" className="h-16 object-contain" />
         <div className="text-center">
@@ -464,9 +489,10 @@ export default function EmployeeDashboard() {
 
 function StatCard({ title, value, color }: any) {
   return (
-    <div className={`${color} p-4 rounded-lg shadow text-white`}>
-      <div className="text-sm opacity-80">{title}</div>
-      <div className="text-2xl font-bold">{value}</div>
+    <div className={`${color} relative overflow-hidden rounded-2xl p-5 text-white shadow-lg`}>
+      <div className="absolute -right-4 -top-6 h-20 w-20 rounded-full bg-white/10" />
+      <div className="relative text-xs font-semibold uppercase tracking-wider text-white/70">{title}</div>
+      <div className="relative mt-2 text-2xl font-black tracking-tight">{value}</div>
     </div>
   );
 }

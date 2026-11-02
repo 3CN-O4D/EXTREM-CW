@@ -12,7 +12,7 @@ import { createTransactionCore, CreateData } from './transactions';
 const router = Router();
 const ALL = ROLES; // employees may log, wash and release carpets
 const M = ROLES.slice(0, 2); // ADMIN, MANAGER
-const RETENTION_DAYS = 1;
+const RETENTION_DAYS = 7;
 
 // Admin/manager manage everything; employees manage carpets they received or
 // logged themselves.

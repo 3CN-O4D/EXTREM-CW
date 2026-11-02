@@ -34406,7 +34406,18 @@ router.post(
       sub: user.abbreviation,
       role: user.role.toLowerCase()
     });
-    res.json({ access_token: token, token_type: "bearer" });
+    res.json({
+      access_token: token,
+      token_type: "bearer",
+      user: serializeUser(user)
+    });
+  })
+);
+router.get(
+  "/me",
+  wrap(async (req, res) => {
+    const user = await getCurrentUser(req);
+    res.json(serializeUser(user));
   })
 );
 router.post(
@@ -34970,6 +34981,43 @@ router3.delete(
     res.json({ message: "Expense deleted" });
   })
 );
+router3.put(
+  "/:id",
+  wrap(async (req, res) => {
+    await requireRole(req, M);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) throw new HttpError(404, "Expense not found");
+    const body = req.body || {};
+    const sets = [];
+    const params = [];
+    if (body.description !== void 0) {
+      const d = asOptStr(body.description);
+      if (d === null) throw new HttpError(422, "description is required");
+      params.push(d);
+      sets.push(`description = $${params.length}`);
+    }
+    if (body.amount !== void 0) {
+      const a = asFloat(body.amount, "amount");
+      if (a < 0) throw new HttpError(422, "amount must be >= 0");
+      params.push(a);
+      sets.push(`amount = $${params.length}`);
+    }
+    if (body.category !== void 0) {
+      const c = asOptStr(body.category) ?? "Other";
+      params.push(c);
+      sets.push(`category = $${params.length}`);
+    }
+    if (!sets.length) {
+      const row = await queryOne("SELECT * FROM expenses WHERE id = $1", [id]);
+      if (!row) throw new HttpError(404, "Expense not found");
+      return res.json(serializeExpense(row));
+    }
+    params.push(id);
+    const rows = (await pool.query(`UPDATE expenses SET ${sets.join(", ")} WHERE id = $${params.length} RETURNING *`, params)).rows;
+    if (!rows.length) throw new HttpError(404, "Expense not found");
+    res.json(serializeExpense(rows[0]));
+  })
+);
 var expenses_default = router3;
 
 // server/src/routes/repayments.ts
@@ -35480,7 +35528,7 @@ var import_express8 = __toESM(require_express2());
 var router8 = (0, import_express8.Router)();
 var ALL = ROLES;
 var M6 = ROLES.slice(0, 2);
-var RETENTION_DAYS = 1;
+var RETENTION_DAYS = 7;
 function canTouch(user, c) {
   if (user.role.toUpperCase() !== "EMPLOYEE") return true;
   return c.receiver_id === user.id || (c.submitter_id ?? null) === user.id;
@@ -36347,6 +36395,9 @@ function createApp() {
   app.use(import_express12.default.urlencoded({ extended: true, limit: "10mb" }));
   app.get("/", (_req, res) => {
     res.json({ message: "Welcome to Carwash POS API" });
+  });
+  app.get("/api/v1/health", (_req, res) => {
+    res.json({ status: "ok", service: "extrem-cw-api", time: (/* @__PURE__ */ new Date()).toISOString() });
   });
   app.use("/api/v1/auth", users_default);
   app.use("/api/v1/transactions", transactions_default);

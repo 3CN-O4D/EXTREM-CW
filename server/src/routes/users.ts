@@ -29,7 +29,20 @@ router.post(
       sub: user.abbreviation,
       role: user.role.toLowerCase(),
     });
-    res.json({ access_token: token, token_type: 'bearer' });
+    res.json({
+      access_token: token,
+      token_type: 'bearer',
+      user: serializeUser(user),
+    });
+  }),
+);
+
+// GET /auth/me  -> the signed-in user (used by the SPA to validate a saved session)
+router.get(
+  '/me',
+  wrap(async (req: AuthRequest, res) => {
+    const user = await getCurrentUser(req);
+    res.json(serializeUser(user));
   }),
 );
 
