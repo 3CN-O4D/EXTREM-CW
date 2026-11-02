@@ -116,18 +116,35 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
   } else if ((data.category === 'vacuum' || data.category === 'engine') && !(data.has_car_wash)) {
     makes_allowance = priceCfg?.min_price ?? 200.0;
   } else if (data.category === 'car' && (data.has_vacuum || data.has_engine_wash)) {
-    // Calculate combo min/max from individual price configs
     const vacuumCfg = prices?.vacuum;
     const engineCfg = prices?.engine;
-    const comboMin = minP + (data.has_vacuum ? vacuumCfg?.min_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.min_price ?? 0 : 0);
-    const comboMax = maxP + (data.has_vacuum ? vacuumCfg?.max_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.max_price ?? 0 : 0);
-    if (total_paid < comboMin) {
-      // Combo below min: commission based on comboMin × 30%, shortfall = comboMin - paid
-      effectivePriceForShortfall = comboMin;
-      makes_allowance = 0.0;
-      commission = comboMin * 30.0 / 100.0;
+    const hasBoth = data.has_vacuum && data.has_engine_wash;
+
+    if (hasBoth) {
+      // 3-component combo: keep comboMin/comboMax logic
+      const comboMin = minP + (data.has_vacuum ? vacuumCfg?.min_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.min_price ?? 0 : 0);
+      const comboMax = maxP + (data.has_vacuum ? vacuumCfg?.max_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.max_price ?? 0 : 0);
+      if (total_paid < comboMin) {
+        effectivePriceForShortfall = comboMin;
+        makes_allowance = 0.0;
+        commission = comboMin * 30.0 / 100.0;
+      } else {
+        makes_allowance = comboMax - comboMin;
+      }
     } else {
-      makes_allowance = comboMax - comboMin; // no shortfall once at/above min
+      // 2-component combo: per-component shortfall (car + vacuum OR car + engine)
+      // Allocate payment: car first, then vacuum/engine
+      const carExpected = minP; // 200
+      const addonExpected = data.has_vacuum
+        ? (vacuumCfg?.max_price ?? 300)
+        : (engineCfg?.max_price ?? 300);
+
+      const carPaid = Math.min(total_paid, carExpected);
+      const addonPaid = Math.max(0, Math.min(total_paid - carExpected, addonExpected));
+
+      effectivePriceForShortfall = carExpected + addonExpected; // whole combo expected
+      makes_allowance = 0.0;
+      commission = (carPaid + addonPaid) * 30.0 / 100.0;
     }
   }
   const gross_shortfall = Math.max(0.0, effectivePriceForShortfall - net_business_remittance);

@@ -34126,14 +34126,25 @@ function calculateTransaction(data, prices) {
   } else if (data.category === "car" && (data.has_vacuum || data.has_engine_wash)) {
     const vacuumCfg = prices?.vacuum;
     const engineCfg = prices?.engine;
-    const comboMin = minP + (data.has_vacuum ? vacuumCfg?.min_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.min_price ?? 0 : 0);
-    const comboMax = maxP + (data.has_vacuum ? vacuumCfg?.max_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.max_price ?? 0 : 0);
-    if (total_paid < comboMin) {
-      effectivePriceForShortfall = comboMin;
-      makes_allowance = 0;
-      commission = comboMin * 30 / 100;
+    const hasBoth = data.has_vacuum && data.has_engine_wash;
+    if (hasBoth) {
+      const comboMin = minP + (data.has_vacuum ? vacuumCfg?.min_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.min_price ?? 0 : 0);
+      const comboMax = maxP + (data.has_vacuum ? vacuumCfg?.max_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.max_price ?? 0 : 0);
+      if (total_paid < comboMin) {
+        effectivePriceForShortfall = comboMin;
+        makes_allowance = 0;
+        commission = comboMin * 30 / 100;
+      } else {
+        makes_allowance = comboMax - comboMin;
+      }
     } else {
-      makes_allowance = comboMax - comboMin;
+      const carExpected = minP;
+      const addonExpected = data.has_vacuum ? vacuumCfg?.max_price ?? 300 : engineCfg?.max_price ?? 300;
+      const carPaid = Math.min(total_paid, carExpected);
+      const addonPaid = Math.max(0, Math.min(total_paid - carExpected, addonExpected));
+      effectivePriceForShortfall = carExpected + addonExpected;
+      makes_allowance = 0;
+      commission = (carPaid + addonPaid) * 30 / 100;
     }
   }
   const gross_shortfall = Math.max(0, effectivePriceForShortfall - net_business_remittance);
