@@ -97,6 +97,7 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
   //   At/above min_price, no shortfall.
   // - Combos (car + vacuum/engine): below min_price, commission = min_price × %, shortfall = min_price - paid.
   //   At/above min_price, normal commission, no shortfall.
+  //   Combo min/max = sum of individual component min/max prices.
   // - Standalone vacuum/engine: allowance = min_price.
   let effectivePriceForShortfall = expected_price;
   let makes_allowance = 0.0;
@@ -112,13 +113,18 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
   } else if ((data.category === 'vacuum' || data.category === 'engine') && !(data.has_car_wash)) {
     makes_allowance = priceCfg?.min_price ?? 200.0;
   } else if (data.category === 'car' && (data.has_vacuum || data.has_engine_wash)) {
-    if (total_paid < minP) {
-      // Combo below min: commission based on min_price, shortfall = min_price - paid
-      effectivePriceForShortfall = minP;
+    // Calculate combo min/max from individual price configs
+    const vacuumCfg = prices?.vacuum;
+    const engineCfg = prices?.engine;
+    const comboMin = minP + (data.has_vacuum ? vacuumCfg?.min_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.min_price ?? 0 : 0);
+    const comboMax = maxP + (data.has_vacuum ? vacuumCfg?.max_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.max_price ?? 0 : 0);
+    if (total_paid < comboMin) {
+      // Combo below min: commission based on comboMin × %, shortfall = comboMin - paid
+      effectivePriceForShortfall = comboMin;
       makes_allowance = 0.0;
-      commission = minP * cp / 100.0;
+      commission = comboMin * cp / 100.0;
     } else {
-      makes_allowance = maxP - minP; // no shortfall once at/above min
+      makes_allowance = comboMax - comboMin; // no shortfall once at/above min
     }
   }
   const gross_shortfall = Math.max(0.0, effectivePriceForShortfall - net_business_remittance);

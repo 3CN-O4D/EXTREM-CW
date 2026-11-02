@@ -34122,12 +34122,16 @@ function calculateTransaction(data, prices) {
   } else if ((data.category === "vacuum" || data.category === "engine") && !data.has_car_wash) {
     makes_allowance = priceCfg?.min_price ?? 200;
   } else if (data.category === "car" && (data.has_vacuum || data.has_engine_wash)) {
-    if (total_paid < minP) {
-      effectivePriceForShortfall = minP;
+    const vacuumCfg = prices?.vacuum;
+    const engineCfg = prices?.engine;
+    const comboMin = minP + (data.has_vacuum ? vacuumCfg?.min_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.min_price ?? 0 : 0);
+    const comboMax = maxP + (data.has_vacuum ? vacuumCfg?.max_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.max_price ?? 0 : 0);
+    if (total_paid < comboMin) {
+      effectivePriceForShortfall = comboMin;
       makes_allowance = 0;
-      commission = minP * cp / 100;
+      commission = comboMin * cp / 100;
     } else {
-      makes_allowance = maxP - minP;
+      makes_allowance = comboMax - comboMin;
     }
   }
   const gross_shortfall = Math.max(0, effectivePriceForShortfall - net_business_remittance);
