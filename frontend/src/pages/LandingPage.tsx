@@ -318,7 +318,12 @@ export default function LandingPage() {
           <div className="mt-8 flex flex-col items-start justify-between gap-4 rounded-3xl border border-brand-400/20 bg-gradient-to-r from-brand-500/15 to-cyan-500/10 p-6 sm:flex-row sm:items-center sm:p-8">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.24em] text-brand-200">Best value</p>
-              <h3 className="mt-1 text-2xl font-black text-white">Full Package — 800 Ksh</h3>
+              <h3 className="mt-1 text-2xl font-black text-white">
+                Full Package — 800 Ksh{' '}
+                <span className="ml-2 inline-flex items-center gap-1 rounded-full border border-white/20 bg-white/5 px-2 py-0.5 text-[10px] font-bold text-white">
+                  Negotiable
+                </span>
+              </h3>
               <p className="mt-1 text-sm text-slate-300">Wash + vacuum + engine detail. One visit, complete refresh.</p>
             </div>
             <a
