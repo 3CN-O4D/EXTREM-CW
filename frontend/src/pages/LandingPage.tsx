@@ -83,6 +83,14 @@ const SERVICES = [
     icon: Droplets,
   },
   {
+    name: 'Pressurised Engine Wash',
+    price: '300',
+    unit: 'Ksh',
+    desc: 'High-pressure machine wash for deep engine bay cleaning.',
+    img: '/images/enginewash3.jpeg',
+    icon: Droplets,
+  },
+  {
     name: 'Carpet Wash',
     price: '300+',
     unit: 'Ksh',
@@ -208,7 +216,7 @@ export default function LandingPage() {
         <div className="relative z-10 mx-auto w-full max-w-7xl px-5 py-20 sm:px-8">
           <div className="max-w-2xl">
             <span className="inline-flex items-center gap-2 rounded-full border border-brand-400/30 bg-brand-500/10 px-4 py-2 text-xs font-bold uppercase tracking-[0.22em] text-brand-200 backdrop-blur">
-              <Sparkles size={14} /> Eldoret's detail studio
+              <Sparkles size={14} /> Eldoret's trusted carwash
             </span>
 
             <h1 className="mt-7 text-5xl font-black leading-[0.95] tracking-tight text-white sm:text-7xl">
