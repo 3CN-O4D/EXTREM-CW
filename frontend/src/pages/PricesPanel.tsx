@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Save } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { InlineError, PageError, PageLoading } from '../components/States';
 
@@ -23,6 +24,8 @@ export default function PricesPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState<Set<number>>(new Set());
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
 
   const fetchPrices = useCallback(async () => {
     try {
@@ -92,6 +95,14 @@ export default function PricesPanel() {
         </button>
       </div>
 
+      {!isAdmin && (
+        <div className="card-pad rounded-2xl bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-900/30">
+          <p className="text-sm text-amber-700 dark:text-amber-400">
+            <b>View only.</b> Only admin can edit prices. Manager can view but not change them.
+          </p>
+        </div>
+      )}
+
       <div className="card-pad overflow-x-auto rounded-2xl">
         <table className="w-full text-left text-sm border-collapse">
           <thead>
@@ -116,8 +127,8 @@ export default function PricesPanel() {
                     type="number" min="0"
                     value={p.min_price}
                     onChange={(e) => savePrice(p.id, 'min_price', toNum(e.target.value))}
-                    disabled={saving.has(p.id)}
-                    className="input-base w-20 text-right px-2 py-1 text-xs"
+                    disabled={saving.has(p.id) || !isAdmin}
+                    className={`input-base w-20 text-right px-2 py-1 text-xs ${!isAdmin ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
                   />
                 </td>
                 <td className="py-3 pr-3 text-right font-mono">
@@ -125,8 +136,8 @@ export default function PricesPanel() {
                     type="number" min="0"
                     value={p.max_price}
                     onChange={(e) => savePrice(p.id, 'max_price', toNum(e.target.value))}
-                    disabled={saving.has(p.id)}
-                    className="input-base w-20 text-right px-2 py-1 text-xs"
+                    disabled={saving.has(p.id) || !isAdmin}
+                    className={`input-base w-20 text-right px-2 py-1 text-xs ${!isAdmin ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
                   />
                 </td>
                 <td className="py-3 pr-3 text-right font-mono">
@@ -134,15 +145,15 @@ export default function PricesPanel() {
                     type="number" min="0" max="100"
                     value={p.commission_percent}
                     onChange={(e) => savePrice(p.id, 'commission_percent', toNum(e.target.value))}
-                    disabled={saving.has(p.id)}
-                    className="input-base w-20 text-right px-2 py-1 text-xs"
+                    disabled={saving.has(p.id) || !isAdmin}
+                    className={`input-base w-20 text-right px-2 py-1 text-xs ${!isAdmin ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
                   />
                 </td>
                 <td className="py-3 pr-3 text-center">
                   <button
                     onClick={() => toggleActive(p.id)}
-                    disabled={saving.has(p.id)}
-                    className={`rounded-full px-2.5 py-1 text-xs font-bold transition ${p.is_active
+                    disabled={saving.has(p.id) || !isAdmin}
+                    className={`rounded-full px-2.5 py-1 text-xs font-bold transition ${!isAdmin ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : p.is_active
                       ? 'bg-emerald-600 text-white'
                       : 'bg-slate-200 text-slate-700 dark:bg-white/10 dark:text-slate-200'
                     }`}
