@@ -314,7 +314,7 @@ router.get(
 
     const rows = await (
       await pool.query(
-        `SELECT ${TX_FIELDS} FROM transactions ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''} ORDER BY timestamp DESC`,
+        `SELECT ${TX_FIELDS} FROM transactions ${conds.length ? 'WHERE ' + conds.join(' AND ') : ''} ORDER BY timestamp ASC`,
         params,
       )
     ).rows;

@@ -552,7 +552,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
                   </td>
                 </tr>
               )}
-              {rows.map((row) => {
+              {rows.map((row, idx) => {
                 const saving = row.saving;
                 const editingMpesa = smsOpen === row._key;
                 const isPlate = PLATE_CATS.includes(row.category);
@@ -561,6 +561,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
                   <RowFragment
                     key={row._key}
                     row={row}
+                    rowNumber={idx + 1}
                     employees={employees}
                     isPlate={isPlate}
                     isOther={isOther}
@@ -922,11 +923,12 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 function RowFragment({
-  row, employees, isPlate, isOther, saving, error,
+  row, rowNumber, employees, isPlate, isOther, saving, error,
   smsOpen, smsText, onSmsText, onOpenSms, onFillSms, onPatch, onSaveDraft, onDelete,
   addonOpen, onToggleAddon, onSelectAddon, onRemoveAddon,
 }: {
   row: SheetRow;
+  rowNumber: number;
   employees: any[];
   isPlate: boolean;
   isOther: boolean;
@@ -951,7 +953,7 @@ function RowFragment({
     <>
       <tr className={`group transition ${dirty ? 'bg-amber-50/60 dark:bg-amber-400/5' : ''} ${error ? 'bg-red-50 dark:bg-red-500/5' : 'hover:bg-slate-50/70 dark:hover:bg-white/[0.03]'}`}>
         <td className="border-b border-slate-200/70 px-2 py-1.5 text-center align-middle dark:border-white/10">
-          {row.id ?? <span className="text-xs font-bold text-amber-500">new</span>}
+          {rowNumber}
         </td>
         <td className="border-b border-slate-200/70 px-2 py-1.5 dark:border-white/10">
           <div className="flex items-center gap-1.5">

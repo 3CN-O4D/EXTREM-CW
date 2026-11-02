@@ -47,7 +47,7 @@ export default function CarpetsPanel() {
   const [releaseBusy, setReleaseBusy] = useState(false);
 
   // edit carpet fields
-  const [editModal, setEditModal] = useState<{ carpet: any; receiver_id: string; characteristics: string; client_name: string; customer_phone: string; expected_price: string } | null>(null);
+  const [editModal, setEditModal] = useState<{ carpet: any; receiver_id: string; characteristics: string; client_name: string; customer_phone: string; expected_price: string; image: string; thumb: string } | null>(null);
   const [editBusy, setEditBusy] = useState(false);
 
   const empName = (id: any) => employees.find((e) => e.id === id)?.name;
@@ -154,14 +154,19 @@ export default function CarpetsPanel() {
     if (!editModal) return;
     setEditBusy(true);
     try {
-      const { carpet, receiver_id, characteristics, client_name, customer_phone, expected_price } = editModal;
-      await api.patch(`/carpets/${carpet.id}`, {
+      const { carpet, receiver_id, characteristics, client_name, customer_phone, expected_price, image, thumb } = editModal;
+      const payload: any = {
         receiver_id: receiver_id || null,
         characteristics: characteristics || null,
         client_name: client_name || null,
         customer_phone: customer_phone || null,
         expected_price: toNum(expected_price),
-      });
+      };
+      if (image) {
+        payload.image_data = image;
+        payload.image_thumb = thumb || image;
+      }
+      await api.patch(`/carpets/${carpet.id}`, payload);
       setEditModal(null);
       await fetchCarpets();
     } catch (err: any) {
@@ -365,6 +370,8 @@ export default function CarpetsPanel() {
                         client_name: c.client_name || '',
                         customer_phone: c.customer_phone || '',
                         expected_price: String(c.expected_price || ''),
+                        image: c.image_data || '',
+                        thumb: c.image_thumb || '',
                       })}
                         className="rounded-lg bg-indigo-600 px-2 py-1 text-xs font-bold text-white hover:bg-indigo-700">Edit</button>
                       <button onClick={() => deleteCarpet(c)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white hover:bg-red-700"><Trash2 size={12} /></button>

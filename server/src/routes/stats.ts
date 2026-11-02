@@ -113,8 +113,9 @@ router.get(
       expConds = `WHERE week_id = $${expParams.length}`;
     }
 
-    const [totalCash, expenses, labor, revenue, miscTotal, miscRows, catRows, totalDebt, clientDebt, empLabor] = await Promise.all([
-      pool.query(`SELECT COALESCE(SUM(total_paid),0) AS v FROM transactions ${txConds}`, txParams),
+    const [totalCash, totalMpesa, expenses, labor, revenue, miscTotal, miscRows, catRows, totalDebt, clientDebt, empLabor] = await Promise.all([
+      pool.query(`SELECT COALESCE(SUM(cash_paid),0) AS v FROM transactions ${txConds}`, txParams),
+      pool.query(`SELECT COALESCE(SUM(mpesa_paid),0) AS v FROM transactions ${txConds}`, txParams),
       pool.query(`SELECT COALESCE(SUM(amount),0) AS v FROM expenses ${expConds}`, expParams),
       pool.query(`SELECT COALESCE(SUM(final_payout),0) AS v FROM transactions ${txConds} AND final_payout > 0`, txParams),
       pool.query(`SELECT COALESCE(SUM(net_business_remittance),0) AS v FROM transactions ${txConds}`, txParams),
@@ -161,6 +162,7 @@ router.get(
     }));
 
     const totalCashV = Number(totalCash.rows[0].v);
+    const totalMpesaV = Number(totalMpesa.rows[0].v);
     const expensesV = Number(expenses.rows[0].v);
     const laborV = Number(labor.rows[0].v);
     res.json({
@@ -168,8 +170,10 @@ router.get(
       day: day ?? null,
       day_of_week: day ? weekdayName(day) : null,
       total_cash_received: totalCashV,
+      total_mpesa_received: totalMpesaV,
+      total_paid_received: totalCashV + totalMpesaV,
       total_expenses: expensesV,
-      balance: totalCashV - expensesV,
+      balance: totalCashV + totalMpesaV - expensesV,
       total_labor_expense: laborV,
       total_revenue: Number(revenue.rows[0].v),
       misc_total: Number(miscTotal.rows[0].v),

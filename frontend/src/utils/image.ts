@@ -13,7 +13,7 @@ export function compressVariants(file: File): Promise<{ data: string; thumb: str
         canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
         return canvas.toDataURL('image/jpeg', quality);
       };
-      const data = draw(800, 0.72); // full photo, kept for detail views
+      const data = draw(1600, 0.85); // full photo, higher quality for previews
       const thumb = draw(120, 0.6); // small thumbnail for list/gallery payloads
       URL.revokeObjectURL(url);
       resolve({ data, thumb });
