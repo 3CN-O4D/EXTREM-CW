@@ -95,7 +95,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const [loadError, setLoadError] = useState('');
   const [savingAll, setSavingAll] = useState(false);
   const [prices, setPrices] = useState<Record<string, any>>({});
-  const [unsavedCount, setUnsavedCount] = useState(0);
 
   // drafts & popovers
   const [smsOpen, setSmsOpen] = useState<string | null>(null);
@@ -281,7 +280,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
             prev.map((r) => (r._key === key ? { ...r, id: newId, draft: false, saving: false } : r)),
           );
         }
-        setUnsavedCount((prev) => Math.max(0, prev - 1));
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -306,7 +304,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
 
   const patchRow = (key: string, patch: Partial<SheetRow>) => {
     setRows((r) => r.map((x) => (x._key === key ? { ...x, ...patch } : x)));
-    setUnsavedCount((prev) => prev + 1);
   };
 
   const addDraft = (category: string, expected?: number) => {
@@ -349,7 +346,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const saveDraftNow = (key: string) => {
     const row = rows.find((r) => r._key === key);
     if (!row) return;
-    if (!row.washer_id) {
+    if (row.draft && !row.washer_id) {
       setRows((prev) =>
         prev.map((r) => (r._key === key ? { ...r, error: 'Pick a washer first' } : r)),
       );
@@ -368,7 +365,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
     try {
       await Promise.all(drafts.map((d) => persistRow(d._key, {})));
       await reload();
-      setUnsavedCount(0);
     } catch (err: any) {
       alert(err?.response?.data?.detail || 'Sync failed');
     } finally {
@@ -457,7 +453,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
     return { cash, mpesa, paid, shortfall, counts };
   }, [rows]);
 
-  const pendingDrafts = unsavedCount;
+  const pendingDrafts = rows.filter((r) => r.draft || r.id === null).length;
 
   if (loading && rows.length === 0) {
     return (
@@ -524,7 +520,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
             </button>
             <button onClick={syncAll} disabled={savingAll} className="btn-primary px-3 py-2 text-xs">
               {savingAll ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              {unsavedCount > 0 ? ` Sync (${unsavedCount})` : 'Sync'}
+              {pendingDrafts > 0 ? ` Sync (${pendingDrafts})` : 'Sync'}
             </button>
           </div>
         </div>
@@ -1087,7 +1083,7 @@ function RowFragment({
         </td>
         <td className="border-b border-slate-200/70 px-2 py-1.5 text-right dark:border-white/10">
           <div className="flex items-center justify-end gap-1">
-            {dirty && (
+            {!saving && (
               <button onClick={onSaveDraft} title="Save this row" className="rounded-lg bg-brand-600 p-1.5 text-white transition hover:bg-brand-700">
                 <Check size={13} />
               </button>
