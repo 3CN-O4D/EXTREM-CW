@@ -34087,7 +34087,16 @@ function calculateTransaction(data, prices) {
   let commission = 0;
   const cp = priceCfg?.commission_percent ?? 30;
   const minP = priceCfg?.min_price ?? 0;
-  if (expected_price >= minP && minP > 0) {
+  const maxP = priceCfg?.max_price ?? 0;
+  if (data.category === "motorcycle" && minP > 0) {
+    if (expected_price < minP) {
+      commission = 0;
+    } else if (expected_price <= minP + 10) {
+      commission = expected_price - minP;
+    } else {
+      commission = 10 + 2 * (expected_price - (minP + 10));
+    }
+  } else if (expected_price >= minP && minP > 0) {
     commission = expected_price * cp / 100;
   } else if (minP === 0) {
     commission = expected_price * cp / 100;
@@ -34100,13 +34109,28 @@ function calculateTransaction(data, prices) {
   }
   isolated_tip += data.manual_tip;
   const net_business_remittance = total_paid - isolated_tip;
-  const gross_shortfall = Math.max(0, expected_price - net_business_remittance);
+  let effectivePriceForShortfall = expected_price;
   let makes_allowance = 0;
-  if ((data.category === "vacuum" || data.category === "engine") && !data.has_car_wash) {
+  if (data.category === "motorcycle" && minP > 0) {
+    if (total_paid < minP) {
+      effectivePriceForShortfall = minP;
+      makes_allowance = 0;
+      commission = 0;
+    } else {
+      makes_allowance = maxP - minP;
+    }
+  } else if ((data.category === "vacuum" || data.category === "engine") && !data.has_car_wash) {
     makes_allowance = priceCfg?.min_price ?? 200;
   } else if (data.category === "car" && (data.has_vacuum || data.has_engine_wash)) {
-    makes_allowance = priceCfg?.min_price ?? 200;
+    if (total_paid < minP) {
+      effectivePriceForShortfall = minP;
+      makes_allowance = 0;
+      commission = minP * cp / 100;
+    } else {
+      makes_allowance = maxP - minP;
+    }
   }
+  const gross_shortfall = Math.max(0, effectivePriceForShortfall - net_business_remittance);
   const shortfall = Math.max(0, gross_shortfall - makes_allowance);
   let net_wage_before_tip = 0;
   if (net_business_remittance === 0) {
@@ -36527,7 +36551,7 @@ router12.get(
 router12.put(
   "/:category",
   wrap(async (req, res) => {
-    await requireRole(req, ["ADMIN"]);
+    await requireRole(req, ["admin"]);
     const category = req.params.category;
     if (!ALLOWED_CATEGORIES.includes(category)) {
       throw new HttpError(404, "Unknown category");

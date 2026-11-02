@@ -59,14 +59,24 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
   }
 
   // 2. Commission Calculation — uses commission_percent from the prices table.
-  // If expected_price is below min_price, no commission is earned (e.g. motorcycle paid 50 -> 0).
+  // Motorcycle has a tiered commission: below min_price -> 0 commission + shortfall.
+  // paid 50 -> 0, paid 60 -> 10, paid 70 -> 30 (each Ksh above 60 earns 2 Ksh commission).
   let commission = 0.0;
   const cp = priceCfg?.commission_percent ?? 30;
   const minP = priceCfg?.min_price ?? 0;
-  if (expected_price >= minP && minP > 0) {
+  const maxP = priceCfg?.max_price ?? 0;
+
+  if (data.category === 'motorcycle' && minP > 0) {
+    if (expected_price < minP) {
+      commission = 0.0;
+    } else if (expected_price <= minP + 10) {
+      commission = expected_price - minP;
+    } else {
+      commission = 10.0 + 2.0 * (expected_price - (minP + 10));
+    }
+  } else if (expected_price >= minP && minP > 0) {
     commission = expected_price * cp / 100.0;
   } else if (minP === 0) {
-    // categories without a price floor (e.g. other): straight percentage
     commission = expected_price * cp / 100.0;
   }
 
@@ -81,17 +91,37 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
   isolated_tip += data.manual_tip;
 
   const net_business_remittance = total_paid - isolated_tip;
-  const gross_shortfall = Math.max(0.0, expected_price - net_business_remittance);
 
-  // Shortfall allowance — how far below max_price can remittance fall before it counts as debt.
-  // - Standalone vacuum/engine: allowance = min_price (200)
-  // - Car + any add-on (vacuum/engine): allowance = min_price (200)
+  // Shortfall calculation:
+  // - Motorcycle: threshold is min_price. Below it, shortfall = min_price - paid; commission = 0.
+  //   At/above min_price, no shortfall.
+  // - Combos (car + vacuum/engine): below min_price, commission = min_price × %, shortfall = min_price - paid.
+  //   At/above min_price, normal commission, no shortfall.
+  // - Standalone vacuum/engine: allowance = min_price.
+  let effectivePriceForShortfall = expected_price;
   let makes_allowance = 0.0;
-  if ((data.category === 'vacuum' || data.category === 'engine') && !(data.has_car_wash)) {
+
+  if (data.category === 'motorcycle' && minP > 0) {
+    if (total_paid < minP) {
+      effectivePriceForShortfall = minP;
+      makes_allowance = 0.0;
+      commission = 0.0; // no commission if paid below min
+    } else {
+      makes_allowance = maxP - minP; // covers gap between min and max -> no shortfall
+    }
+  } else if ((data.category === 'vacuum' || data.category === 'engine') && !(data.has_car_wash)) {
     makes_allowance = priceCfg?.min_price ?? 200.0;
   } else if (data.category === 'car' && (data.has_vacuum || data.has_engine_wash)) {
-    makes_allowance = priceCfg?.min_price ?? 200.0;
+    if (total_paid < minP) {
+      // Combo below min: commission based on min_price, shortfall = min_price - paid
+      effectivePriceForShortfall = minP;
+      makes_allowance = 0.0;
+      commission = minP * cp / 100.0;
+    } else {
+      makes_allowance = maxP - minP; // no shortfall once at/above min
+    }
   }
+  const gross_shortfall = Math.max(0.0, effectivePriceForShortfall - net_business_remittance);
   const shortfall = Math.max(0.0, gross_shortfall - makes_allowance);
 
   // 4. Shortfall & Zero-Remittance Penalties

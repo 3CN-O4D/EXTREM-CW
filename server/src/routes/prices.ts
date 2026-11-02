@@ -32,7 +32,7 @@ router.get(
 router.put(
   '/:category',
   wrap(async (req: AuthRequest, res) => {
-    await requireRole(req, ['ADMIN']); // only admin can edit prices
+    await requireRole(req, ['admin']); // only admin can edit prices
     const category = req.params.category;
     if (!ALLOWED_CATEGORIES.includes(category)) {
       throw new HttpError(404, 'Unknown category');
