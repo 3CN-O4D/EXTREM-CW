@@ -172,6 +172,7 @@ export default function AdminDashboard() {
     { title: 'M-Pesa received', value: `Ksh ${mpesaTotal}`, icon: <Banknote size={15} />, cls: 'from-brand-500 to-cyan-600' },
     { title: 'Total revenue', value: `Ksh ${summary.total_revenue}`, icon: <TrendingUp size={15} />, cls: 'from-emerald-500 to-teal-600' },
     { title: 'Expenses', value: `Ksh ${summary.total_expenses}`, icon: <ReceiptText size={15} />, cls: 'from-red-500 to-rose-600' },
+    { title: 'Net Cash', value: `Ksh ${summary.total_cash_received - summary.total_expenses}`, icon: <Wallet size={15} />, cls: (summary.total_cash_received - summary.total_expenses) >= 0 ? 'from-green-500 to-emerald-600' : 'from-red-500 to-rose-600' },
     { title: 'Balance', value: `Ksh ${summary.balance}`, icon: <Coins size={15} />, cls: (summary.balance ?? 0) >= 0 ? 'from-green-500 to-emerald-600' : 'from-red-500 to-rose-600' },
     { title: 'Jobs', value: totalJobs, icon: <Car size={15} />, cls: 'from-cyan-500 to-sky-600' },
     { title: 'Labor (wages)', value: `Ksh ${summary.total_labor_expense}`, icon: <PiggyBank size={15} />, cls: 'from-violet-500 to-purple-600' },

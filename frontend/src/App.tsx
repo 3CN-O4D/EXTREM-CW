@@ -301,7 +301,7 @@ function AppContent() {
               path="/"
               element={
                 user.role === 'admin' ? <AdminDashboard /> :
-                user.role === 'manager' ? <ManagerPanel /> :
+                user.role === 'manager' ? <Navigate to="/manage" replace /> :
                 <EmployeeDashboard />
               }
             />
