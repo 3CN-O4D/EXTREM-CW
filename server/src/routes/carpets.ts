@@ -60,6 +60,79 @@ router.get(
   }),
 );
 
+// GET /carpets/stats - aggregate + per-employee carpet stats
+router.get(
+  '/stats',
+  wrap(async (req: AuthRequest, res) => {
+    await requireRole(req, M);
+
+    const aggregate = (
+      await pool.query(
+        `SELECT
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE status = 'received') as received,
+          COUNT(*) FILTER (WHERE status = 'washed') as washed,
+          COUNT(*) FILTER (WHERE status = 'ready') as ready,
+          COUNT(*) FILTER (WHERE status = 'released') as released
+        FROM carpets`,
+      )
+    ).rows[0];
+
+    const total = Number(aggregate.total || 0);
+    const received = Number(aggregate.received || 0);
+    const washed = Number(aggregate.washed || 0);
+    const ready = Number(aggregate.ready || 0);
+    const released = Number(aggregate.released || 0);
+    const unwashed = received + (total - received - washed - ready - released);
+
+    const perEmp = (
+      await pool.query(
+        `SELECT u.id, u.full_name, u.abbreviation,
+          COUNT(c.id) as total,
+          COUNT(*) FILTER (WHERE c.status = 'received') as received,
+          COUNT(*) FILTER (WHERE c.status = 'washed') as washed,
+          COUNT(*) FILTER (WHERE c.status = 'ready') as ready,
+          COUNT(*) FILTER (WHERE c.status = 'released') as released
+        FROM users u
+        LEFT JOIN carpets c ON c.receiver_id = u.id
+        WHERE u.role = 'EMPLOYEE'
+        GROUP BY u.id, u.full_name, u.abbreviation
+        ORDER BY u.full_name`,
+      )
+    ).rows;
+
+    const employees = perEmp.map((e: any) => {
+      const t = Number(e.total || 0);
+      const r = Number(e.received || 0);
+      const w = Number(e.washed || 0);
+      const rd = Number(e.ready || 0);
+      const rel = Number(e.released || 0);
+      const un = r + (t - r - w - rd - rel);
+      return {
+        id: e.id,
+        name: e.full_name,
+        abbreviation: e.abbreviation,
+        total: t,
+        received: r,
+        washed: w,
+        ready: rd,
+        released: rel,
+        unwashed: un,
+      };
+    });
+
+    res.json({
+      total,
+      received,
+      washed,
+      ready,
+      released,
+      unwashed,
+      employees,
+    });
+  }),
+);
+
 // GET /carpets/:id  (full carpet incl. the original photo, for previews)
 router.get(
   '/:id',
@@ -392,79 +465,6 @@ router.post(
     } finally {
       client.release();
     }
-  }),
-);
-
-// GET /carpets/stats - aggregate + per-employee carpet stats
-router.get(
-  '/stats',
-  wrap(async (req: AuthRequest, res) => {
-    await requireRole(req, M);
-
-    const aggregate = (
-      await pool.query(
-        `SELECT
-          COUNT(*) as total,
-          COUNT(*) FILTER (WHERE status = 'received') as received,
-          COUNT(*) FILTER (WHERE status = 'washed') as washed,
-          COUNT(*) FILTER (WHERE status = 'ready') as ready,
-          COUNT(*) FILTER (WHERE status = 'released') as released
-        FROM carpets`,
-      )
-    ).rows[0];
-
-    const total = Number(aggregate.total || 0);
-    const received = Number(aggregate.received || 0);
-    const washed = Number(aggregate.washed || 0);
-    const ready = Number(aggregate.ready || 0);
-    const released = Number(aggregate.released || 0);
-    const unwashed = received + (total - received - washed - ready - released);
-
-    const perEmp = (
-      await pool.query(
-        `SELECT u.id, u.full_name, u.abbreviation,
-          COUNT(c.id) as total,
-          COUNT(*) FILTER (WHERE c.status = 'received') as received,
-          COUNT(*) FILTER (WHERE c.status = 'washed') as washed,
-          COUNT(*) FILTER (WHERE c.status = 'ready') as ready,
-          COUNT(*) FILTER (WHERE c.status = 'released') as released
-        FROM users u
-        LEFT JOIN carpets c ON c.receiver_id = u.id
-        WHERE u.role = 'EMPLOYEE'
-        GROUP BY u.id, u.full_name, u.abbreviation
-        ORDER BY u.full_name`,
-      )
-    ).rows;
-
-    const employees = perEmp.map((e: any) => {
-      const t = Number(e.total || 0);
-      const r = Number(e.received || 0);
-      const w = Number(e.washed || 0);
-      const rd = Number(e.ready || 0);
-      const rel = Number(e.released || 0);
-      const un = r + (t - r - w - rd - rel);
-      return {
-        id: e.id,
-        name: e.full_name,
-        abbreviation: e.abbreviation,
-        total: t,
-        received: r,
-        washed: w,
-        ready: rd,
-        released: rel,
-        unwashed: un,
-      };
-    });
-
-    res.json({
-      total,
-      received,
-      washed,
-      ready,
-      released,
-      unwashed,
-      employees,
-    });
   }),
 );
 
