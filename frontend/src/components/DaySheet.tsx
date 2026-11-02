@@ -325,7 +325,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
       mpesa: parsed.amount,
       sender: parsed.senderName,
       ref: parsed.transactionId,
-      expected: Math.max(rows.find((r) => r._key === key)?.expected || 0, parsed.amount),
     });
     setSmsOpen(null);
     setSmsText('');
