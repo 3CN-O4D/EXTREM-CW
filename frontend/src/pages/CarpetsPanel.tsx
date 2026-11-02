@@ -46,6 +46,10 @@ export default function CarpetsPanel() {
   const [releaseModal, setReleaseModal] = useState<{ carpet: any; cash: string; mpesa: string; washer: string } | null>(null);
   const [releaseBusy, setReleaseBusy] = useState(false);
 
+  // edit carpet fields
+  const [editModal, setEditModal] = useState<{ carpet: any; receiver_id: string; characteristics: string; client_name: string; customer_phone: string; expected_price: string } | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
+
   const empName = (id: any) => employees.find((e) => e.id === id)?.name;
 
   const fetchCarpets = useCallback(async () => {
@@ -143,6 +147,27 @@ export default function CarpetsPanel() {
       alert(err?.response?.data?.detail || 'Could not release the carpet');
     } finally {
       setReleaseBusy(false);
+    }
+  };
+
+  const submitEdit = async () => {
+    if (!editModal) return;
+    setEditBusy(true);
+    try {
+      const { carpet, receiver_id, characteristics, client_name, customer_phone, expected_price } = editModal;
+      await api.patch(`/carpets/${carpet.id}`, {
+        receiver_id: receiver_id || null,
+        characteristics: characteristics || null,
+        client_name: client_name || null,
+        customer_phone: customer_phone || null,
+        expected_price: toNum(expected_price),
+      });
+      setEditModal(null);
+      await fetchCarpets();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Could not update the carpet');
+    } finally {
+      setEditBusy(false);
     }
   };
 
@@ -333,6 +358,15 @@ export default function CarpetsPanel() {
                       )}
                       <button onClick={() => openPhoto(c)}
                         className="rounded-lg bg-violet-600 px-2 py-1 text-xs font-bold text-white hover:bg-violet-700">View</button>
+                      <button onClick={() => setEditModal({
+                        carpet: c,
+                        receiver_id: String(c.receiver_id || ''),
+                        characteristics: c.characteristics || '',
+                        client_name: c.client_name || '',
+                        customer_phone: c.customer_phone || '',
+                        expected_price: String(c.expected_price || ''),
+                      })}
+                        className="rounded-lg bg-indigo-600 px-2 py-1 text-xs font-bold text-white hover:bg-indigo-700">Edit</button>
                       <button onClick={() => deleteCarpet(c)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white hover:bg-red-700"><Trash2 size={12} /></button>
                     </div>
                   </td>
@@ -504,6 +538,57 @@ export default function CarpetsPanel() {
                 {releaseBusy && <Loader2 size={15} className="animate-spin" />} Release carpet
               </button>
               <button onClick={() => setReleaseModal(null)} className="btn-secondary"><X size={15} /> Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit carpet modal */}
+      {editModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black tracking-tight">Edit carpet</h3>
+              <button onClick={() => setEditModal(null)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
+            </div>
+            <div className="rounded-xl bg-slate-50 p-3 text-sm dark:bg-white/5">
+              <p className="font-semibold">{editModal.carpet.characteristics || 'Carpet'} #{editModal.carpet.id}</p>
+              <p className="text-xs text-slate-500">Status: {STATUS_META[editModal.carpet.status as Status]?.label}</p>
+            </div>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold">Owner / Receiver</span>
+              <select className="input-base" value={editModal.receiver_id}
+                onChange={(e) => setEditModal({ ...editModal, receiver_id: e.target.value })}>
+                <option value="">Unassigned</option>
+                {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold">Characteristics</span>
+              <input className="input-base" value={editModal.characteristics}
+                onChange={(e) => setEditModal({ ...editModal, characteristics: e.target.value })} />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold">Client name</span>
+              <input className="input-base" value={editModal.client_name}
+                onChange={(e) => setEditModal({ ...editModal, client_name: e.target.value })} />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold">Client phone</span>
+              <input className="input-base" value={editModal.customer_phone}
+                onChange={(e) => setEditModal({ ...editModal, customer_phone: e.target.value })} />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold">Expected price (Ksh)</span>
+              <input type="number" min="0" className="input-base" value={editModal.expected_price}
+                onChange={(e) => setEditModal({ ...editModal, expected_price: e.target.value })} />
+            </label>
+            <div className="flex gap-2">
+              <button onClick={submitEdit} disabled={editBusy} className="btn-primary flex-1 justify-center">
+                {editBusy && <Loader2 size={15} className="animate-spin" />}
+                Save changes
+              </button>
+              <button onClick={() => setEditModal(null)} className="btn-secondary"><X size={15} /> Cancel</button>
             </div>
           </div>
         </div>
