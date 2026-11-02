@@ -299,7 +299,9 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const persistRow = useCallback(
     (key: string, patch: Partial<SheetRow>): Promise<unknown> => {
       const existing = rows.find((r) => r._key === key);
-      const saved = existing && !existing.draft ? existing : undefined;
+      // A row that has an id was already saved to the server. Treat it as
+      // "saved" so edits PUT to the existing row instead of POSTing a duplicate.
+      const saved = existing && existing.id !== null ? existing : undefined;
       const merged = { ...(existing || { _key: key, kind: 'tx' as const, draft: true, cash: 0, mpesa: 0, sender: '', ref: '', time: nowHHmm(), expected: 0, category: 'car' }), ...patch };
       const cat = merged.category || 'car';
       const expected = merged.expected || STANDARD[cat] || (merged.cash || 0) + (merged.mpesa || 0);
@@ -333,6 +335,11 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
           const newId = response.data?.id;
           setRows((prev) =>
             prev.map((r) => (r._key === key ? { ...r, id: newId, draft: false, saving: false } : r)),
+          );
+        } else {
+          // Existing row was updated via PUT. Mark as saved.
+          setRows((prev) =>
+            prev.map((r) => (r._key === key ? { ...r, draft: false, saving: false } : r)),
           );
         }
       });
