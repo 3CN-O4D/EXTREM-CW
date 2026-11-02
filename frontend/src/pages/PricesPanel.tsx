@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Save, Trash2 } from 'lucide-react';
+import { Save } from 'lucide-react';
 import api from '../services/api';
 import { InlineError, PageError, PageLoading } from '../components/States';
 
