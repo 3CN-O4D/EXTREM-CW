@@ -312,7 +312,6 @@ export default function ManagerPanel() {
       has_engine_wash: tx.has_engine_wash || false,
       plate_number: tx.plate_number || '',
       custom_category: tx.custom_category || '',
-      carpet_characteristics: tx.carpet_characteristics || '',
       receiver_id: tx.receiver_id?.toString() || '',
       customer_phone: tx.customer_phone || ''
     });
@@ -337,13 +336,6 @@ export default function ManagerPanel() {
       payload.has_engine_wash = editForm.has_engine_wash;
       payload.plate_number = editForm.plate_number || null;
       payload.custom_category = editForm.custom_category || null;
-      if (editForm.category === 'carpet') {
-        payload.carpet_metadata = {
-          characteristics: editForm.carpet_characteristics,
-          receiver_id: parseInt(editForm.receiver_id),
-          customer_phone: editForm.customer_phone || null
-        };
-      }
       await api.put(`/transactions/${txId}`, payload);
       alert('Transaction updated!');
       setEditingTx(null);
@@ -1010,12 +1002,11 @@ export default function ManagerPanel() {
                           <option value="car">Car</option>
                           <option value="midrange">Midrange</option>
                           <option value="lorry">Lorry</option>
-                          <option value="carpet">Carpet</option>
                           <option value="other">Other</option>
                         </select>
                       </td>
                       <td className="py-2">
-                        {editForm.category !== 'motorcycle' && editForm.category !== 'carpet' && editForm.category !== 'other' && editForm.category !== 'bicycle' ? (
+                        {editForm.category !== 'motorcycle' && editForm.category !== 'other' && editForm.category !== 'bicycle' ? (
                           <input type="text" className="input-base px-2 py-1 text-xs font-mono uppercase"
                             value={editForm.plate_number} onChange={e => setEditForm({ ...editForm, plate_number: e.target.value.toUpperCase() })} />
                         ) : editForm.category === 'other' ? (
@@ -1045,7 +1036,7 @@ export default function ManagerPanel() {
                       <td className="py-2 text-xs">{format(new Date(tx.timestamp), 'EEE HH:mm')}</td>
                       <td className="py-2 font-medium">{empMap[tx.washer_id] || tx.washer_id}</td>
                       <td className="py-2 capitalize">{tx.custom_category || tx.category}</td>
-                      <td className="py-2 font-mono text-xs">{tx.category === 'carpet' || tx.category === 'other' ? '-' : (tx.plate_number || '-')}</td>
+                      <td className="py-2 font-mono text-xs">{tx.category === 'other' ? '-' : (tx.plate_number || '-')}</td>
                       <td className="py-2 font-mono">Ksh {tx.total_paid}
                         {tx.isolated_tip > 0 && (
                           <span className={`ml-1 rounded px-1 py-0.5 text-[10px] font-medium ${tx.tip_method === 'wages' ? 'bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-900 dark:text-fuchsia-300' : 'bg-orange-100 text-orange-700 dark:bg-orange-900 dark:text-orange-300'}`}
