@@ -35211,11 +35211,11 @@ async function collectEmployeeStats(emp, scope) {
   const q = empScopeParams(emp.id, scope);
   const [rev, wages, shortfall, jobs, cats, daily, debtSrc, misc, miscItems, received, released] = await Promise.all([
     pool.query(`SELECT COALESCE(SUM(net_business_remittance),0) AS v FROM transactions ${q.text}`, [...q.params]),
-    pool.query(`SELECT COALESCE(SUM(final_payout),0) AS v FROM transactions ${q.text} AND final_payout > 0`, [...q.params]),
+    pool.query(`SELECT COALESCE(SUM(final_payout),0) AS v FROM transactions ${q.text}`, [...q.params]),
     pool.query(`SELECT COALESCE(SUM(shortfall),0) AS v FROM transactions ${q.text}`, [...q.params]),
     pool.query(`SELECT COUNT(id) AS v FROM transactions ${q.text}`, [...q.params]),
     pool.query(`SELECT category, COUNT(id) AS c FROM transactions ${q.text} GROUP BY category`, [...q.params]),
-    pool.query(`SELECT date(timestamp) AS day, SUM(final_payout) AS wages FROM transactions ${q.text} AND final_payout > 0 GROUP BY date(timestamp)`, [...q.params]),
+    pool.query(`SELECT date(timestamp) AS day, SUM(final_payout) AS wages FROM transactions ${q.text} GROUP BY date(timestamp)`, [...q.params]),
     pool.query(`SELECT id, timestamp, category, custom_category, expected_price, shortfall, plate_number FROM transactions ${q.text} AND shortfall > 0`, [...q.params]),
     pool.query(`SELECT COALESCE(SUM(misc_amount),0) AS v FROM transactions ${q.text}`, [...q.params]),
     pool.query(`SELECT id, timestamp, misc_amount AS amount, misc_description AS description, category, custom_category, plate_number FROM transactions ${q.text} AND misc_amount > 0`, [...q.params]),
@@ -35307,7 +35307,7 @@ router5.get(
       pool.query(
         `SELECT users.full_name, users.abbreviation, SUM(transactions.final_payout) AS wages
          FROM users JOIN transactions ON users.id = transactions.washer_id
-         WHERE transactions.final_payout > 0 AND ${day ? "date(transactions.timestamp) = $1::date" : "transactions.week_id = $1"}
+         WHERE ${day ? "date(transactions.timestamp) = $1::date" : "transactions.week_id = $1"}
          GROUP BY users.id`,
         day ? [day] : [week_id]
       )
