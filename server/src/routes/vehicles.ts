@@ -257,7 +257,9 @@ router.patch(
   }),
 );
 
-// POST /vehicles/:id/settle  (record the money: any cash + mpesa mix; washer optional)
+// POST /vehicles/:id/settle  (record the money: any cash + mpesa mix; washer
+// optional). Drive-out settlements are recorded for the day sheet / receipts
+// but create no wage record — the business keeps the money (see noWage).
 router.post(
   '/:id/settle',
   wrap(async (req: AuthRequest, res) => {
@@ -309,7 +311,9 @@ router.post(
       custom_category: null,
       carpet_metadata: null,
     };
-    const created = await createTransactionCore(txData, actor);
+    // Drive-out: record the payment (day sheet + receipt) but no wage record —
+    // the business keeps the money and the washer's payable_balance is untouched.
+    const created = await createTransactionCore(txData, actor, { noWage: true });
 
     const now = new Date().toISOString().replace('T', ' ').replace('Z', '');
     const client = await pool.connect();

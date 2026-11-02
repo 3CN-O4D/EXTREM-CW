@@ -118,4 +118,21 @@
   .print\:hidden {
     display: none !important;
   }
+
+  /* When a drive-out receipt is being printed, print only the receipt card. */
+  body.printing-receipt * {
+    visibility: hidden !important;
+  }
+  body.printing-receipt .receipt-print-area,
+  body.printing-receipt .receipt-print-area * {
+    visibility: visible !important;
+  }
+  body.printing-receipt .receipt-print-area {
+    position: fixed;
+    inset: 0 auto auto 0;
+    width: 100%;
+    margin: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
 }

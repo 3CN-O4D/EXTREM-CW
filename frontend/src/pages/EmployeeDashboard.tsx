@@ -26,6 +26,7 @@ export default function EmployeeDashboard() {
   const [debts, setDebts] = useState<any[]>([]);
   const [repayments, setRepayments] = useState<any[]>([]);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [receipt, setReceipt] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -106,7 +107,7 @@ export default function EmployeeDashboard() {
   const settleArrival = async (id: number) => {
     setArrivalMsg('');
     try {
-      await api.post(`/vehicles/${id}/settle`, {
+      const res = await api.post(`/vehicles/${id}/settle`, {
         cash_paid: Number(settleCash) || 0,
         mpesa_paid: Number(settleMpesa) || 0,
       });
@@ -114,6 +115,7 @@ export default function EmployeeDashboard() {
       setSettleCash('');
       setSettleMpesa('');
       setArrivalMsg('Payment recorded.');
+      setReceipt(res.data);
       await loadArrivals();
     } catch (err: any) {
       setArrivalMsg(err.response?.data?.detail || 'Could not record the payment');
@@ -129,6 +131,22 @@ export default function EmployeeDashboard() {
     } catch (err: any) {
       setArrivalMsg(err.response?.data?.detail || 'Could not remove the arrival');
     }
+  };
+
+  // Lists return small thumbnails; fetch the full photo only when it's tapped.
+  const openCarpetPhoto = async (c: any) => {
+    try {
+      const res = await api.get(`/carpets/${c.id}`);
+      setPhotoPreview(res.data.image_data || res.data.image_thumb || null);
+    } catch {
+      setPhotoPreview(c.image_thumb || c.image_data || null);
+    }
+  };
+
+  const printReceipt = () => {
+    document.body.classList.add('printing-receipt');
+    window.print();
+    document.body.classList.remove('printing-receipt');
   };
 
   if (!stats && loading) return <PageLoading label="Loading your performance…" />;
@@ -365,7 +383,7 @@ export default function EmployeeDashboard() {
                     <td className="py-2 text-sm">{format(new Date(c.created_at), 'dd/MM HH:mm')}</td>
                     <td className="py-2 text-sm">
                       <span className="pr-2">{c.characteristics || 'Carpet'}</span>
-                      {c.image_data && <img src={c.image_data} alt="carpet" onClick={() => setPhotoPreview(c.image_data)} className="inline h-8 w-8 object-cover rounded border cursor-pointer" />}
+                      {(c.image_thumb || c.image_data) && <img src={c.image_thumb || c.image_data} alt="carpet" onClick={() => openCarpetPhoto(c)} className="inline h-8 w-8 object-cover rounded border cursor-pointer" />}
                     </td>
                     <td className="py-2 text-sm">
                       {c.client_name ? <div>{c.client_name}</div> : <div className="text-gray-400">—</div>}
@@ -480,6 +498,60 @@ export default function EmployeeDashboard() {
             <button onClick={() => setPhotoPreview(null)}
               className="absolute -top-3 -right-3 bg-red-600 text-white w-8 h-8 rounded-full font-bold">×</button>
             <img src={photoPreview} alt="carpet preview" className="w-full rounded-lg shadow-2xl" />
+          </div>
+        </div>
+      )}
+
+      {receipt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
+          <div className="receipt-print-area w-full max-w-md rounded-2xl bg-white p-6 text-slate-900 shadow-2xl">
+            <div className="flex items-start justify-between border-b border-slate-200 pb-4">
+              <div>
+                <p className="text-lg font-black tracking-wide text-blue-700">EXTREME AUTO CARWASH</p>
+                <p className="text-xs text-slate-500">Eldoret, Annex, Jamboni</p>
+                <p className="text-xs text-slate-500">+254 728 597 862</p>
+              </div>
+              <span className="rounded-lg bg-emerald-100 px-2 py-1 text-xs font-bold uppercase tracking-wide text-emerald-700">Paid</span>
+            </div>
+            <div className="py-4 text-center">
+              <p className="text-sm font-bold uppercase tracking-[0.2em] text-slate-400">Payment Receipt</p>
+              <p className="mt-1 font-mono text-xs text-slate-500">No. RCP-{String(receipt.id).padStart(4, '0')}</p>
+            </div>
+            <dl className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <dt className="text-slate-500">Date</dt>
+                <dd className="font-mono">{receipt.settled_at ? format(new Date(receipt.settled_at), 'dd/MM/yyyy HH:mm') : format(new Date(), 'dd/MM/yyyy HH:mm')}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-slate-500">Vehicle</dt>
+                <dd className="font-mono">{receipt.plate_number}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-slate-500">Service</dt>
+                <dd className="capitalize">{receipt.category}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-slate-500">Cash</dt>
+                <dd className="font-mono">Ksh {receipt.cash_paid}</dd>
+              </div>
+              <div className="flex justify-between">
+                <dt className="text-slate-500">M-Pesa</dt>
+                <dd className="font-mono">Ksh {receipt.mpesa_paid}</dd>
+              </div>
+              <div className="flex justify-between border-t border-slate-200 pt-2 text-base font-bold">
+                <dt>Total paid</dt>
+                <dd className="font-mono">Ksh {receipt.cash_paid + receipt.mpesa_paid}</dd>
+              </div>
+            </dl>
+            <p className="mt-4 text-center text-xs text-slate-400">Thank you for washing with Extreme!</p>
+            <div className="mt-4 flex gap-2 print:hidden">
+              <button onClick={printReceipt} className="flex-1 rounded-xl bg-blue-700 px-4 py-2 text-sm font-bold text-white">
+                Print receipt
+              </button>
+              <button onClick={() => setReceipt(null)} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600">
+                Close
+              </button>
+            </div>
           </div>
         </div>
       )}

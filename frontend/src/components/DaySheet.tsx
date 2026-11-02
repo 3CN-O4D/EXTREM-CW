@@ -3,7 +3,6 @@ import {
   AlertTriangle,
   Camera,
   Check,
-  ChevronDown,
   ImageIcon,
   Loader2,
   MessageSquareText,
@@ -54,18 +53,23 @@ function nowHHmm(): string {
   return format(new Date(), 'HH:mm');
 }
 
-function compressImage(file: File, maxW = 800, quality = 0.72): Promise<string> {
+function compressVariants(file: File): Promise<{ data: string; thumb: string }> {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
-      const scale = Math.min(1, maxW / img.width);
-      const canvas = document.createElement('canvas');
-      canvas.width = Math.round(img.width * scale);
-      canvas.height = Math.round(img.height * scale);
-      canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const draw = (maxW: number, quality: number) => {
+        const scale = Math.min(1, maxW / img.width);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height);
+        return canvas.toDataURL('image/jpeg', quality);
+      };
+      const data = draw(800, 0.72); // full photo, kept for detail views
+      const thumb = draw(120, 0.6); // small thumbnail for list/gallery payloads
       URL.revokeObjectURL(url);
-      resolve(canvas.toDataURL('image/jpeg', quality));
+      resolve({ data, thumb });
     };
     img.onerror = reject;
     img.src = url;
@@ -117,7 +121,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
 
   // carpet receive form
   const [receive, setReceive] = useState({
-    image: '', characteristics: '', client_name: '', customer_phone: '',
+    image: '', thumb: '', characteristics: '', client_name: '', customer_phone: '',
     receiver_id: '', expected_price: 300,
   });
   const [receiveBusy, setReceiveBusy] = useState(false);
@@ -314,11 +318,12 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         client_name: receive.client_name || null,
         customer_phone: receive.customer_phone || null,
         image_data: receive.image,
+        image_thumb: receive.thumb || receive.image,
         expected_price: toNum(receive.expected_price),
         cash_paid: 0,
         mpesa_paid: 0,
       });
-      setReceive({ image: '', characteristics: '', client_name: '', customer_phone: '', receiver_id: '', expected_price: 300 });
+      setReceive({ image: '', thumb: '', characteristics: '', client_name: '', customer_phone: '', receiver_id: '', expected_price: 300 });
       setShowReceive(false);
       await reload();
     } catch (err: any) {
@@ -561,8 +566,8 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
           <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
             {carpets.map((c) => (
               <div key={c.id} className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/5">
-                {c.image_data ? (
-                  <img src={c.image_data} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" />
+                {c.image_thumb || c.image_data ? (
+                  <img src={c.image_thumb || c.image_data} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" />
                 ) : (
                   <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400 dark:bg-white/5">
                     <ImageIcon size={20} />
@@ -661,8 +666,8 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
                   onChange={async (e) => {
                     const file = e.target.files?.[0];
                     if (!file) return;
-                    const data = await compressImage(file);
-                    setReceive((r) => ({ ...r, image: data }));
+                    const { data, thumb } = await compressVariants(file);
+                    setReceive((r) => ({ ...r, image: data, thumb }));
                   }}
                 />
               </label>
@@ -716,42 +721,57 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
       {showRelease && (
         <Modal onClose={() => setShowRelease(false)} title="Release a carpet">
           <div className="space-y-4">
-            <label className="block">
-              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Choose the carpet to release</span>
-              <div className="relative">
-                <select
-                  className="input-base appearance-none pr-10"
-                  value={releaseCarpetId}
-                  onChange={(e) => { setReleaseCarpetId(e.target.value); const c = carpets.find((x) => String(x.id) === e.target.value); if (c) { setReleaseCash(String(c.expected_price || '')); setReleaseWasher(c.receiver_id ? String(c.receiver_id) : ''); } }}
-                >
-                  <option value="">Pick a carpet…</option>
-                  {carpets.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.characteristics || 'Carpet'} — {c.client_name || 'No name'} · {heldNames(c)} · Ksh {c.expected_price}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown size={16} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              </div>
-            </label>
-
-            {releaseCarpetId && (() => {
-              const c = carpets.find((x) => String(x.id) === releaseCarpetId);
-              return c ? (
-                <div className="flex items-center gap-3 rounded-2xl border border-slate-200 p-3 dark:border-white/10">
-                  {c.image_data ? (
-                    <img src={c.image_data} alt="" className="h-16 w-16 rounded-xl object-cover" />
-                  ) : (
-                    <span className="flex h-16 w-16 items-center justify-center rounded-xl bg-slate-100 text-slate-400"><ImageIcon size={20} /></span>
-                  )}
-                  <div className="min-w-0 flex-1 text-sm">
-                    <p className="font-bold">{c.characteristics || 'Carpet'}</p>
-                    <p className="muted text-xs">{c.client_name || 'No name'}{c.customer_phone ? ` · ${c.customer_phone}` : ''}</p>
-                    <p className="text-xs">Receiver: <b>{heldNames(c)}</b></p>
-                  </div>
+            <div>
+              <p className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                Pick the carpet to release — tap its photo to match it to the physical carpet
+              </p>
+              {carpets.length === 0 ? (
+                <p className="muted rounded-xl border border-dashed border-slate-200 px-3 py-4 text-center text-xs dark:border-white/10">
+                  No carpets in the shop right now.
+                </p>
+              ) : (
+                <div className="grid max-h-64 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
+                  {carpets.map((c) => {
+                    const selected = releaseCarpetId === String(c.id);
+                    return (
+                      <button
+                        type="button"
+                        key={c.id}
+                        onClick={() => {
+                          setReleaseCarpetId(String(c.id));
+                          setReleaseCash(String(c.expected_price || ''));
+                          setReleaseWasher(c.receiver_id ? String(c.receiver_id) : '');
+                        }}
+                        className={`group overflow-hidden rounded-2xl border text-left transition ${
+                          selected
+                            ? 'border-brand-500 ring-2 ring-brand-500/30'
+                            : 'border-slate-200 hover:border-brand-300 dark:border-white/10 dark:hover:border-brand-500/50'
+                        }`}
+                      >
+                        <div className="relative aspect-square w-full overflow-hidden bg-slate-100 dark:bg-white/5">
+                          {c.image_thumb || c.image_data ? (
+                            <img src={c.image_thumb || c.image_data} alt="" className="h-full w-full object-cover transition group-hover:scale-105" />
+                          ) : (
+                            <span className="flex h-full w-full items-center justify-center text-slate-400"><ImageIcon size={22} /></span>
+                          )}
+                          {selected && (
+                            <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-white shadow">
+                              <Check size={12} />
+                            </span>
+                          )}
+                        </div>
+                        <div className="px-2 py-1.5">
+                          <p className="truncate text-xs font-bold">{c.characteristics || 'Carpet'}</p>
+                          <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                            {c.client_name || 'No name'} · {heldNames(c)} · Ksh {c.expected_price}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
-              ) : null;
-            })()}
+              )}
+            </div>
 
             <div className="grid grid-cols-2 gap-3">
               <label className="block">

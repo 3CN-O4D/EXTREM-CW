@@ -149,8 +149,8 @@ export function serializeWeeklyLog(w: WeeklyLogRow): Record<string, unknown> {
   };
 }
 
-export function serializeCarpet(c: CarpetRow): Record<string, unknown> {
-  return {
+function carpetJson(c: CarpetRow, includeImage: boolean): Record<string, unknown> {
+  const out: Record<string, unknown> = {
     id: c.id,
     created_at: iso(c.created_at),
     receiver_id: c.receiver_id,
@@ -158,7 +158,7 @@ export function serializeCarpet(c: CarpetRow): Record<string, unknown> {
     characteristics: c.characteristics,
     client_name: c.client_name,
     customer_phone: c.customer_phone,
-    image_data: c.image_data,
+    image_thumb: c.image_thumb,
     expected_price: c.expected_price,
     cash_paid: c.cash_paid,
     mpesa_paid: c.mpesa_paid,
@@ -166,4 +166,16 @@ export function serializeCarpet(c: CarpetRow): Record<string, unknown> {
     status: c.status,
     released_at: iso(c.released_at),
   };
+  // Full photos ride along only on detail responses; list payloads stay small
+  // so GET /carpets never risks Vercel's ~4.5MB response cap.
+  if (includeImage) out.image_data = c.image_data;
+  return out;
+}
+
+export function serializeCarpet(c: CarpetRow): Record<string, unknown> {
+  return carpetJson(c, true);
+}
+
+export function serializeCarpetList(c: CarpetRow): Record<string, unknown> {
+  return carpetJson(c, false);
 }

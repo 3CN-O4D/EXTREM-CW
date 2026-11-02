@@ -104,7 +104,7 @@ const GALLERY = [
 const STEPS = [
   { n: '01', title: 'Arrive', text: 'Pull in at Jamboni, Annex. We log your vehicle and get straight to work.' },
   { n: '02', title: 'We detail', text: 'Foam, hand wash, vacuum and engine care — tuned to your package.' },
-  { n: '03', title: 'Drive out', text: 'Pay by cash or M-Pesa. Receipts and wage records update automatically.' },
+  { n: '03', title: 'Drive out', text: 'Pay by cash or M-Pesa and get a printed receipt on the spot.' },
 ];
 
 export default function LandingPage() {

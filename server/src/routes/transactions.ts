@@ -110,10 +110,24 @@ export interface CreateResult {
 export async function createTransactionCore(
   data: CreateData,
   actor: UserRow,
-  opts: { employeeBearsShortfall?: boolean } = {},
+  opts: { employeeBearsShortfall?: boolean; noWage?: boolean } = {},
 ): Promise<CreateResult> {
   const result = calculateTransaction(data);
   validateMisc(data);
+
+  // Drive-out settlements (POST /vehicles/:id/settle) pass noWage: the payment
+  // is still recorded so the day sheet and receipts stay accurate, but the
+  // transaction carries no wage, tip or shortfall and the washer's
+  // payable_balance is never credited.
+  const noWage = opts.noWage === true;
+  const isolatedTip = noWage ? 0 : result.transaction_summary.isolated_tip;
+  const remittance = noWage
+    ? result.transaction_summary.total_customer_paid
+    : result.transaction_summary.net_business_remittance;
+  const shortfall = noWage ? 0 : result.transaction_summary.shortfall_detected;
+  const commission = noWage ? 0 : result.employee_financials.calculated_commission;
+  const netWage = noWage ? 0 : result.employee_financials.net_wage_before_tip;
+  const payout = noWage ? 0 : result.employee_financials.final_payout_output;
 
   const washer = await queryOne<UserRow>('SELECT * FROM users WHERE id = $1', [data.washer_id]);
   if (!washer) throw new HttpError(404, 'Washer not found');
@@ -161,31 +175,33 @@ export async function createTransactionCore(
         md?.characteristics ?? null,
         md?.receiver_id ?? null,
         result.transaction_summary.total_customer_paid,
-        result.transaction_summary.isolated_tip,
-        result.transaction_summary.net_business_remittance,
-        result.transaction_summary.shortfall_detected,
-        result.employee_financials.calculated_commission,
-        result.employee_financials.net_wage_before_tip,
-        result.employee_financials.final_payout_output,
+        isolatedTip,
+        remittance,
+        shortfall,
+        commission,
+        netWage,
+        payout,
         week_id,
       ],
     );
     const tx = insert.rows[0] as TxRow;
 
-    const credit = employeeBearsShortfall
-      ? result.ledger_routing.credit_employee_wages
-      : result.employee_financials.calculated_commission;
-    const debit = employeeBearsShortfall ? result.ledger_routing.debit_employee_debt : 0;
-    await client.query(
-      'UPDATE users SET payable_balance = payable_balance + $1, debt_balance = debt_balance + $2 WHERE id = $3',
-      [credit, debit, data.washer_id],
-    );
+    if (!noWage) {
+      const credit = employeeBearsShortfall
+        ? result.ledger_routing.credit_employee_wages
+        : result.employee_financials.calculated_commission;
+      const debit = employeeBearsShortfall ? result.ledger_routing.debit_employee_debt : 0;
+      await client.query(
+        'UPDATE users SET payable_balance = payable_balance + $1, debt_balance = debt_balance + $2 WHERE id = $3',
+        [credit, debit, data.washer_id],
+      );
 
-    if (employeeBearsShortfall) {
-      await syncShortfallDebt(client, tx.id, data.washer_id, debit, tx);
+      if (employeeBearsShortfall) {
+        await syncShortfallDebt(client, tx.id, data.washer_id, debit, tx);
+      }
+
+      await syncChaiExpense(client, tx, isolatedTip, washer.full_name ?? '');
     }
-
-    await syncChaiExpense(client, tx, result.transaction_summary.isolated_tip, washer.full_name ?? '');
     await client.query('COMMIT');
 
     return {

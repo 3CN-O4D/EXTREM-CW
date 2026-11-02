@@ -209,6 +209,16 @@ export default function ManagerPanel() {
     } catch { alert('Error deleting carpet'); }
   };
 
+  // Lists return small thumbnails; fetch the full photo only when the user taps it.
+  const openCarpetPhoto = async (c: any) => {
+    try {
+      const res = await api.get(`/carpets/${c.id}`);
+      setPhotoPreview(res.data.image_data || res.data.image_thumb || null);
+    } catch {
+      setPhotoPreview(c.image_thumb || c.image_data || null);
+    }
+  };
+
   const fetchArrivals = async () => {
     try { const res = await api.get('/vehicles/'); setArrivals(res.data); } catch {}
   };
@@ -993,8 +1003,8 @@ export default function ManagerPanel() {
                       {c.customer_phone ? <div className="text-xs text-slate-500">{c.customer_phone}</div> : null}
                     </td>
                     <td className="py-2">
-                      {c.image_data ? (
-                        <img src={c.image_data} alt="carpet" onClick={() => setPhotoPreview(c.image_data)}
+                      {c.image_thumb || c.image_data ? (
+                        <img src={c.image_thumb || c.image_data} alt="carpet" onClick={() => openCarpetPhoto(c)}
                           className="h-12 w-12 cursor-pointer rounded border object-cover" />
                       ) : <span className="text-slate-400">—</span>}
                     </td>

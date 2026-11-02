@@ -34366,8 +34366,8 @@ function serializeWeeklyLog(w) {
     data: w.data_json ? JSON.parse(w.data_json) : null
   };
 }
-function serializeCarpet(c) {
-  return {
+function carpetJson(c, includeImage) {
+  const out = {
     id: c.id,
     created_at: iso(c.created_at),
     receiver_id: c.receiver_id,
@@ -34375,7 +34375,7 @@ function serializeCarpet(c) {
     characteristics: c.characteristics,
     client_name: c.client_name,
     customer_phone: c.customer_phone,
-    image_data: c.image_data,
+    image_thumb: c.image_thumb,
     expected_price: c.expected_price,
     cash_paid: c.cash_paid,
     mpesa_paid: c.mpesa_paid,
@@ -34383,6 +34383,14 @@ function serializeCarpet(c) {
     status: c.status,
     released_at: iso(c.released_at)
   };
+  if (includeImage) out.image_data = c.image_data;
+  return out;
+}
+function serializeCarpet(c) {
+  return carpetJson(c, true);
+}
+function serializeCarpetList(c) {
+  return carpetJson(c, false);
 }
 
 // server/src/routes/users.ts
@@ -34592,6 +34600,13 @@ var TX_FIELDS = `id, timestamp, washer_id, category, expected_price, cash_paid, 
 async function createTransactionCore(data, actor, opts = {}) {
   const result = calculateTransaction(data);
   validateMisc(data);
+  const noWage = opts.noWage === true;
+  const isolatedTip = noWage ? 0 : result.transaction_summary.isolated_tip;
+  const remittance = noWage ? result.transaction_summary.total_customer_paid : result.transaction_summary.net_business_remittance;
+  const shortfall = noWage ? 0 : result.transaction_summary.shortfall_detected;
+  const commission = noWage ? 0 : result.employee_financials.calculated_commission;
+  const netWage = noWage ? 0 : result.employee_financials.net_wage_before_tip;
+  const payout = noWage ? 0 : result.employee_financials.final_payout_output;
   const washer = await queryOne("SELECT * FROM users WHERE id = $1", [data.washer_id]);
   if (!washer) throw new HttpError(404, "Washer not found");
   const md = data.carpet_metadata;
@@ -34632,26 +34647,28 @@ async function createTransactionCore(data, actor, opts = {}) {
         md?.characteristics ?? null,
         md?.receiver_id ?? null,
         result.transaction_summary.total_customer_paid,
-        result.transaction_summary.isolated_tip,
-        result.transaction_summary.net_business_remittance,
-        result.transaction_summary.shortfall_detected,
-        result.employee_financials.calculated_commission,
-        result.employee_financials.net_wage_before_tip,
-        result.employee_financials.final_payout_output,
+        isolatedTip,
+        remittance,
+        shortfall,
+        commission,
+        netWage,
+        payout,
         week_id
       ]
     );
     const tx = insert.rows[0];
-    const credit = employeeBearsShortfall ? result.ledger_routing.credit_employee_wages : result.employee_financials.calculated_commission;
-    const debit = employeeBearsShortfall ? result.ledger_routing.debit_employee_debt : 0;
-    await client.query(
-      "UPDATE users SET payable_balance = payable_balance + $1, debt_balance = debt_balance + $2 WHERE id = $3",
-      [credit, debit, data.washer_id]
-    );
-    if (employeeBearsShortfall) {
-      await syncShortfallDebt(client, tx.id, data.washer_id, debit, tx);
+    if (!noWage) {
+      const credit = employeeBearsShortfall ? result.ledger_routing.credit_employee_wages : result.employee_financials.calculated_commission;
+      const debit = employeeBearsShortfall ? result.ledger_routing.debit_employee_debt : 0;
+      await client.query(
+        "UPDATE users SET payable_balance = payable_balance + $1, debt_balance = debt_balance + $2 WHERE id = $3",
+        [credit, debit, data.washer_id]
+      );
+      if (employeeBearsShortfall) {
+        await syncShortfallDebt(client, tx.id, data.washer_id, debit, tx);
+      }
+      await syncChaiExpense(client, tx, isolatedTip, washer.full_name ?? "");
     }
-    await syncChaiExpense(client, tx, result.transaction_summary.isolated_tip, washer.full_name ?? "");
     await client.query("COMMIT");
     return {
       id: tx.id,
@@ -35560,7 +35577,19 @@ router8.get(
       `SELECT * FROM carpets ${conds.length ? "WHERE " + conds.join(" AND ") : ""} ORDER BY created_at DESC`,
       params
     )).rows;
-    res.json(rows.map(serializeCarpet));
+    res.json(rows.map(serializeCarpetList));
+  })
+);
+router8.get(
+  "/:id",
+  wrap(async (req, res) => {
+    const user = await getCurrentUser(req);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) throw new HttpError(404, "Carpet not found");
+    const carpet = await queryOne("SELECT * FROM carpets WHERE id = $1", [id]);
+    if (!carpet) throw new HttpError(404, "Carpet not found");
+    if (!canTouch(user, carpet)) throw new HttpError(403, "Not your carpet");
+    res.json(serializeCarpet(carpet));
   })
 );
 function parseCarpetCreate(body) {
@@ -35591,7 +35620,8 @@ function parseCarpetCreate(body) {
     characteristics: asOptStr(body.characteristics),
     client_name: asOptStr(body.client_name),
     customer_phone: asOptStr(body.customer_phone),
-    image_data
+    image_data,
+    image_thumb: asOptStr(body.image_thumb) ?? image_data
   };
 }
 router8.post(
@@ -35607,8 +35637,8 @@ router8.post(
     const now = (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").replace("Z", "");
     const row = (await pool.query(
       `INSERT INTO carpets (created_at, receiver_id, submitter_id, characteristics, client_name, customer_phone,
-           image_data, expected_price, cash_paid, mpesa_paid, is_washed, status, released_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,false,'received',NULL) RETURNING *`,
+           image_data, image_thumb, expected_price, cash_paid, mpesa_paid, is_washed, status, released_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false,'received',NULL) RETURNING *`,
       [
         now,
         receiver_id,
@@ -35617,6 +35647,7 @@ router8.post(
         data.client_name,
         data.customer_phone,
         data.image_data,
+        data.image_thumb,
         data.expected_price,
         data.cash_paid,
         data.mpesa_paid
@@ -35685,10 +35716,18 @@ router8.patch(
       put("mpesa_paid", v);
     }
     if (body.customer_phone !== void 0) put("customer_phone", asOptStr(body.customer_phone));
-    if (body.image_data !== void 0) {
-      const v = asOptStr(body.image_data);
-      if (v && v.length < 20) throw new HttpError(422, "photo is too short");
-      put("image_data", v);
+    if (body.image_data !== void 0 || body.image_thumb !== void 0) {
+      if (body.image_data !== void 0) {
+        const v = asOptStr(body.image_data);
+        if (v && v.length < 20) throw new HttpError(422, "photo is too short");
+        put("image_data", v);
+        if (body.image_thumb === void 0) put("image_thumb", v);
+      }
+      if (body.image_thumb !== void 0) {
+        const v = asOptStr(body.image_thumb);
+        if (v && v.length < 20) throw new HttpError(422, "photo is too short");
+        put("image_thumb", v);
+      }
     }
     params.push(id);
     if (!sets.length) return res.json(serializeCarpet(carpet));
@@ -36310,7 +36349,7 @@ router11.post(
       custom_category: null,
       carpet_metadata: null
     };
-    const created = await createTransactionCore(txData, actor);
+    const created = await createTransactionCore(txData, actor, { noWage: true });
     const now = (/* @__PURE__ */ new Date()).toISOString().replace("T", " ").replace("Z", "");
     const client = await pool.connect();
     try {

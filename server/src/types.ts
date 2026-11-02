@@ -119,6 +119,7 @@ export interface CarpetRow {
   client_name: string | null;
   customer_phone: string | null;
   image_data: string | null;
+  image_thumb: string | null;
   expected_price: number;
   cash_paid: number;
   mpesa_paid: number;

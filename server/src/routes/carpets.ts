@@ -6,7 +6,7 @@ import { requireRole, getCurrentUser } from '../auth';
 import { ROLES } from '../types';
 import type { AuthRequest } from '../auth';
 import type { CarpetRow, UserRow } from '../types';
-import { serializeCarpet } from '../serialize';
+import { serializeCarpet, serializeCarpetList } from '../serialize';
 import { createTransactionCore, CreateData } from './transactions';
 
 const router = Router();
@@ -53,7 +53,23 @@ router.get(
         params,
       )
     ).rows as CarpetRow[];
-    res.json(rows.map(serializeCarpet));
+    // Lists return thumbnails only, so the payload stays small even when many
+    // carpets are held at once. Fetch /carpets/:id for the full photo.
+    res.json(rows.map(serializeCarpetList));
+  }),
+);
+
+// GET /carpets/:id  (full carpet incl. the original photo, for previews)
+router.get(
+  '/:id',
+  wrap(async (req: AuthRequest, res) => {
+    const user = await getCurrentUser(req);
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) throw new HttpError(404, 'Carpet not found');
+    const carpet = await queryOne<CarpetRow>('SELECT * FROM carpets WHERE id = $1', [id]);
+    if (!carpet) throw new HttpError(404, 'Carpet not found');
+    if (!canTouch(user, carpet)) throw new HttpError(403, 'Not your carpet');
+    res.json(serializeCarpet(carpet));
   }),
 );
 
@@ -86,6 +102,7 @@ function parseCarpetCreate(body: Record<string, unknown>): Partial<CarpetRow> {
     client_name: asOptStr(body.client_name),
     customer_phone: asOptStr(body.customer_phone),
     image_data,
+    image_thumb: asOptStr(body.image_thumb) ?? image_data,
   };
 }
 
@@ -106,8 +123,8 @@ router.post(
     const row = (
       await pool.query(
         `INSERT INTO carpets (created_at, receiver_id, submitter_id, characteristics, client_name, customer_phone,
-           image_data, expected_price, cash_paid, mpesa_paid, is_washed, status, released_at)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,false,'received',NULL) RETURNING *`,
+           image_data, image_thumb, expected_price, cash_paid, mpesa_paid, is_washed, status, released_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,false,'received',NULL) RETURNING *`,
         [
           now,
           receiver_id,
@@ -116,6 +133,7 @@ router.post(
           data.client_name,
           data.customer_phone,
           data.image_data,
+          data.image_thumb,
           data.expected_price,
           data.cash_paid,
           data.mpesa_paid,
@@ -190,10 +208,19 @@ router.patch(
       put('mpesa_paid', v);
     }
     if (body.customer_phone !== undefined) put('customer_phone', asOptStr(body.customer_phone));
-    if (body.image_data !== undefined) {
-      const v = asOptStr(body.image_data);
-      if (v && v.length < 20) throw new HttpError(422, 'photo is too short');
-      put('image_data', v);
+    if (body.image_data !== undefined || body.image_thumb !== undefined) {
+      if (body.image_data !== undefined) {
+        const v = asOptStr(body.image_data);
+        if (v && v.length < 20) throw new HttpError(422, 'photo is too short');
+        put('image_data', v);
+        // Keep the thumbnail in sync when only the full photo is replaced.
+        if (body.image_thumb === undefined) put('image_thumb', v);
+      }
+      if (body.image_thumb !== undefined) {
+        const v = asOptStr(body.image_thumb);
+        if (v && v.length < 20) throw new HttpError(422, 'photo is too short');
+        put('image_thumb', v);
+      }
     }
 
     params.push(id);
