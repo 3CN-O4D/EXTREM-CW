@@ -186,6 +186,7 @@ export default function EmployeeDashboard() {
         <StatCard title="Payable Balance" value={`Ksh ${stats.payable_balance}`} color="bg-emerald-700" />
       </div>
 
+      {(user?.role === 'admin' || user?.role === 'manager') && (
       <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
         <h2 className="text-xl font-semibold mb-1 text-sky-600">Vehicles Waiting (log on arrival)</h2>
         <p className="text-sm text-gray-500 mb-4">
@@ -290,6 +291,7 @@ export default function EmployeeDashboard() {
           </div>
         )}
       </div>
+      )}
 
       <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
         <h2 className="text-xl font-semibold mb-4 text-primary-600">Wage Breakdown (per day)</h2>

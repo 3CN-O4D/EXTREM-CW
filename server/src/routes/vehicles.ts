@@ -25,7 +25,8 @@ interface ArrivalRow {
 }
 
 const router = Router();
-const ALL = ROLES; // employees may log arrivals and settle later
+// Only admin and manager can log arrivals, take payments or edit/remove them;
+// employees get read-only access.
 const M = ROLES.slice(0, 2);
 
 const OVERDUE_HOURS = 24;
@@ -137,7 +138,7 @@ router.get(
 router.post(
   '/',
   wrap(async (req: AuthRequest, res) => {
-    const user = await requireRole(req, ALL);
+    const user = await requireRole(req, M);
     const body = req.body || {};
     const plate_number = parsePlate(asOptStr(body.plate_number));
     const category = requireEnum(
@@ -169,15 +170,12 @@ router.post(
 router.patch(
   '/:id',
   wrap(async (req: AuthRequest, res) => {
-    const user = await getCurrentUser(req);
+    await requireRole(req, M);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, 'Arrival not found');
     const a = await queryOne<ArrivalRow>('SELECT * FROM vehicle_arrivals WHERE id = $1', [id]);
     if (!a) throw new HttpError(404, 'Arrival not found');
     if (a.status === 'settled') throw new HttpError(400, 'Arrival already settled');
-    if (user.role.toUpperCase() === 'EMPLOYEE' && a.submitter_id !== user.id) {
-      throw new HttpError(403, 'Not your arrival');
-    }
 
     const body = req.body || {};
     const sets: string[] = [];
@@ -263,7 +261,7 @@ router.patch(
 router.post(
   '/:id/settle',
   wrap(async (req: AuthRequest, res) => {
-    const actor = await requireRole(req, ALL);
+    const actor = await requireRole(req, M);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, 'Arrival not found');
     const a = await queryOne<ArrivalRow>('SELECT * FROM vehicle_arrivals WHERE id = $1', [id]);
@@ -359,15 +357,12 @@ router.post(
 router.delete(
   '/:id',
   wrap(async (req: AuthRequest, res) => {
-    const user = await getCurrentUser(req);
+    await requireRole(req, M);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, 'Arrival not found');
     const a = await queryOne<ArrivalRow>('SELECT * FROM vehicle_arrivals WHERE id = $1', [id]);
     if (!a) throw new HttpError(404, 'Arrival not found');
     if (a.status === 'settled') throw new HttpError(400, 'Settled arrivals stay on record');
-    if (user.role.toUpperCase() === 'EMPLOYEE' && a.submitter_id !== user.id) {
-      throw new HttpError(403, 'Not your arrival');
-    }
 
     const client = await pool.connect();
     try {

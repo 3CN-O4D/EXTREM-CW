@@ -43,14 +43,6 @@ const SERVICES = [
     icon: Bike,
   },
   {
-    name: 'Taxi Wash',
-    price: '150',
-    unit: 'Ksh',
-    desc: 'Interior or exterior — back on the road looking sharp.',
-    img: '/images/exterior.jpeg',
-    icon: Car,
-  },
-  {
     name: 'Car Wash',
     price: '200',
     unit: 'Ksh',
@@ -68,7 +60,7 @@ const SERVICES = [
   },
   {
     name: 'Interior Vacuum',
-    price: '200',
+    price: '300',
     unit: 'Ksh',
     desc: 'Deep vacuum for seats, carpets and every crevice.',
     img: '/images/vacuuming1.jpeg',
@@ -76,7 +68,7 @@ const SERVICES = [
   },
   {
     name: 'Engine Wash',
-    price: '200',
+    price: '300',
     unit: 'Ksh',
     desc: 'High-pressure engine bay detailing, done safely.',
     img: '/images/enginewash2.jpeg',

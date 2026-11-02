@@ -35543,7 +35543,6 @@ var debts_default = router7;
 // server/src/routes/carpets.ts
 var import_express8 = __toESM(require_express2());
 var router8 = (0, import_express8.Router)();
-var ALL = ROLES;
 var M6 = ROLES.slice(0, 2);
 var RETENTION_DAYS = 7;
 function canTouch(user, c) {
@@ -35627,7 +35626,7 @@ function parseCarpetCreate(body) {
 router8.post(
   "/",
   wrap(async (req, res) => {
-    const user = await requireRole(req, ALL);
+    const user = await requireRole(req, M6);
     const data = parseCarpetCreate(req.body || {});
     let receiver_id = data.receiver_id ?? null;
     if (receiver_id !== null) {
@@ -35659,12 +35658,11 @@ router8.post(
 router8.patch(
   "/:id/wash",
   wrap(async (req, res) => {
-    const user = await getCurrentUser(req);
+    await requireRole(req, M6);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, "Carpet not found");
     const carpet = await queryOne("SELECT * FROM carpets WHERE id = $1", [id]);
     if (!carpet) throw new HttpError(404, "Carpet not found");
-    if (!canTouch(user, carpet)) throw new HttpError(403, "Not your carpet");
     const up = await pool.query("UPDATE carpets SET is_washed = true WHERE id = $1 RETURNING *", [id]);
     res.json(serializeCarpet(up.rows[0]));
   })
@@ -35672,13 +35670,12 @@ router8.patch(
 router8.patch(
   "/:id",
   wrap(async (req, res) => {
-    const user = await getCurrentUser(req);
+    await requireRole(req, M6);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, "Carpet not found");
     const carpet = await queryOne("SELECT * FROM carpets WHERE id = $1", [id]);
     if (!carpet) throw new HttpError(404, "Carpet not found");
     if (carpet.status === "released") throw new HttpError(400, "Released carpets cannot be edited");
-    if (!canTouch(user, carpet)) throw new HttpError(403, "Not your carpet");
     const body = req.body || {};
     const sets = [];
     const params = [];
@@ -35738,13 +35735,12 @@ router8.patch(
 router8.post(
   "/:id/release",
   wrap(async (req, res) => {
-    const user = await requireRole(req, ALL);
+    await requireRole(req, M6);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, "Carpet not found");
     const carpet = await queryOne("SELECT * FROM carpets WHERE id = $1", [id]);
     if (!carpet) throw new HttpError(404, "Carpet not found");
     if (carpet.status === "released") throw new HttpError(400, "Carpet already released");
-    if (!canTouch(user, carpet)) throw new HttpError(403, "Not your carpet");
     const body = req.body || {};
     if (body.cash_paid !== void 0) {
       const v = asOptFloat(body.cash_paid, "cash_paid");
@@ -35808,7 +35804,7 @@ router8.post(
             customer_phone: carpet.customer_phone
           }
         };
-        await createTransactionCore(txData, user, { employeeBearsShortfall: false });
+        await createTransactionCore(txData, req.user, { employeeBearsShortfall: false });
       }
       const remaining = carpet.expected_price - carpet.cash_paid - carpet.mpesa_paid;
       if (remaining > 0) {
@@ -36093,7 +36089,6 @@ var settlements_default = router10;
 // server/src/routes/vehicles.ts
 var import_express11 = __toESM(require_express2());
 var router11 = (0, import_express11.Router)();
-var ALL2 = ROLES;
 var M9 = ROLES.slice(0, 2);
 var OVERDUE_HOURS = 24;
 function getStandardPrice(category) {
@@ -36195,7 +36190,7 @@ router11.get(
 router11.post(
   "/",
   wrap(async (req, res) => {
-    const user = await requireRole(req, ALL2);
+    const user = await requireRole(req, M9);
     const body = req.body || {};
     const plate_number = parsePlate(asOptStr(body.plate_number));
     const category = requireEnum(
@@ -36222,15 +36217,12 @@ router11.post(
 router11.patch(
   "/:id",
   wrap(async (req, res) => {
-    const user = await getCurrentUser(req);
+    await requireRole(req, M9);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, "Arrival not found");
     const a = await queryOne("SELECT * FROM vehicle_arrivals WHERE id = $1", [id]);
     if (!a) throw new HttpError(404, "Arrival not found");
     if (a.status === "settled") throw new HttpError(400, "Arrival already settled");
-    if (user.role.toUpperCase() === "EMPLOYEE" && a.submitter_id !== user.id) {
-      throw new HttpError(403, "Not your arrival");
-    }
     const body = req.body || {};
     const sets = [];
     const params = [];
@@ -36306,7 +36298,7 @@ router11.patch(
 router11.post(
   "/:id/settle",
   wrap(async (req, res) => {
-    const actor = await requireRole(req, ALL2);
+    const actor = await requireRole(req, M9);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, "Arrival not found");
     const a = await queryOne("SELECT * FROM vehicle_arrivals WHERE id = $1", [id]);
@@ -36388,15 +36380,12 @@ router11.post(
 router11.delete(
   "/:id",
   wrap(async (req, res) => {
-    const user = await getCurrentUser(req);
+    await requireRole(req, M9);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, "Arrival not found");
     const a = await queryOne("SELECT * FROM vehicle_arrivals WHERE id = $1", [id]);
     if (!a) throw new HttpError(404, "Arrival not found");
     if (a.status === "settled") throw new HttpError(400, "Settled arrivals stay on record");
-    if (user.role.toUpperCase() === "EMPLOYEE" && a.submitter_id !== user.id) {
-      throw new HttpError(403, "Not your arrival");
-    }
     const client = await pool.connect();
     try {
       await client.query("BEGIN");

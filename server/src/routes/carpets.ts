@@ -10,7 +10,8 @@ import { serializeCarpet, serializeCarpetList } from '../serialize';
 import { createTransactionCore, CreateData } from './transactions';
 
 const router = Router();
-const ALL = ROLES; // employees may log, wash and release carpets
+// Only admin and manager can receive, edit, wash or release carpets;
+// employees get read-only access.
 const M = ROLES.slice(0, 2); // ADMIN, MANAGER
 const RETENTION_DAYS = 7;
 
@@ -106,12 +107,12 @@ function parseCarpetCreate(body: Record<string, unknown>): Partial<CarpetRow> {
   };
 }
 
-// POST /carpets (receive) - anyone may log an arriving carpet with a photo;
+// POST /carpets (receive) - admin/manager log an arriving carpet with a photo;
 // the receiver can be chosen now or later, ownership is tracked via submitter.
 router.post(
   '/',
   wrap(async (req: AuthRequest, res) => {
-    const user = await requireRole(req, ALL);
+    const user = await requireRole(req, M);
     const data = parseCarpetCreate(req.body || {});
     let receiver_id: number | null = data.receiver_id ?? null;
     if (receiver_id !== null) {
@@ -144,32 +145,30 @@ router.post(
   }),
 );
 
-// PATCH /carpets/:id/wash (mark washed; employees can wash their own carpets)
+// PATCH /carpets/:id/wash (mark washed; admin/manager)
 router.patch(
   '/:id/wash',
   wrap(async (req: AuthRequest, res) => {
-    const user = await getCurrentUser(req);
+    await requireRole(req, M);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, 'Carpet not found');
     const carpet = await queryOne<CarpetRow>('SELECT * FROM carpets WHERE id = $1', [id]);
     if (!carpet) throw new HttpError(404, 'Carpet not found');
-    if (!canTouch(user, carpet)) throw new HttpError(403, 'Not your carpet');
     const up = await pool.query('UPDATE carpets SET is_washed = true WHERE id = $1 RETURNING *', [id]);
     res.json(serializeCarpet(up.rows[0] as CarpetRow));
   }),
 );
 
-// PATCH /carpets/:id (pick receiver later, correct details, mark washed/paid)
+// PATCH /carpets/:id (admin/manager: pick receiver later, correct details, mark washed/paid)
 router.patch(
   '/:id',
   wrap(async (req: AuthRequest, res) => {
-    const user = await getCurrentUser(req);
+    await requireRole(req, M);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, 'Carpet not found');
     const carpet = await queryOne<CarpetRow>('SELECT * FROM carpets WHERE id = $1', [id]);
     if (!carpet) throw new HttpError(404, 'Carpet not found');
     if (carpet.status === 'released') throw new HttpError(400, 'Released carpets cannot be edited');
-    if (!canTouch(user, carpet)) throw new HttpError(403, 'Not your carpet');
 
     const body = req.body || {};
     const sets: string[] = [];
@@ -237,13 +236,12 @@ router.patch(
 router.post(
   '/:id/release',
   wrap(async (req: AuthRequest, res) => {
-    const user = await requireRole(req, ALL);
+    await requireRole(req, M);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, 'Carpet not found');
     const carpet = await queryOne<CarpetRow>('SELECT * FROM carpets WHERE id = $1', [id]);
     if (!carpet) throw new HttpError(404, 'Carpet not found');
     if (carpet.status === 'released') throw new HttpError(400, 'Carpet already released');
-    if (!canTouch(user, carpet)) throw new HttpError(403, 'Not your carpet');
 
     const body = req.body || {};
     if (body.cash_paid !== undefined) {
@@ -316,7 +314,7 @@ router.post(
             customer_phone: carpet.customer_phone,
           },
         };
-        await createTransactionCore(txData, user, { employeeBearsShortfall: false });
+        await createTransactionCore(txData, req.user!, { employeeBearsShortfall: false });
       }
 
       // Unpaid balance is the customer's responsibility, not the employee's.
