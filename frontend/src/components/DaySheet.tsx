@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Camera,
@@ -95,6 +95,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const [loadError, setLoadError] = useState('');
   const [savingAll, setSavingAll] = useState(false);
   const [prices, setPrices] = useState<Record<string, any>>({});
+  const [unsavedCount, setUnsavedCount] = useState(0);
 
   // drafts & popovers
   const [smsOpen, setSmsOpen] = useState<string | null>(null);
@@ -174,7 +175,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [eodOpen, setEodOpen] = useState(false);
 
-  const timers = useRef<Map<string, number>>(new Map());
   const dayStr = format(selectedDay, 'yyyy-MM-dd');
 
   const reload = useCallback(async () => {
@@ -274,14 +274,14 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
       return save.then((response) => {
         if (!saved) {
           // Draft was just created on the server. Stamp it with the real id and
-          // mark as saved so subsequent keystrokes PUT to this row instead of
-          // POSTing a brand-new transaction every 650ms.
+          // mark as saved so subsequent edits PUT to this row instead of
+          // POSTing a brand-new transaction.
           const newId = response.data?.id;
           setRows((prev) =>
             prev.map((r) => (r._key === key ? { ...r, id: newId, draft: false, saving: false } : r)),
           );
         }
-        return reload();
+        setUnsavedCount((prev) => Math.max(0, prev - 1));
       });
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -304,17 +304,9 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
     [persistRow],
   );
 
-  const scheduleSave = (key: string, patch: Partial<SheetRow>) => {
-    const prev = timers.current.get(key);
-    if (prev) window.clearTimeout(prev);
+  const patchRow = (key: string, patch: Partial<SheetRow>) => {
     setRows((r) => r.map((x) => (x._key === key ? { ...x, ...patch } : x)));
-    timers.current.set(
-      key,
-      window.setTimeout(() => {
-        flushSave(key, patch);
-        timers.current.delete(key);
-      }, 650),
-    );
+    setUnsavedCount((prev) => prev + 1);
   };
 
   const addDraft = (category: string, expected?: number) => {
@@ -366,13 +358,31 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
     flushSave(key, {});
   };
 
+  const syncAll = async () => {
+    const drafts = rows.filter((r) => r.draft && r.washer_id);
+    if (drafts.length === 0) {
+      await reload();
+      return;
+    }
+    setSavingAll(true);
+    try {
+      await Promise.all(drafts.map((d) => persistRow(d._key, {})));
+      await reload();
+      setUnsavedCount(0);
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Sync failed');
+    } finally {
+      setSavingAll(false);
+    }
+  };
+
   const fillSms = (key: string) => {
     const parsed = parsePaymentSms(smsText);
     if (!parsed) {
       alert('Could not parse this message. Use an M-Pesa "Confirmed" or the bank "Dear..." announcement.');
       return;
     }
-    scheduleSave(key, {
+    patchRow(key, {
       mpesa: parsed.amount,
       sender: parsed.senderName,
       ref: parsed.transactionId,
@@ -433,15 +443,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
     }
   };
 
-  const saveTable = async () => {
-    setSavingAll(true);
-    const drafts = rows.filter((r) => r.draft && r.washer_id);
-    await Promise.all(drafts.map((d) => persistRow(d._key, {})));
-    await reload();
-    setSavingAll(false);
-    setEodOpen(true);
-  };
-
   const totals = useMemo(() => {
     let cash = 0, mpesa = 0, paid = 0, shortfall = 0;
     const counts: Record<string, number> = {};
@@ -456,7 +457,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
     return { cash, mpesa, paid, shortfall, counts };
   }, [rows]);
 
-  const pendingDrafts = rows.filter((r) => r.draft).length;
+  const pendingDrafts = unsavedCount;
 
   if (loading && rows.length === 0) {
     return (
@@ -514,15 +515,15 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 px-5 py-3 dark:border-white/10">
           <div>
             <h2 className="text-lg font-black tracking-tight">Day Sheet — {format(selectedDay, 'EEEE, dd MMM yyyy')}</h2>
-            <p className="muted text-xs">Edit any cell — rows save as you go. Paste an M-Pesa message to auto-fill.</p>
+            <p className="muted text-xs">Edit any cell — changes are local. Tap Sync to save all pending rows.</p>
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setEodOpen((v) => !v)} className="btn-secondary px-3 py-2 text-xs">
               <MessageSquareText size={14} /> Day summary
             </button>
-            <button onClick={saveTable} disabled={savingAll} className="btn-primary px-3 py-2 text-xs">
+            <button onClick={syncAll} disabled={savingAll} className="btn-primary px-3 py-2 text-xs">
               {savingAll ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              Save table
+              {unsavedCount > 0 ? ` Sync (${unsavedCount})` : 'Sync'}
             </button>
           </div>
         </div>
@@ -570,7 +571,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
                     onSmsText={setSmsText}
                     onOpenSms={() => { setSmsOpen(editingMpesa ? null : row._key); setSmsText(''); }}
                     onFillSms={() => fillSms(row._key)}
-                    onPatch={(patch) => (row.draft ? scheduleSave(row._key, patch) : scheduleSave(row._key, patch))}
+                    onPatch={(patch) => patchRow(row._key, patch)}
                     onSaveDraft={() => saveDraftNow(row._key)}
                     onDelete={() => deleteRow(row)}
                     addonOpen={addonOpen === row._key}
