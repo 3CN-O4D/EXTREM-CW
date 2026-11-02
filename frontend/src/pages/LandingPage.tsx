@@ -220,7 +220,7 @@ export default function LandingPage() {
             </h1>
 
             <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-300 sm:text-xl">
-              Professional hand washing, pressurised machine wash, interior detailing and engine care in Eldoret.
+              Professional hand washing, pressurised machine wash, carpets awash, interior detailing and engine care in Eldoret.
               We don't just wash — we make your vehicle feel new again.
             </p>
 
