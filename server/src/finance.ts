@@ -85,8 +85,11 @@ export function calculateTransaction(data: FinanceInput): FinanceResult {
   const gross_shortfall = Math.max(0.0, expected_price - net_business_remittance);
 
   // Vacuum / engine wash are flexible: Ksh 300 or Ksh 200 are both acceptable,
-  // so up to Ksh 200 of recorded shortfall per add-on never counts as a debt.
-  const makes_allowance = (data.has_vacuum ? 200.0 : 0.0) + (data.has_engine_wash ? 200.0 : 0.0);
+  // so up to Ksh 200 of recorded shortfall on a standalone vacuum/engine make
+  // never counts as a debt. When vacuum/engine is an add-on to another service
+  // (e.g. car + vacuum), the full shortfall counts.
+  const makes_allowance =
+    (data.category === 'vacuum' ? 200.0 : 0.0) + (data.category === 'engine' ? 200.0 : 0.0);
   const shortfall = Math.max(0.0, gross_shortfall - makes_allowance);
 
   // 4. Shortfall & Zero-Remittance Penalties
