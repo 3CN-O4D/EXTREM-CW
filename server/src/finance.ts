@@ -62,9 +62,9 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
   // Motorcycle has a tiered commission: below min_price -> 0 commission + shortfall.
   // paid 50 -> 0, paid 60 -> 10, paid 70 -> 30 (each Ksh above 60 earns 2 Ksh commission).
   let commission = 0.0;
-  const cp = priceCfg?.commission_percent ?? 30;
-  const minP = priceCfg?.min_price ?? 0;
-  const maxP = priceCfg?.max_price ?? 0;
+  const cp = Number(priceCfg?.commission_percent ?? 30);
+  const minP = Number(priceCfg?.min_price ?? 0);
+  const maxP = Number(priceCfg?.max_price ?? 0);
 
   if (data.category === 'motorcycle' && minP > 0) {
     if (expected_price < minP) {
@@ -114,7 +114,7 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
       makes_allowance = maxP - minP; // covers gap between min and max -> no shortfall
     }
   } else if ((data.category === 'vacuum' || data.category === 'engine') && !(data.has_car_wash)) {
-    makes_allowance = priceCfg?.min_price ?? 200.0;
+    makes_allowance = Number(priceCfg?.min_price ?? 200.0);
   } else if (data.category === 'car' && (data.has_vacuum || data.has_engine_wash)) {
     const vacuumCfg = prices?.vacuum;
     const engineCfg = prices?.engine;
@@ -122,8 +122,8 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
 
     if (hasBoth) {
       // 3-component combo: keep comboMin/comboMax logic
-      const comboMin = minP + (data.has_vacuum ? vacuumCfg?.min_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.min_price ?? 0 : 0);
-      const comboMax = maxP + (data.has_vacuum ? vacuumCfg?.max_price ?? 0 : 0) + (data.has_engine_wash ? engineCfg?.max_price ?? 0 : 0);
+      const comboMin = minP + Number(data.has_vacuum ? vacuumCfg?.min_price ?? 0 : 0) + Number(data.has_engine_wash ? engineCfg?.min_price ?? 0 : 0);
+      const comboMax = maxP + Number(data.has_vacuum ? vacuumCfg?.max_price ?? 0 : 0) + Number(data.has_engine_wash ? engineCfg?.max_price ?? 0 : 0);
       if (total_paid < comboMin) {
         effectivePriceForShortfall = comboMin;
         makes_allowance = 0.0;
@@ -136,15 +136,15 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
       // 2-component combo: per-component shortfall using min prices
       // Payment allocates: car first, then vacuum/engine up to their max
       const carMax = maxP; // 200
-      const addonMax = data.has_vacuum
+      const addonMax = Number(data.has_vacuum
         ? (vacuumCfg?.max_price ?? 300)
-        : (engineCfg?.max_price ?? 300);
+        : (engineCfg?.max_price ?? 300));
 
       const carPaid = Math.min(total_paid, carMax);
       const addonPaid = Math.max(0, Math.min(total_paid - carMax, addonMax));
 
       const carMin = minP; // 200
-      const addonMin = data.has_vacuum ? (vacuumCfg?.min_price ?? 200) : (engineCfg?.min_price ?? 200);
+      const addonMin = Number(data.has_vacuum ? (vacuumCfg?.min_price ?? 200) : (engineCfg?.min_price ?? 200));
 
       effectivePriceForShortfall = carMin + addonMin;
       makes_allowance = 0.0;
