@@ -66,7 +66,7 @@ router.post(
 
       for (const emp of employees) {
         const wagesRes = await client.query(
-          'SELECT COALESCE(SUM(GREATEST(final_payout, 0)), 0) AS v FROM transactions WHERE week_id = $1 AND washer_id = $2',
+          'SELECT COALESCE(SUM(final_payout), 0) AS v FROM transactions WHERE week_id = $1 AND washer_id = $2',
           [weekId, emp.id],
         );
         const wages = Number(wagesRes.rows[0].v);
@@ -85,9 +85,13 @@ router.post(
         const open = openRes.rows as Pick<DebtRow, 'id' | 'amount' | 'paid'>[];
         const owed = open.reduce((s, d) => s + (d.amount - d.paid), 0);
 
-        const covered = Math.min(wagesTotal, owed);
-        const carry = owed - covered;
-        const cashPay = wagesTotal - covered;
+        let covered = 0;
+        if (wagesTotal > 0) {
+          covered = Math.min(wagesTotal, owed);
+        }
+        // Negative wages become new debt; any unpaid debt carries forward.
+        const carry = owed - covered + Math.max(0, -wagesTotal);
+        const cashPay = wagesTotal; // negative means the employee owes the company
 
         if (covered > 0) {
           await client.query(
@@ -114,7 +118,7 @@ router.post(
           [carry, emp.id],
         );
 
-        if (wagesTotal > 0 || owed > 0) {
+        if (wagesTotal !== 0 || owed > 0 || carry > 0) {
           cashPaidTotal += cashPay;
           debtCarriedTotal += carry;
           perEmployee.push({

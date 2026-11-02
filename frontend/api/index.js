@@ -36051,7 +36051,7 @@ router10.post(
       let laborFromTxs = 0;
       for (const emp of employees) {
         const wagesRes = await client.query(
-          "SELECT COALESCE(SUM(GREATEST(final_payout, 0)), 0) AS v FROM transactions WHERE week_id = $1 AND washer_id = $2",
+          "SELECT COALESCE(SUM(final_payout), 0) AS v FROM transactions WHERE week_id = $1 AND washer_id = $2",
           [weekId, emp.id]
         );
         const wages = Number(wagesRes.rows[0].v);
@@ -36068,9 +36068,12 @@ router10.post(
         );
         const open = openRes.rows;
         const owed = open.reduce((s, d) => s + (d.amount - d.paid), 0);
-        const covered = Math.min(wagesTotal, owed);
-        const carry = owed - covered;
-        const cashPay = wagesTotal - covered;
+        let covered = 0;
+        if (wagesTotal > 0) {
+          covered = Math.min(wagesTotal, owed);
+        }
+        const carry = owed - covered + Math.max(0, -wagesTotal);
+        const cashPay = wagesTotal;
         if (covered > 0) {
           await client.query(
             `INSERT INTO repayments (timestamp, employee_id, amount, week_id) VALUES ($1,$2,$3,$4)`,
@@ -36094,7 +36097,7 @@ router10.post(
           "UPDATE users SET payable_balance = 0, debt_balance = $1 WHERE id = $2",
           [carry, emp.id]
         );
-        if (wagesTotal > 0 || owed > 0) {
+        if (wagesTotal !== 0 || owed > 0 || carry > 0) {
           cashPaidTotal += cashPay;
           debtCarriedTotal += carry;
           perEmployee.push({
