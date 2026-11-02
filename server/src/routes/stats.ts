@@ -117,7 +117,7 @@ router.get(
       pool.query(`SELECT COALESCE(SUM(cash_paid),0) AS v FROM transactions ${txConds}`, txParams),
       pool.query(`SELECT COALESCE(SUM(mpesa_paid),0) AS v FROM transactions ${txConds}`, txParams),
       pool.query(`SELECT COALESCE(SUM(amount),0) AS v FROM expenses ${expConds}`, expParams),
-      pool.query(`SELECT COALESCE(SUM(final_payout),0) AS v FROM transactions ${txConds} AND final_payout > 0`, txParams),
+      pool.query(`SELECT COALESCE(SUM(final_payout),0) AS v FROM transactions ${txConds}`, txParams),
       pool.query(`SELECT COALESCE(SUM(net_business_remittance),0) AS v FROM transactions ${txConds}`, txParams),
       pool.query(`SELECT COALESCE(SUM(misc_amount),0) AS v FROM transactions ${txConds}`, txParams),
       pool.query(
