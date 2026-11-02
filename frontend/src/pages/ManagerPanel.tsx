@@ -46,7 +46,12 @@ export default function ManagerPanel() {
 
   useEffect(() => {
     api.get('/stats/employees')
-      .then(res => setEmployees(res.data))
+      .then(res => {
+        // Only employees wash carpets / wash cars, so filter out admin/manager
+        // from washer/receiver dropdowns.
+        const onlyEmployees = res.data.filter((e: any) => e.role.toLowerCase() === 'employee');
+        setEmployees(onlyEmployees);
+      })
       .catch((err: any) => setLoadError(err?.response?.data?.detail || 'Could not load employees.'));
   }, []);
 
@@ -133,7 +138,10 @@ export default function ManagerPanel() {
       });
       alert('Repayment logged!');
       setRepaymentForm({ employee_id: '', amount: 0 });
-      api.get('/stats/employees').then(res => setEmployees(res.data));
+      api.get('/stats/employees').then(res => {
+        const onlyEmployees = res.data.filter((e: any) => e.role.toLowerCase() === 'employee');
+        setEmployees(onlyEmployees);
+      });
     } catch { alert('Error logging repayment'); }
   };
 
@@ -147,7 +155,10 @@ export default function ManagerPanel() {
       });
       alert('Tip logged!');
       setTipForm({ employee_id: '', amount: 0, method: 'wages' });
-      api.get('/stats/employees').then(res => setEmployees(res.data));
+      api.get('/stats/employees').then(res => {
+        const onlyEmployees = res.data.filter((e: any) => e.role.toLowerCase() === 'employee');
+        setEmployees(onlyEmployees);
+      });
     } catch { alert('Error logging tip'); }
   };
 
@@ -256,7 +267,10 @@ export default function ManagerPanel() {
       await api.put(`/debts/${debtId}`, { amount: toNum(debtEdit.amount), paid: toNum(debtEdit.paid) });
       setEditingDebt(null);
       fetchDebts();
-      api.get('/stats/employees').then(res => setEmployees(res.data));
+      api.get('/stats/employees').then(res => {
+        const onlyEmployees = res.data.filter((e: any) => e.role.toLowerCase() === 'employee');
+        setEmployees(onlyEmployees);
+      });
     } catch (e: any) { alert(e.response?.data?.detail || 'Could not update the debt'); }
   };
 
@@ -264,7 +278,10 @@ export default function ManagerPanel() {
     try {
       await api.put(`/debts/${debtId}`, { paid: full ? amount : Math.floor(amount / 2) });
       fetchDebts();
-      api.get('/stats/employees').then(res => setEmployees(res.data));
+      api.get('/stats/employees').then(res => {
+        const onlyEmployees = res.data.filter((e: any) => e.role.toLowerCase() === 'employee');
+        setEmployees(onlyEmployees);
+      });
     } catch (e: any) { alert(e.response?.data?.detail || 'Could not update the debt'); }
   };
 
@@ -273,7 +290,10 @@ export default function ManagerPanel() {
     try {
       await api.delete(`/debts/${debtId}`);
       fetchDebts();
-      api.get('/stats/employees').then(res => setEmployees(res.data));
+      api.get('/stats/employees').then(res => {
+        const onlyEmployees = res.data.filter((e: any) => e.role.toLowerCase() === 'employee');
+        setEmployees(onlyEmployees);
+      });
     } catch { alert('Error removing debt'); }
   };
 
