@@ -85,12 +85,7 @@ export default function CarpetsPanel() {
   useEffect(() => {
     void fetchCarpets();
     api.get('/stats/employees')
-      .then((r) => {
-        // Only employees (not admin/manager) wash carpets, so filter them out
-        // from carpet receiver/holder lists.
-        const onlyEmployees = r.data.filter((e: any) => e.role.toLowerCase() === 'employee');
-        setEmployees(onlyEmployees);
-      })
+      .then((r) => setEmployees(r.data))
       .catch(() => {
         setEmployees([]);
       });
