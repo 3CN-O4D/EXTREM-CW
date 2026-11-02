@@ -23,10 +23,10 @@ export default function ManagerPanel() {
   const [expenseForm, setExpenseForm] = useState({ description: '', amount: 0, category: 'General' });
   const [expenses, setExpenses] = useState<any[]>([]);
   const [repaymentForm, setRepaymentForm] = useState({ employee_id: '', amount: 0 });
-  const [activeTab, setActiveTab] = useState<'sheet' | 'expense' | 'repayment' | 'tip' | 'debt' | 'carpets' | 'payday' | 'client-debts' | 'arrivals'>('sheet');
+  const [activeTab, setActiveTab] = useState<'sheet' | 'expense' | 'repayment' | 'tip' | 'debt' | 'payday' | 'client-debts' | 'arrivals'>('sheet');
   const [debts, setDebts] = useState<any[]>([]);
   const [debtForm, setDebtForm] = useState({
-    employee_id: '', amount: 0, service: '', paid: 0, paid_date: '', notes: ''
+    debtor_type: 'employee', employee_id: '', other_name: '', amount: 0, service: '', paid: 0, paid_date: '', notes: ''
   });
   const [editingDebt, setEditingDebt] = useState<number | null>(null);
   const [debtEdit, setDebtEdit] = useState({ amount: 0, paid: 0 });
@@ -37,8 +37,6 @@ export default function ManagerPanel() {
   const [clientDebtForm, setClientDebtForm] = useState({
     client_name: '', customer_phone: '', description: '', amount: 0, date: format(new Date(), 'yyyy-MM-dd')
   });
-  const [carpets, setCarpets] = useState<any[]>([]);
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [, setSheetRows] = useState<any[]>([]);
   const [, setIsAdmin] = useState(false);
 
@@ -76,17 +74,6 @@ export default function ManagerPanel() {
   useEffect(() => {
     fetchTransactions();
   }, [selectedDay, viewMode, weekOffset]);
-
-  useEffect(() => {
-    fetchCarpets();
-  }, []);
-
-  const fetchCarpets = async () => {
-    try {
-      const res = await api.get('/carpets/');
-      setCarpets(res.data);
-    } catch {}
-  };
 
   const fetchDebts = async () => {
     try {
@@ -163,62 +150,6 @@ export default function ManagerPanel() {
     } catch { alert('Error logging tip'); }
   };
 
-  const handleCarpetWash = async (carpetId: number) => {
-    try {
-      await api.patch(`/carpets/${carpetId}/wash`);
-      fetchCarpets();
-      alert('Marked as washed');
-    } catch { alert('Error marking carpet'); }
-  };
-
-  const handleCarpetAssign = async (carpetId: number, employeeId: string) => {
-    try {
-      await api.patch(`/carpets/${carpetId}`, {
-        receiver_id: employeeId === '' ? null : Number(employeeId),
-      });
-      fetchCarpets();
-    } catch (e: any) { alert(e.response?.data?.detail || 'Error assigning carpet'); }
-  };
-
-  const handleCarpetRelease = async (carpetId: number, price: number, washerId: number | null) => {
-    const amount = prompt(`Release carpet — Cash received (Ksh, expected ${price}). Enter 0 if unpaid:`, String(price));
-    if (amount === null) return;
-    const who = prompt(
-      `Who washed it? Enter 1-${employees.length} for the employee number, or leave blank to use the receiver.`,
-      washerId ? String(employees.findIndex((e: any) => e.id === washerId) + 1) : '',
-    );
-    if (who === null) return;
-    const idx = parseInt(who, 10);
-    const picked = Number.isInteger(idx) && idx >= 1 && idx <= employees.length ? employees[idx - 1].id : washerId;
-    try {
-      await api.post(`/carpets/${carpetId}/release`, {
-        cash_paid: toNum(amount),
-        washer_id: picked ?? null,
-      });
-      fetchCarpets();
-      fetchTransactions();
-      alert('Carpet released (photo auto-deletes after 7 days)');
-    } catch (e: any) { alert(e.response?.data?.detail || 'Error releasing carpet'); }
-  };
-
-  const handleCarpetDelete = async (carpetId: number) => {
-    if (!confirm('Delete this carpet record?')) return;
-    try {
-      await api.delete(`/carpets/${carpetId}`);
-      fetchCarpets();
-    } catch { alert('Error deleting carpet'); }
-  };
-
-  // Lists return small thumbnails; fetch the full photo only when the user taps it.
-  const openCarpetPhoto = async (c: any) => {
-    try {
-      const res = await api.get(`/carpets/${c.id}`);
-      setPhotoPreview(res.data.image_data || res.data.image_thumb || null);
-    } catch {
-      setPhotoPreview(c.image_thumb || c.image_data || null);
-    }
-  };
-
   const fetchArrivals = async () => {
     try { const res = await api.get('/vehicles/'); setArrivals(res.data); } catch {}
   };
@@ -240,15 +171,21 @@ export default function ManagerPanel() {
   const handleDebtSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await api.post('/debts/', {
-        employee_id: toNum(debtForm.employee_id),
+      const payload: any = {
         amount: toNum(debtForm.amount),
         service: debtForm.service || null,
         paid: toNum(debtForm.paid),
-        paid_date: debtForm.paid_date || null
-      });
+        paid_date: debtForm.paid_date || null,
+      };
+      if (debtForm.debtor_type === 'employee') {
+        payload.employee_id = toNum(debtForm.employee_id) || null;
+      } else {
+        payload.employee_id = null;
+        payload.other_name = debtForm.other_name || null;
+      }
+      await api.post('/debts/', payload);
       alert('Debt logged!');
-      setDebtForm({ employee_id: '', amount: 0, service: '', paid: 0, paid_date: '', notes: '' });
+      setDebtForm({ debtor_type: 'employee', employee_id: '', other_name: '', amount: 0, service: '', paid: 0, paid_date: '', notes: '' });
       fetchDebts();
     } catch { alert('Error logging debt'); }
   };
@@ -412,7 +349,6 @@ export default function ManagerPanel() {
     { id: 'repayment', label: 'Debt Repayment' },
     { id: 'tip', label: 'Log Tip' },
     { id: 'debt', label: 'Log Debt' },
-    { id: 'carpets', label: 'Carpets' },
     { id: 'payday', label: 'Payday' },
     { id: 'client-debts', label: 'Client Debts' },
     { id: 'arrivals', label: 'Arrivals' },
@@ -594,15 +530,15 @@ export default function ManagerPanel() {
       ) : activeTab === 'debt' ? (
         <div className="space-y-4">
           <form onSubmit={handleDebtSubmit} className="card-pad space-y-4">
-            <h2 className="section-title text-red-600 dark:text-red-400">Log employee debt</h2>
-            <p className="muted text-sm">Record a debt/advance for an employee. Debts persist until fully paid.</p>
+            <h2 className="section-title text-red-600 dark:text-red-400">Log debt</h2>
+            <p className="muted text-sm">Record a debt/advance for an employee or an "other" debtor. Debts persist until fully paid.</p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <label className="block">
-                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Employee</span>
-                <select className="input-base" value={debtForm.employee_id}
-                  onChange={e => setDebtForm({ ...debtForm, employee_id: e.target.value })} required>
-                  <option value="">Select Employee</option>
-                  {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Debtor</span>
+                <select className="input-base" value={debtForm.debtor_type}
+                  onChange={e => setDebtForm({ ...debtForm, debtor_type: e.target.value, employee_id: '', other_name: '' })}>
+                  <option value="employee">Employee</option>
+                  <option value="other">Other (specify name)</option>
                 </select>
               </label>
               <label className="block">
@@ -610,6 +546,23 @@ export default function ManagerPanel() {
                 <input type="number" min="0" className="input-base" value={debtForm.amount}
                   onChange={e => setDebtForm({ ...debtForm, amount: toNum(e.target.value) })} required />
               </label>
+              {debtForm.debtor_type === 'employee' && (
+                <label className="block sm:col-span-2">
+                  <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Employee</span>
+                  <select className="input-base" value={debtForm.employee_id}
+                    onChange={e => setDebtForm({ ...debtForm, employee_id: e.target.value })} required>
+                    <option value="">Select Employee</option>
+                    {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                </label>
+              )}
+              {debtForm.debtor_type === 'other' && (
+                <label className="block sm:col-span-2">
+                  <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Debtor name</span>
+                  <input className="input-base" placeholder="e.g. John Doe"
+                    value={debtForm.other_name} onChange={e => setDebtForm({ ...debtForm, other_name: e.target.value })} />
+                </label>
+              )}
               <label className="block">
                 <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Service (optional)</span>
                 <input className="input-base" placeholder="e.g. advance, loan"
@@ -648,7 +601,7 @@ export default function ManagerPanel() {
                   {debts.length === 0 && <tr><td colSpan={7} className="py-8 text-center text-slate-400">No debts on record.</td></tr>}
                   {debts.map(d => (
                     <tr key={d.id} className="border-b border-slate-200/70 dark:border-white/10">
-                      <td className="py-2 font-medium">{empMap[d.employee_id] || d.employee_id}</td>
+                      <td className="py-2 font-medium">{d.other_name || empMap[d.employee_id] || d.employee_id}</td>
                       {editingDebt === d.id ? (
                         <>
                           <td className="py-2">
@@ -968,88 +921,6 @@ export default function ManagerPanel() {
         </div>
       ) : null}
 
-      {activeTab === 'carpets' && (
-        <div className="card-pad space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-lg font-black tracking-tight">Carpets log</h2>
-            <span className="text-xs text-slate-400">Released carpets auto-delete after 7 days</span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200/80 bg-slate-50 dark:border-white/10 dark:bg-white/5">
-                  <th className="py-2">Received</th>
-                  <th className="py-2">Carpet</th>
-                  <th className="py-2">Client</th>
-                  <th className="py-2">Photo</th>
-                  <th className="py-2">Receiver</th>
-                  <th className="py-2 text-right">Expected</th>
-                  <th className="py-2 text-right">Paid</th>
-                  <th className="py-2">Washed</th>
-                  <th className="py-2">Status</th>
-                  <th className="py-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {carpets.length === 0 && (
-                  <tr><td colSpan={10} className="py-8 text-center text-slate-400">No carpets logged.</td></tr>
-                )}
-                {carpets.map(c => (
-                  <tr key={c.id} className="border-b border-slate-200/70 dark:border-white/10">
-                    <td className="py-2 text-sm">{format(new Date(c.created_at), 'EEE dd/MM HH:mm')}</td>
-                    <td className="py-2 font-medium">{c.characteristics || '-'}</td>
-                    <td className="py-2">
-                      {c.client_name ? <div className="font-medium">{c.client_name}</div> : <div className="text-slate-400">—</div>}
-                      {c.customer_phone ? <div className="text-xs text-slate-500">{c.customer_phone}</div> : null}
-                    </td>
-                    <td className="py-2">
-                      {c.image_thumb || c.image_data ? (
-                        <img src={c.image_thumb || c.image_data} alt="carpet" onClick={() => openCarpetPhoto(c)}
-                          className="h-12 w-12 cursor-pointer rounded border object-cover" />
-                      ) : <span className="text-slate-400">—</span>}
-                    </td>
-                    <td className="py-2">
-                      {c.status === 'received' ? (
-                        <select value={c.receiver_id ?? ''} onChange={e => handleCarpetAssign(c.id, e.target.value)}
-                          className="input-base px-2 py-1 text-xs">
-                          <option value="">Pick receiver...</option>
-                          {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
-                        </select>
-                      ) : (
-                        <span className="font-medium">{empMap[c.receiver_id] || '—'}</span>
-                      )}
-                      {c.submitter_id && <div className="text-xs text-slate-400">logged by {abbrMap[c.submitter_id] || empMap[c.submitter_id]}</div>}
-                    </td>
-                    <td className="py-2 text-right font-mono">Ksh {c.expected_price}</td>
-                    <td className="py-2 text-right font-mono">Ksh {c.cash_paid + c.mpesa_paid}</td>
-                    <td className="py-2">
-                      <button onClick={() => handleCarpetWash(c.id)}
-                        className={`rounded-lg px-2 py-1 text-xs font-bold transition ${c.is_washed ? 'bg-emerald-600 text-white' : 'bg-slate-200 text-slate-700 hover:bg-slate-300 dark:bg-white/10 dark:text-slate-200'}`}>
-                        {c.is_washed ? 'Washed' : 'Mark washed'}
-                      </button>
-                    </td>
-                    <td className="py-2">
-                      <span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${c.status === 'received' ? 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300' : 'bg-slate-200 text-slate-600 dark:bg-white/10 dark:text-slate-300'}`}>
-                        {c.status}
-                      </span>
-                    </td>
-                    <td className="py-2">
-                      <div className="flex gap-1">
-                        {c.status === 'received' && (
-                          <button onClick={() => handleCarpetRelease(c.id, c.expected_price, c.receiver_id)}
-                            className="rounded-lg bg-emerald-600 px-2 py-1 text-xs font-bold text-white hover:bg-emerald-700">Release</button>
-                        )}
-                        <button onClick={() => handleCarpetDelete(c.id)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white hover:bg-red-700">Del</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
       {activeTab !== 'sheet' && (
         <div className="card-pad">
           <h3 className="text-lg font-black tracking-tight">Recent transactions</h3>
@@ -1151,16 +1022,6 @@ export default function ManagerPanel() {
                 ))}
               </tbody>
             </table>
-          </div>
-        </div>
-      )}
-
-      {photoPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setPhotoPreview(null)}>
-          <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
-            <button onClick={() => setPhotoPreview(null)}
-              className="absolute -right-3 -top-3 flex h-8 w-8 items-center justify-center rounded-full bg-red-600 font-bold text-white">×</button>
-            <img src={photoPreview} alt="carpet preview" className="w-full rounded-lg shadow-2xl" />
           </div>
         </div>
       )}

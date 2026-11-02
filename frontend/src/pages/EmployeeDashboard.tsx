@@ -21,8 +21,7 @@ export default function EmployeeDashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState<any>(null);
   const [transactions, setTransactions] = useState<any[]>([]);
-  const [carpetsIn, setCarpetsIn] = useState<any[]>([]);
-  const [carpetsOut, setCarpetsOut] = useState<any[]>([]);
+  const [carpets, setCarpets] = useState<any[]>([]);
   const [debts, setDebts] = useState<any[]>([]);
   const [repayments, setRepayments] = useState<any[]>([]);
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -57,16 +56,14 @@ export default function EmployeeDashboard() {
       setStats(res.data);
 
       const myId = res.data.id;
-      const [txRes, inRes, outRes, debtRes, repRes] = await Promise.all([
+      const [txRes, carpetRes, debtRes, repRes] = await Promise.all([
         api.get('/transactions/', { params: { washer_id: myId, week_id: weekId } }),
-        api.get('/carpets/', { params: { status: 'received' } }),
-        api.get('/carpets/', { params: { status: 'released' } }),
+        api.get('/carpets/'),
         api.get('/debts/'),
         api.get('/repayments/')
       ]);
       setTransactions(txRes.data);
-      setCarpetsIn(inRes.data);
-      setCarpetsOut(outRes.data);
+      setCarpets(carpetRes.data);
       setDebts(debtRes.data);
       setRepayments(repRes.data);
     } catch (err: any) {
@@ -365,68 +362,77 @@ export default function EmployeeDashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow overflow-hidden">
-          <h2 className="text-xl font-semibold mb-4 text-amber-600">My Carpets — Received</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b">
-                  <th className="py-2">Received</th>
-                  <th className="py-2">Carpet</th>
-                  <th className="py-2">Client</th>
-                  <th className="py-2 text-right">Expected</th>
-                </tr>
-              </thead>
-              <tbody>
-                {carpetsIn.length === 0 && <tr><td colSpan={4} className="py-4 text-center text-gray-400 text-sm">None received.</td></tr>}
-                {carpetsIn.map(c => (
-                  <tr key={c.id} className="border-b">
-                    <td className="py-2 text-sm">{format(new Date(c.created_at), 'dd/MM HH:mm')}</td>
-                    <td className="py-2 text-sm">
-                      <span className="pr-2">{c.characteristics || 'Carpet'}</span>
-                      {(c.image_thumb || c.image_data) && <img src={c.image_thumb || c.image_data} alt="carpet" onClick={() => openCarpetPhoto(c)} className="inline h-8 w-8 object-cover rounded border cursor-pointer" />}
+      <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow overflow-hidden">
+        <h2 className="text-xl font-semibold mb-4 text-violet-600">My Carpets — Status &amp; Timeline</h2>
+        <p className="muted text-xs mb-4">Track your carpets from received → washed → ready → released.</p>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b border-slate-200/70 dark:border-white/10">
+                <th className="py-2 pr-3">Photo</th>
+                <th className="py-2 pr-3">Carpet</th>
+                <th className="py-2 pr-3">Client</th>
+                <th className="py-2 pr-3">Status</th>
+                <th className="py-2 pr-3">Timeline</th>
+                <th className="py-2 pr-3 text-right">Expected</th>
+                <th className="py-2 pr-3 text-right">Paid</th>
+              </tr>
+            </thead>
+            <tbody>
+              {carpets.length === 0 && (
+                <tr><td colSpan={7} className="py-8 text-center text-gray-400 text-sm">No carpets assigned to you.</td></tr>
+              )}
+              {carpets.map(c => {
+                const STATUS_COLOR: Record<string, string> = {
+                  received: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+                  washed: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+                  ready: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+                  released: 'bg-slate-200 text-slate-600 dark:bg-white/10 dark:text-slate-300',
+                };
+                const cells: Array<[string, string | null]> = [
+                  ['Received', c.created_at],
+                  ['Washed', c.washed_at],
+                  ['Ready', c.ready_at],
+                  ['Released', c.released_at],
+                ];
+                return (
+                  <tr key={c.id} className="border-b border-slate-200/70 dark:border-white/10">
+                    <td className="py-3 pr-3">
+                      {c.image_thumb ? (
+                        <img src={c.image_thumb} alt="carpet" onClick={() => openCarpetPhoto(c)}
+                          className="h-10 w-10 object-cover rounded border cursor-pointer" />
+                      ) : (
+                        <span className="text-slate-400">—</span>
+                      )}
                     </td>
-                    <td className="py-2 text-sm">
-                      {c.client_name ? <div>{c.client_name}</div> : <div className="text-gray-400">—</div>}
+                    <td className="py-3 pr-3">
+                      <p className="font-medium">{c.characteristics || 'Carpet'}</p>
+                      <p className="text-xs text-gray-500">#{c.id}</p>
+                    </td>
+                    <td className="py-3 pr-3">
+                      {c.client_name ? <div className="font-medium">{c.client_name}</div> : <div className="text-gray-400">—</div>}
                       {c.customer_phone && <div className="text-xs text-gray-500">{c.customer_phone}</div>}
                     </td>
-                    <td className="py-2 font-mono text-right text-sm">Ksh {c.expected_price}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow overflow-hidden">
-          <h2 className="text-xl font-semibold mb-4 text-purple-600">My Carpets — Released</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b">
-                  <th className="py-2">Released</th>
-                  <th className="py-2">Carpet</th>
-                  <th className="py-2">Client</th>
-                  <th className="py-2 text-right">Paid</th>
-                </tr>
-              </thead>
-              <tbody>
-                {carpetsOut.length === 0 && <tr><td colSpan={4} className="py-4 text-center text-gray-400 text-sm">None released.</td></tr>}
-                {carpetsOut.map(c => (
-                  <tr key={c.id} className="border-b">
-                    <td className="py-2 text-sm">{c.released_at ? format(new Date(c.released_at), 'dd/MM HH:mm') : '-'}</td>
-                    <td className="py-2 text-sm">{c.characteristics || 'Carpet'}</td>
-                    <td className="py-2 text-sm">
-                      {c.client_name ? <div>{c.client_name}</div> : <div className="text-gray-400">—</div>}
-                      {c.customer_phone && <div className="text-xs text-gray-500">{c.customer_phone}</div>}
+                    <td className="py-3 pr-3">
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${STATUS_COLOR[c.status] || ''}`}>
+                        {c.status.charAt(0).toUpperCase() + c.status.slice(1)}
+                      </span>
                     </td>
-                    <td className="py-2 font-mono text-right text-sm">Ksh {c.cash_paid + c.mpesa_paid}</td>
+                    <td className="py-3 pr-3 text-[10px] text-gray-500">
+                      {cells.map(([label, ts]) => (
+                        <div key={label} className="flex items-center gap-1">
+                          <span className="font-semibold text-slate-400">{label}</span>{' '}
+                          {ts ? format(new Date(ts), 'dd/MM HH:mm') : '—'}
+                        </div>
+                      ))}
+                    </td>
+                    <td className="py-3 pr-3 font-mono text-right text-sm">Ksh {c.expected_price}</td>
+                    <td className="py-3 pr-3 font-mono text-right text-sm">Ksh {c.cash_paid + c.mpesa_paid}</td>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
 
