@@ -48,6 +48,7 @@ type SheetRow = {
   expected: number;
   shortfall?: number;
   total_paid?: number;
+  final_payout?: number;
   saving?: boolean;
   error?: string;
   has_vacuum?: boolean;
@@ -83,6 +84,7 @@ function txToRow(tx: any): SheetRow {
     expected: tx.expected_price,
     shortfall: tx.shortfall || 0,
     total_paid: tx.total_paid || 0,
+    final_payout: tx.final_payout || 0,
     has_vacuum: tx.has_vacuum || false,
     has_engine_wash: tx.has_engine_wash || false,
   };
@@ -534,7 +536,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   };
 
   const totals = useMemo(() => {
-    let cash = 0, mpesa = 0, paid = 0, shortfall = 0;
+    let cash = 0, mpesa = 0, paid = 0, shortfall = 0, wages = 0;
     const counts: Record<string, number> = {};
     for (const r of rows) {
       if (r.draft) continue;
@@ -542,9 +544,10 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
       mpesa += r.mpesa;
       paid += r.total_paid || 0;
       shortfall += r.shortfall || 0;
+      wages += r.final_payout || 0;
       counts[r.category] = (counts[r.category] || 0) + 1;
     }
-    return { cash, mpesa, paid, shortfall, counts };
+    return { cash, mpesa, paid, shortfall, wages, counts };
   }, [rows]);
 
   const pendingDrafts = rows.filter((r) => r.draft).length;
@@ -569,6 +572,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
           { label: 'Cash', value: `Ksh ${totals.cash}`, cls: 'text-emerald-600 dark:text-emerald-400' },
           { label: 'M-Pesa', value: `Ksh ${totals.mpesa}`, cls: 'text-brand-600 dark:text-brand-300' },
           { label: 'Total paid', value: `Ksh ${totals.paid}`, cls: 'text-slate-900 dark:text-white' },
+          { label: 'Wages', value: `Ksh ${totals.wages}`, cls: ((totals.wages ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400') },
           { label: 'Shortfall', value: `Ksh ${shortfall0(totals.shortfall)}`, cls: 'text-red-600 dark:text-red-400' },
           { label: 'Jobs', value: `${rows.filter((r) => !r.draft).length}`, cls: 'text-slate-900 dark:text-white' },
           { label: 'Carpets in', value: `${carpets.length}`, cls: 'text-violet-600 dark:text-violet-300' },
