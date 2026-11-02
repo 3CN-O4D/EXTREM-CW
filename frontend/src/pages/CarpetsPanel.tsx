@@ -34,6 +34,7 @@ export default function CarpetsPanel() {
   const [employees, setEmployees] = useState<any[]>([]);
   const [carpetStats, setCarpetStats] = useState<any>(null);
   const [filter, setFilter] = useState<'all' | Status>('all');
+  const [employeeFilter, setEmployeeFilter] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
@@ -210,9 +211,14 @@ export default function CarpetsPanel() {
     }
   };
 
-  const filtered = filter === 'all' ? carpets : carpets.filter((c) => c.status === filter);
+  const filtered = carpets.filter((c) => {
+    if (filter !== 'all' && c.status !== filter) return false;
+    if (employeeFilter !== null && c.receiver_id !== employeeFilter) return false;
+    return true;
+  });
   const readyCarpets = carpets.filter((c) => c.status === 'ready');
   const countFor = (s: 'all' | Status) => (s === 'all' ? carpets.length : carpets.filter((c) => c.status === s).length);
+  const countForEmployee = (empId: number) => carpets.filter((c) => c.receiver_id === empId).length;
 
   const timeline = (c: any) => {
     const cells: Array<[string, string | null]> = [
@@ -382,6 +388,22 @@ export default function CarpetsPanel() {
               {s === 'all' ? 'All' : STATUS_META[s].label}
               <span className={`ml-1.5 rounded-full px-1.5 text-[10px] ${filter === s ? 'bg-white/25' : 'bg-slate-200 text-slate-500 dark:bg-white/10 dark:text-slate-400'}`}>
                 {countFor(s)}
+              </span>
+            </button>
+          ))}
+          {employees.map((e) => (
+            <button
+              key={e.id}
+              onClick={() => setEmployeeFilter(employeeFilter === e.id ? null : e.id)}
+              className={`rounded-full px-3 py-1.5 text-xs font-bold capitalize transition ${
+                employeeFilter === e.id
+                  ? 'bg-violet-600 text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
+              }`}
+            >
+              {e.abbreviation || e.name.charAt(0).toUpperCase()}
+              <span className={`ml-1.5 rounded-full px-1.5 text-[10px] ${employeeFilter === e.id ? 'bg-white/25' : 'bg-slate-200 text-slate-500 dark:bg-white/10 dark:text-slate-400'}`}>
+                {countForEmployee(e.id)}
               </span>
             </button>
           ))}
