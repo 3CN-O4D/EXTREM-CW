@@ -116,7 +116,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         let expected = 0;
         if (r.category === 'car') {
           expected = 200 + (isVac ? 300 : 0) + (isEng ? 300 : 0);
-          if (isVac && isEng) expected = 600; // full package cap
+          if (isVac && isEng) expected = 800; // full package
         } else if (PLATE_CATS.includes(r.category)) {
           expected = STANDARD[r.category] + (isVac ? 300 : 0) + (isEng ? 300 : 0);
         } else {
@@ -142,7 +142,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         let expected = 0;
         if (r.category === 'car') {
           expected = 200 + (newVac ? 300 : 0) + (newEng ? 300 : 0);
-          if (newVac && newEng) expected = 600;
+          if (newVac && newEng) expected = 800;
         } else if (PLATE_CATS.includes(r.category)) {
           expected = STANDARD[r.category] + (newVac ? 300 : 0) + (newEng ? 300 : 0);
         } else {
