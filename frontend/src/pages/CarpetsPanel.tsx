@@ -25,6 +25,7 @@ const EMPTY_RECEIVE = {
 export default function CarpetsPanel() {
   const [carpets, setCarpets] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
+  const [carpetStats, setCarpetStats] = useState<any>(null);
   const [filter, setFilter] = useState<'all' | Status>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -54,8 +55,12 @@ export default function CarpetsPanel() {
 
   const fetchCarpets = useCallback(async () => {
     try {
-      const res = await api.get('/carpets/');
-      setCarpets(res.data);
+      const [carpetsRes, statsRes] = await Promise.all([
+        api.get('/carpets/'),
+        api.get('/carpets/stats'),
+      ]);
+      setCarpets(carpetsRes.data);
+      setCarpetStats(statsRes.data);
       setError('');
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Could not load carpets.');
@@ -235,6 +240,56 @@ export default function CarpetsPanel() {
   return (
     <div className="space-y-5">
       {error && <InlineError message={error} />}
+
+      {/* Carpet stats */}
+      {carpetStats && (
+        <div className="card overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-200/80 bg-slate-50 px-5 py-3 dark:border-white/10 dark:bg-white/5">
+            <h3 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">Carpet Stats</h3>
+            <p className="muted text-xs text-slate-500 dark:text-slate-400">Aggregate totals and per-employee breakdown</p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200/70 bg-white dark:bg-slate-900/50">
+                  <th className="py-3 pr-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500">Employee</th>
+                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Total</th>
+                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Received</th>
+                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Washed</th>
+                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Ready</th>
+                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Released</th>
+                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Unwashed</th>
+                </tr>
+              </thead>
+              <tbody>
+                {/* Aggregate total row */}
+                <tr className="border-b border-slate-200/70 bg-brand-50 dark:bg-brand-500/10 font-bold">
+                  <td className="py-3 pr-3 text-left text-xs text-slate-700 dark:text-slate-300">All carpets</td>
+                  <td className="py-3 pr-3 text-right text-xs text-slate-900 dark:text-white">{carpetStats.total}</td>
+                  <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{carpetStats.received}</td>
+                  <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{carpetStats.washed}</td>
+                  <td className="py-3 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{carpetStats.ready}</td>
+                  <td className="py-3 pr-3 text-right text-xs text-slate-600 dark:text-slate-400">{carpetStats.released}</td>
+                  <td className="py-3 pr-3 text-right text-xs text-red-600 dark:text-red-400">{carpetStats.unwashed}</td>
+                </tr>
+                {carpetStats.employees.map((e: any) => (
+                  <tr key={e.id} className="border-b border-slate-200/70 dark:border-white/10 hover:bg-slate-50/70 dark:hover:bg-white/[0.03]">
+                    <td className="py-3 pr-3 text-left text-xs font-medium text-slate-700 dark:text-slate-300">
+                      {e.name} {e.abbreviation ? `(${e.abbreviation})` : ''}
+                    </td>
+                    <td className="py-3 pr-3 text-right text-xs text-slate-900 dark:text-white">{e.total}</td>
+                    <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{e.received}</td>
+                    <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{e.washed}</td>
+                    <td className="py-3 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{e.ready}</td>
+                    <td className="py-3 pr-3 text-right text-xs text-slate-600 dark:text-slate-400">{e.released}</td>
+                    <td className="py-3 pr-3 text-right text-xs text-red-600 dark:text-red-400">{e.unwashed}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Ready for pickup banner */}
       {readyCarpets.length > 0 && (
