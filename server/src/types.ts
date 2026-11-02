@@ -147,7 +147,7 @@ export interface CarpetRow {
 }
 
 export const SERVICE_CATEGORIES = [
-  'bicycle', 'motorcycle', 'taxi', 'car', 'midrange', 'lorry', 'carpet', 'other',
+  'bicycle', 'motorcycle', 'taxi', 'car', 'midrange', 'lorry', 'carpet', 'vacuum', 'engine', 'exterior', 'other',
 ];
 export const TIP_METHODS = ['cash', 'wages'];
 export const ROLES = ['admin', 'manager', 'employee'];

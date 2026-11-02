@@ -42,33 +42,32 @@ export interface FinanceResult {
   ledger_routing: LedgerRouting;
 }
 
-export function calculateTransaction(data: FinanceInput): FinanceResult {
+export interface PriceConfig {
+  min_price: number;
+  max_price: number;
+  commission_percent: number;
+}
+
+export function calculateTransaction(data: FinanceInput, prices?: Record<string, PriceConfig>): FinanceResult {
   let expected_price = data.expected_price;
+  const priceCfg = prices?.[data.category];
 
   // 1. Vacuum & Engine Wash Floor Rules (Full Package)
   if (data.has_car_wash && data.has_vacuum && data.has_engine_wash) {
-    if (expected_price < 600) expected_price = 600;
+    const pkgMax = priceCfg?.max_price ?? 800;
+    if (expected_price < pkgMax) expected_price = pkgMax;
   }
 
-  // 2. Commission Calculation
+  // 2. Commission Calculation — uses commission_percent from the prices table.
+  // If expected_price is below min_price, no commission is earned (e.g. motorcycle paid 50 -> 0).
   let commission = 0.0;
-  if (expected_price < 70) {
-    commission = 0.0; // motorcycle paid 50 -> 0 commission
-  } else if (data.category === 'motorcycle' && expected_price === 70) {
-    commission = 30.0; // motorcycle paid 70 -> 30 commission
-  } else if (data.category === 'taxi' && expected_price === 150) {
-    // "cars ext or taxi" = 50ksh flat commission (30% of 150 is 45; we give 50 as motivation).
-    commission = 50.0;
-  } else if (data.category === 'car' && expected_price === 200 && !(data.has_vacuum || data.has_engine_wash)) {
-    commission = 70.0; // plain car = 35% of 200
-  } else if (data.category === 'carpet') {
-    commission = expected_price * 0.3; // all carpets = 30%
-  } else if (data.category === 'vacuum' || data.category === 'engine') {
-    commission = expected_price * 0.3; // vacuum / engine wash = 30% (300->90, 200->60, 500->150, 400->120)
-  } else if (data.has_car_wash && data.has_vacuum && data.has_engine_wash) {
-    commission = expected_price * 0.3; // full package = 30%
-  } else {
-    commission = expected_price * 0.3; // default 30%
+  const cp = priceCfg?.commission_percent ?? 30;
+  const minP = priceCfg?.min_price ?? 0;
+  if (expected_price >= minP && minP > 0) {
+    commission = expected_price * cp / 100.0;
+  } else if (minP === 0) {
+    // categories without a price floor (e.g. other): straight percentage
+    commission = expected_price * cp / 100.0;
   }
 
   // 3. Tip Isolation
@@ -84,14 +83,14 @@ export function calculateTransaction(data: FinanceInput): FinanceResult {
   const net_business_remittance = total_paid - isolated_tip;
   const gross_shortfall = Math.max(0.0, expected_price - net_business_remittance);
 
-  // Shortfall allowance:
-  // - Standalone vacuum/engine: 200 (300 or 200 both acceptable as full price)
-  // - Car + vacuum / car + engine / car + both: 200 (combo allowance)
+  // Shortfall allowance — how far below max_price can remittance fall before it counts as debt.
+  // - Standalone vacuum/engine: allowance = min_price (200)
+  // - Car + any add-on (vacuum/engine): allowance = min_price (200)
   let makes_allowance = 0.0;
-  if (data.category === 'vacuum' || data.category === 'engine') {
-    makes_allowance = 200.0;
+  if ((data.category === 'vacuum' || data.category === 'engine') && !(data.has_car_wash)) {
+    makes_allowance = priceCfg?.min_price ?? 200.0;
   } else if (data.category === 'car' && (data.has_vacuum || data.has_engine_wash)) {
-    makes_allowance = 200.0;
+    makes_allowance = priceCfg?.min_price ?? 200.0;
   }
   const shortfall = Math.max(0.0, gross_shortfall - makes_allowance);
 

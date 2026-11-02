@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool, queryOne } from '../db';
 import { HttpError, getCurrentWeekId, validateDay, wrap } from '../utils';
-import { asFloat, asInt, asBool, asOptFloat, asOptInt, asOptStr, requireEnum, calculateTransaction } from '../finance';
+import { asFloat, asInt, asBool, asOptFloat, asOptInt, asOptStr, requireEnum, calculateTransaction, PriceConfig } from '../finance';
 import { TransactionSummary, EmployeeFinancials, LedgerRouting } from '../finance';
 import { getCurrentUser, requireRole, AuthRequest } from '../auth';
 import { SERVICE_CATEGORIES, TIP_METHODS } from '../types';
@@ -112,7 +112,14 @@ export async function createTransactionCore(
   actor: UserRow,
   opts: { employeeBearsShortfall?: boolean; noWage?: boolean } = {},
 ): Promise<CreateResult> {
-  const result = calculateTransaction(data);
+  // Load configurable pricing from the prices table so admin edits take effect immediately.
+  const priceRows = (
+    await pool.query('SELECT category, min_price, max_price, commission_percent FROM prices WHERE is_active = true')
+  ).rows as Array<{ category: string; min_price: number; max_price: number; commission_percent: number }>;
+  const prices: Record<string, PriceConfig> = {};
+  for (const r of priceRows) prices[r.category] = r;
+
+  const result = calculateTransaction(data, prices);
   validateMisc(data);
 
   // Drive-out settlements (POST /vehicles/:id/settle) pass noWage: the payment
@@ -355,7 +362,12 @@ router.put(
     if (updates.carpet_metadata !== undefined) {
       merged.carpet_metadata = parseMetadata(updates.carpet_metadata);
     }
-    const result = calculateTransaction(merged);
+    const priceRows = (
+      await pool.query('SELECT category, min_price, max_price, commission_percent FROM prices WHERE is_active = true')
+    ).rows as Array<{ category: string; min_price: number; max_price: number; commission_percent: number }>;
+    const prices: Record<string, PriceConfig> = {};
+    for (const r of priceRows) prices[r.category] = r;
+    const result = calculateTransaction(merged, prices);
     validateMisc(merged);
     const washer = await queryOne<UserRow>('SELECT * FROM users WHERE id = $1', [merged.washer_id]);
     if (!washer) throw new HttpError(404, 'Washer not found');

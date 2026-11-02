@@ -23,13 +23,13 @@ export interface DaySheetProps {
 }
 
 const STANDARD: Record<string, number> = {
-  bicycle: 50, motorcycle: 70, taxi: 150, car: 200, midrange: 300, lorry: 500, carpet: 300, vacuum: 300, engine: 300, other: 0,
+  bicycle: 50, motorcycle: 70, taxi: 150, car: 200, midrange: 300, lorry: 500, carpet: 300, vacuum: 300, engine: 300, exterior: 500, other: 0,
 };
 const CATEGORY_LABELS: Record<string, string> = {
   bicycle: 'Bicycle', motorcycle: 'Motorcycle', taxi: 'Taxi', car: 'Car',
-  midrange: 'Midrange', lorry: 'Lorry', carpet: 'Carpet', vacuum: 'Vacuum', engine: 'Engine Wash', other: 'Other',
+  midrange: 'Midrange', lorry: 'Lorry', carpet: 'Carpet', vacuum: 'Vacuum', engine: 'Engine Wash', exterior: 'Exterior Wash', other: 'Other',
 };
-const PLATE_CATS = ['car', 'taxi', 'midrange', 'lorry'];
+const PLATE_CATS = ['car', 'taxi', 'midrange', 'lorry', 'exterior'];
 
 type SheetRow = {
   _key: string;
@@ -94,6 +94,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [savingAll, setSavingAll] = useState(false);
+  const [prices, setPrices] = useState<Record<string, any>>({});
 
   // drafts & popovers
   const [smsOpen, setSmsOpen] = useState<string | null>(null);
@@ -179,10 +180,11 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const reload = useCallback(async () => {
     const params = { day: format(selectedDay, 'yyyy-MM-dd') };
     try {
-      const [txRes, carpetRes, sumRes] = await Promise.all([
+      const [txRes, carpetRes, sumRes, priceRes] = await Promise.all([
         api.get('/transactions/', { params }),
         api.get('/carpets/'),
         api.get('/stats/summary', { params }),
+        api.get('/prices/'),
       ]);
       setRows((prev) => {
         // Merge server rows with local drafts / just-saved rows by id, so a row
@@ -210,6 +212,10 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
       });
       setCarpets(carpetRes.data.filter((c: any) => c.status !== 'released'));
       setSummary(sumRes.data);
+      // Index prices by category for quick lookup
+      const priceMap: Record<string, any> = {};
+      for (const p of priceRes.data) priceMap[p.category] = p;
+      setPrices(priceMap);
       setLoadError('');
     } catch (err: any) {
       setRows((prev) => prev.map((r) => ({ ...r, saving: false })));
@@ -312,6 +318,9 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   };
 
   const addDraft = (category: string, expected?: number) => {
+    const defaultExpected = expected !== undefined
+      ? expected
+      : (prices[category]?.max_price ?? STANDARD[category] ?? 0);
     setRows((prev) => [
       ...prev,
       {
@@ -326,7 +335,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         sender: '',
         ref: '',
         time: nowHHmm(),
-        expected: expected !== undefined ? expected : STANDARD[category] || 0,
+        expected: defaultExpected,
       },
     ]);
   };
@@ -596,6 +605,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
             { cat: 'taxi', label: 'Taxi · 150', expected: 150 },
             { cat: 'midrange', label: 'Mid · 300', expected: 300 },
             { cat: 'lorry', label: 'Lorry · 500', expected: 500 },
+            { cat: 'exterior', label: 'Exterior · 500', expected: prices.exterior?.max_price ?? 500 },
             { cat: 'motorcycle', label: 'Bike · 70', expected: 70 },
             { cat: 'bicycle', label: 'Cycle · 50', expected: 50 },
             { cat: 'other', label: 'Other', expected: 0 },

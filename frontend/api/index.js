@@ -34077,28 +34077,20 @@ async function queryOne(text, params = []) {
 }
 
 // server/src/finance.ts
-function calculateTransaction(data) {
+function calculateTransaction(data, prices) {
   let expected_price = data.expected_price;
+  const priceCfg = prices?.[data.category];
   if (data.has_car_wash && data.has_vacuum && data.has_engine_wash) {
-    if (expected_price < 600) expected_price = 600;
+    const pkgMax = priceCfg?.max_price ?? 800;
+    if (expected_price < pkgMax) expected_price = pkgMax;
   }
   let commission = 0;
-  if (expected_price < 70) {
-    commission = 0;
-  } else if (data.category === "motorcycle" && expected_price === 70) {
-    commission = 30;
-  } else if (data.category === "taxi" && expected_price === 150) {
-    commission = 50;
-  } else if (data.category === "car" && expected_price === 200 && !(data.has_vacuum || data.has_engine_wash)) {
-    commission = 70;
-  } else if (data.category === "carpet") {
-    commission = expected_price * 0.3;
-  } else if (data.category === "vacuum" || data.category === "engine") {
-    commission = expected_price * 0.3;
-  } else if (data.has_car_wash && data.has_vacuum && data.has_engine_wash) {
-    commission = expected_price * 0.3;
-  } else {
-    commission = expected_price * 0.3;
+  const cp = priceCfg?.commission_percent ?? 30;
+  const minP = priceCfg?.min_price ?? 0;
+  if (expected_price >= minP && minP > 0) {
+    commission = expected_price * cp / 100;
+  } else if (minP === 0) {
+    commission = expected_price * cp / 100;
   }
   const total_paid = data.cash_paid + data.mpesa_paid;
   const misc_amount = data.misc_amount || 0;
@@ -34110,10 +34102,10 @@ function calculateTransaction(data) {
   const net_business_remittance = total_paid - isolated_tip;
   const gross_shortfall = Math.max(0, expected_price - net_business_remittance);
   let makes_allowance = 0;
-  if (data.category === "vacuum" || data.category === "engine") {
-    makes_allowance = 200;
+  if ((data.category === "vacuum" || data.category === "engine") && !data.has_car_wash) {
+    makes_allowance = priceCfg?.min_price ?? 200;
   } else if (data.category === "car" && (data.has_vacuum || data.has_engine_wash)) {
-    makes_allowance = 200;
+    makes_allowance = priceCfg?.min_price ?? 200;
   }
   const shortfall = Math.max(0, gross_shortfall - makes_allowance);
   let net_wage_before_tip = 0;
@@ -34253,6 +34245,9 @@ var SERVICE_CATEGORIES = [
   "midrange",
   "lorry",
   "carpet",
+  "vacuum",
+  "engine",
+  "exterior",
   "other"
 ];
 var TIP_METHODS = ["cash", "wages"];
@@ -34628,7 +34623,10 @@ function validateMisc(data) {
 }
 var TX_FIELDS = `id, timestamp, washer_id, category, expected_price, cash_paid, mpesa_paid, mpesa_transaction_id, mpesa_sender_name, manual_tip, tip_method, misc_amount, misc_description, has_car_wash, has_vacuum, has_engine_wash, plate_number, customer_phone, custom_category, carpet_characteristics, receiver_id, total_paid, isolated_tip, net_business_remittance, shortfall, calculated_commission, net_wage_before_tip, final_payout, week_id`;
 async function createTransactionCore(data, actor, opts = {}) {
-  const result = calculateTransaction(data);
+  const priceRows = (await pool.query("SELECT category, min_price, max_price, commission_percent FROM prices WHERE is_active = true")).rows;
+  const prices = {};
+  for (const r of priceRows) prices[r.category] = r;
+  const result = calculateTransaction(data, prices);
   validateMisc(data);
   const noWage = opts.noWage === true;
   const isolatedTip = noWage ? 0 : result.transaction_summary.isolated_tip;
@@ -34834,7 +34832,10 @@ router2.put(
     if (updates.carpet_metadata !== void 0) {
       merged.carpet_metadata = parseMetadata(updates.carpet_metadata);
     }
-    const result = calculateTransaction(merged);
+    const priceRows = (await pool.query("SELECT category, min_price, max_price, commission_percent FROM prices WHERE is_active = true")).rows;
+    const prices = {};
+    for (const r of priceRows) prices[r.category] = r;
+    const result = calculateTransaction(merged, prices);
     validateMisc(merged);
     const washer = await queryOne("SELECT * FROM users WHERE id = $1", [merged.washer_id]);
     if (!washer) throw new HttpError(404, "Washer not found");
