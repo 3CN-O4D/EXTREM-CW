@@ -170,10 +170,12 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         api.get('/stats/summary', { params }),
       ]);
       setRows((prev) => {
-        // Keep unsaved drafts visible across re-fetches (a draft that is
-        // currently being saved is about to come back from the server).
-        const drafts = prev.filter((r) => r.draft && !r.saving);
-        return [...txRes.data.map(txToRow), ...drafts];
+        // Keep unsaved local drafts that haven't hit the server yet, so a
+        // re-fetch from another row's auto-save never wipes mid-typed input.
+        const serverRows: SheetRow[] = txRes.data.map(txToRow);
+        const serverKeys = new Set(serverRows.map((r) => r._key));
+        const localDrafts = prev.filter((r) => r.draft && !serverKeys.has(r._key));
+        return [...serverRows, ...localDrafts];
       });
       setCarpets(carpetRes.data.filter((c: any) => c.status !== 'released'));
       setSummary(sumRes.data);
