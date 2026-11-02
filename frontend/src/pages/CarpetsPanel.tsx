@@ -62,23 +62,23 @@ export default function CarpetsPanel() {
 
   const fetchCarpets = useCallback(async () => {
     try {
-      const [carpetsRes, statsRes] = await Promise.all([
-        api.get('/carpets/'),
-        api.get('/carpets/stats'),
-      ]);
+      const carpetsRes = await api.get('/carpets/');
       // Employees see only their own carpets (read-only)
       const allCarpets = carpetsRes.data;
       const myCarpets = isEmployee
         ? allCarpets.filter((c: any) => c.receiver_id === user?.id || c.submitter_id === user?.id)
         : allCarpets;
       setCarpets(myCarpets);
-      setCarpetStats(statsRes.data);
-      setError('');
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Could not load carpets.');
-    } finally {
-      setLoading(false);
     }
+    try {
+      const statsRes = await api.get('/carpets/stats');
+      setCarpetStats(statsRes.data);
+    } catch (err: any) {
+      setCarpetStats(null);
+    }
+    setLoading(false);
   }, [user?.id, isEmployee]);
 
   useEffect(() => {
@@ -90,7 +90,9 @@ export default function CarpetsPanel() {
         const onlyEmployees = r.data.filter((e: any) => e.role.toLowerCase() === 'employee');
         setEmployees(onlyEmployees);
       })
-      .catch(() => {});
+      .catch(() => {
+        setEmployees([]);
+      });
   }, [fetchCarpets]);
 
   const openPhoto = async (c: any) => {
@@ -270,7 +272,7 @@ export default function CarpetsPanel() {
               <thead>
                 <tr className="border-b border-slate-200/70 bg-white dark:bg-slate-900/50">
                   <th className="py-3 pr-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500">Employee</th>
-                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Total</th>
+                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Total Received</th>
                   <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Received</th>
                   <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Washed</th>
                   <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Ready</th>
@@ -296,7 +298,7 @@ export default function CarpetsPanel() {
                   : (
                     <>
                       <tr className="border-b border-slate-200/70 bg-brand-50 dark:bg-brand-500/10 font-bold">
-                        <td className="py-3 pr-3 text-left text-xs text-slate-700 dark:text-slate-300">All carpets</td>
+                        <td className="py-3 pr-3 text-left text-xs text-slate-700 dark:text-slate-300">Total Received</td>
                         <td className="py-3 pr-3 text-right text-xs text-slate-900 dark:text-white">{carpetStats.total}</td>
                         <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{carpetStats.received}</td>
                         <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{carpetStats.washed}</td>
