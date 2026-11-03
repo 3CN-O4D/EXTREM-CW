@@ -24,6 +24,6 @@ INSERT INTO prices (category, min_price, max_price, commission_percent) VALUES
   ('carpet', 300, 300, 30),
   ('vacuum', 200, 300, 30),
   ('engine', 200, 300, 30),
-  ('exterior', 300, 500, 30),
+  ('exterior', 150, 150, 33),
   ('other', 0, 0, 0)
 ON CONFLICT (category) DO NOTHING;

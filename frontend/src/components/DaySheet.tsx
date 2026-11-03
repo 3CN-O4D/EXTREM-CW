@@ -22,7 +22,7 @@ export interface DaySheetProps {
 }
 
 const STANDARD: Record<string, number> = {
-  bicycle: 50, motorcycle: 70, taxi: 150, car: 200, midrange: 300, lorry: 500, carpet: 300, vacuum: 300, engine: 300, exterior: 300, other: 0,
+  bicycle: 50, motorcycle: 70, taxi: 150, car: 200, midrange: 300, lorry: 500, carpet: 300, vacuum: 300, engine: 300, exterior: 150, other: 0,
 };
 const CATEGORY_LABELS: Record<string, string> = {
   bicycle: 'Bicycle', motorcycle: 'Motorcycle', taxi: 'Taxi', car: 'Car',
@@ -627,7 +627,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
             { cat: 'taxi', label: 'Taxi · 150', expected: 150 },
             { cat: 'midrange', label: 'Mid · 300', expected: 300 },
             { cat: 'lorry', label: 'Lorry · 500', expected: 500 },
-            { cat: 'exterior', label: `Exterior · ${prices.exterior?.min_price ?? 300}`, expected: Number(prices.exterior?.min_price ?? 300) },
+            { cat: 'exterior', label: `Exterior · ${prices.exterior?.min_price ?? 150}`, expected: Number(prices.exterior?.min_price ?? 150) },
             { cat: 'motorcycle', label: 'Bike · 70', expected: 70 },
             { cat: 'bicycle', label: 'Cycle · 50', expected: 50 },
             { cat: 'other', label: 'Other', expected: 0 },
