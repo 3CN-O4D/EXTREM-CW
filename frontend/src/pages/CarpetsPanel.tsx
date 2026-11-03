@@ -58,6 +58,7 @@ export default function CarpetsPanel() {
   // edit carpet fields
   const [editModal, setEditModal] = useState<{ carpet: any; receiver_id: string; characteristics: string; client_name: string; customer_phone: string; expected_price: string; image: string; thumb: string } | null>(null);
   const [editBusy, setEditBusy] = useState(false);
+  const [editCompressing, setEditCompressing] = useState(false);
 
   const empName = (id: any) => employees.find((e) => e.id === id)?.name;
 
@@ -548,8 +549,9 @@ export default function CarpetsPanel() {
             </div>
             <label className="block">
               <span className="mb-1 block text-sm font-semibold">Carpet photo (required)</span>
+              <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Take a photo now or choose one from your gallery / files.</p>
               <input
-                type="file" accept="image/*" capture="environment"
+                type="file" accept="image/*"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
@@ -631,8 +633,9 @@ export default function CarpetsPanel() {
             </div>
             <label className="block">
               <span className="mb-1 block text-sm font-semibold">Photo for "{STATUS_META[statusModal.status].label}" (optional)</span>
+              <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Take a new photo or choose one from your gallery / files.</p>
               <input
-                type="file" accept="image/*" capture="environment"
+                type="file" accept="image/*"
                 onChange={async (e) => {
                   const file = e.target.files?.[0];
                   if (!file) return;
@@ -716,6 +719,31 @@ export default function CarpetsPanel() {
               <p className="font-semibold">{editModal.carpet.characteristics || 'Carpet'} #{editModal.carpet.id}</p>
               <p className="text-xs text-slate-500">Status: {STATUS_META[editModal.carpet.status as Status]?.label}</p>
             </div>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold">Carpet photo</span>
+              <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Take a new photo or choose one from your gallery / files.</p>
+              <input
+                type="file" accept="image/*"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setEditCompressing(true);
+                  try {
+                    const { data, thumb } = await compressVariants(file);
+                    setEditModal((m) => (m ? { ...m, image: data, thumb } : m));
+                  } catch {
+                    alert('Could not process the image. Try a smaller file.');
+                  } finally {
+                    setEditCompressing(false);
+                  }
+                }}
+                className="input-base file:mr-2 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-white"
+              />
+              {editCompressing && <span className="mt-1 text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
+              {(editModal.thumb || editModal.image) && (
+                <img src={editModal.thumb || editModal.image} alt="" className="mt-2 h-24 w-24 rounded-xl object-cover ring-1 ring-violet-300" />
+              )}
+            </label>
             <label className="block">
               <span className="mb-1 block text-sm font-semibold">Owner / Receiver</span>
               <select className="input-base" value={editModal.receiver_id}
