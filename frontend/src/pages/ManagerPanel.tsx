@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { format, startOfWeek, addDays, isSameDay, addWeeks } from 'date-fns';
-import { Trash2, Loader2, X, ImageIcon, Phone, Plus } from 'lucide-react';
+import { Trash2, Loader2, X, Phone, Plus } from 'lucide-react';
 import { InlineError } from '../components/States';
 import DaySheet from '../components/DaySheet';
 import PricesPanel from './PricesPanel';
@@ -399,26 +399,6 @@ export default function ManagerPanel() {
     </div>
   );
 
-  const thumbs = (c: any) => (
-    <div className="flex gap-1">
-      {[c.image_thumb, c.image_washed_thumb, c.image_ready_thumb].map((src, i) => (
-        <div key={i} className="relative h-12 w-12 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-white/10 dark:bg-white/5">
-          {src ? (
-            <img
-              src={src}
-              alt=""
-              onClick={() => openPhoto(c)}
-              className="h-full w-full cursor-pointer object-cover"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-            />
-          ) : (
-            <span className="flex h-full w-full items-center justify-center text-slate-300 dark:text-slate-600"><ImageIcon size={14} /></span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-
   const STATUS_FLOW = ['received', 'washed', 'dried', 'ready', 'released'] as const;
   const STATUS_META: Record<(typeof STATUS_FLOW)[number], { label: string; cls: string }> = {
     received: { label: 'Received', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300' },
@@ -687,7 +667,6 @@ export default function ManagerPanel() {
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="border-b border-slate-200/80 text-xs uppercase tracking-wider text-slate-400 dark:border-white/10">
-                    <th className="py-2 pr-3">Photos</th>
                     <th className="py-2 pr-3">Carpet</th>
                     <th className="py-2 pr-3">Client</th>
                     <th className="py-2 pr-3">Status</th>
@@ -699,7 +678,6 @@ export default function ManagerPanel() {
                 <tbody>
                   {filtered.map((c) => (
                     <tr key={c.id} className="border-b border-slate-200/70 dark:border-white/10">
-                      <td className="py-3 pr-3">{thumbs(c)}</td>
                       <td className="py-3 pr-3">
                         <p className="font-semibold">{c.characteristics || 'Carpet'}</p>
                         <p className="text-xs text-slate-400">#{c.id} · receiver {empName(c.receiver_id) || '—'}</p>
