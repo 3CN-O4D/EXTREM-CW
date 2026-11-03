@@ -1227,6 +1227,43 @@ export default function ManagerPanel() {
               </div>
             </div>
 
+            {/* Employee earnings */}
+            <div className="border-t border-slate-200/80 pt-6 dark:border-white/10">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-bold tracking-tight">Staff Earnings</h4>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200/70 bg-white dark:bg-slate-900/50">
+                      <th className="py-2 pr-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">Staff</th>
+                      <th className="py-2 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Wages</th>
+                      <th className="py-2 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Gross</th>
+                      <th className="py-2 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Shortfall</th>
+                      <th className="py-2 pr-4 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Net</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(summary?.labor_breakdown || []).length === 0 ? (
+                      <tr><td colSpan={5} className="py-8 text-center text-xs text-slate-400">No staff earnings today.</td></tr>
+                    ) : (
+                      (summary?.labor_breakdown || []).map((e: any) => (
+                        <tr key={e.abbreviation || e.name} className="border-t border-slate-200/70 dark:border-white/10">
+                          <td className="py-2 pr-3 text-left text-xs font-medium text-slate-700 dark:text-slate-300">
+                            {e.name} {e.abbreviation ? `(${e.abbreviation})` : ''}
+                          </td>
+                          <td className="py-2 pr-3 text-right text-xs font-mono text-emerald-600 dark:text-emerald-400">Ksh {e.wages ?? 0}</td>
+                          <td className="py-2 pr-3 text-right text-xs font-mono text-slate-900 dark:text-white">Ksh {e.gross ?? 0}</td>
+                          <td className="py-2 pr-3 text-right text-xs font-mono text-red-600 dark:text-red-400">Ksh {e.shortfall ?? 0}</td>
+                          <td className="py-2 pr-4 text-right text-xs font-mono font-bold text-slate-900 dark:text-white">Ksh {Number(e.wages || 0) - Number(e.shortfall || 0)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             {/* Carpets for the day */}
             <div className="mb-6 border-t border-slate-200/80 pt-6 dark:border-white/10">
               <div className="flex items-center justify-between mb-3">
