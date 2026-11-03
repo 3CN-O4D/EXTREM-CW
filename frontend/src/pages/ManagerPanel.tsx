@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import { format, startOfWeek, addDays, isSameDay, addWeeks } from 'date-fns';
-import { Trash2, Loader2, X } from 'lucide-react';
+import { Trash2, Loader2, X, ImageIcon, Phone, Plus } from 'lucide-react';
 import { InlineError } from '../components/States';
 import DaySheet from '../components/DaySheet';
 import PricesPanel from './PricesPanel';
+import { compressVariants } from '../utils/image';
 
 const toNum = (v: any) => { const n = parseInt(v); return isNaN(n) ? 0 : Math.max(0, n); };
 
@@ -24,7 +25,7 @@ export default function ManagerPanel() {
   const [expenseForm, setExpenseForm] = useState({ description: '', amount: 0, category: 'General' });
   const [expenses, setExpenses] = useState<any[]>([]);
   const [repaymentForm, setRepaymentForm] = useState({ employee_id: '', amount: 0 });
-  const [activeTab, setActiveTab] = useState<'sheet' | 'expense' | 'repayment' | 'tip' | 'debt' | 'payday' | 'client-debts' | 'arrivals' | 'prices'>('sheet');
+  const [activeTab, setActiveTab] = useState<'sheet' | 'expense' | 'repayment' | 'tip' | 'debt' | 'payday' | 'client-debts' | 'arrivals' | 'prices' | 'carpets'>('sheet');
   const [debts, setDebts] = useState<any[]>([]);
   const [debtForm, setDebtForm] = useState({
     debtor_type: 'employee', employee_id: '', other_name: '', amount: 0, service: '', paid: 0, paid_date: '', notes: ''
@@ -42,6 +43,36 @@ export default function ManagerPanel() {
   const [daySummaryOpen, setDaySummaryOpen] = useState(false);
   const [dayCarpets, setDayCarpets] = useState<any>(null);
   const [dayCarpetsBusy, setDayCarpetsBusy] = useState(false);
+
+  // Carpet panel state
+  const [carpets, setCarpets] = useState<any[]>([]);
+  const [carpetError, setCarpetError] = useState('');
+  const [carpetFilter, setCarpetFilter] = useState<'all' | 'received' | 'washed' | 'dried' | 'ready' | 'released'>('all');
+
+  // receive carpet
+  const [showReceive, setShowReceive] = useState(false);
+  const [receive, setReceive] = useState({ image: '', thumb: '', characteristics: '', client_name: '', customer_phone: '', receiver_id: '', expected_price: 300 });
+  const [receiveBusy, setReceiveBusy] = useState(false);
+  const [receiveCompressing, setReceiveCompressing] = useState(false);
+  const [receiveError, setReceiveError] = useState('');
+
+  // change status (washed / dried / ready)
+  const [statusModal, setStatusModal] = useState<{ carpet: any; status: 'washed' | 'dried' | 'ready'; image: string; thumb: string } | null>(null);
+  const [statusBusy, setStatusBusy] = useState(false);
+  const [statusCompressing, setStatusCompressing] = useState(false);
+
+  // release
+  const [releaseModal, setReleaseModal] = useState<{ carpet: any; cash: string; mpesa: string; washer: string } | null>(null);
+  const [releaseBusy, setReleaseBusy] = useState(false);
+
+  // edit carpet fields
+  const [editModal, setEditModal] = useState<{ carpet: any; receiver_id: string; characteristics: string; client_name: string; customer_phone: string; expected_price: string; image: string; thumb: string } | null>(null);
+  const [editBusy, setEditBusy] = useState(false);
+  const [editCompressing, setEditCompressing] = useState(false);
+
+  const [viewCarpet, setViewCarpet] = useState<any>(null);
+  const [viewImage, setViewImage] = useState<string | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
 
   const empMap = Object.fromEntries(employees.map(e => [e.id, e.name]));
   const abbrMap = Object.fromEntries(employees.map(e => [e.id, e.abbreviation]));
@@ -99,6 +130,21 @@ export default function ManagerPanel() {
       setDebts(res.data);
     } catch {}
   };
+
+  const fetchCarpets = useCallback(async () => {
+    try {
+      const res = await api.get('/carpets/');
+      setCarpets(res.data);
+      setCarpetError('');
+    } catch (err: any) {
+      setCarpetError(err?.response?.data?.detail || 'Could not load carpets.');
+    } finally {
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchCarpets();
+  }, [fetchCarpets]);
 
   // Carpets received / released for a specific day, plus who is holding them.
   const fetchDayCarpets = async () => {
@@ -214,6 +260,172 @@ export default function ManagerPanel() {
   };
   const fetchClientDebts = async () => {
     try { const res = await api.get('/client-debts/'); setClientDebts(res.data); } catch {}
+  };
+
+  // ---------- carpet helpers ----------
+  const empName = (id: any) => employees.find((e) => e.id === id)?.name;
+
+  const openPhoto = async (c: any) => {
+    setViewCarpet(c);
+    setViewImage(null);
+    setViewLoading(true);
+    try {
+      const res = await api.get(`/carpets/${c.id}`);
+      setViewImage(res.data.image_data || res.data.image_washed || res.data.image_ready || c.image_thumb || null);
+    } catch {
+      setViewImage(c.image_thumb || c.image_washed_thumb || c.image_ready_thumb || null);
+    } finally {
+      setViewLoading(false);
+    }
+  };
+
+  const submitReceive = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!receive.image) { alert('A photo of the carpet is required on arrival'); return; }
+    setReceiveBusy(true);
+    setReceiveError('');
+    try {
+      await api.post('/carpets/', {
+        image_data: receive.image,
+        image_thumb: receive.thumb || receive.image,
+        characteristics: receive.characteristics || null,
+        client_name: receive.client_name || null,
+        customer_phone: receive.customer_phone || null,
+        receiver_id: receive.receiver_id || null,
+        expected_price: toNum(receive.expected_price),
+      });
+      setShowReceive(false);
+      setReceive({ image: '', thumb: '', characteristics: '', client_name: '', customer_phone: '', receiver_id: '', expected_price: 300 });
+      setReceiveError('');
+      await fetchCarpets();
+    } catch (err: any) {
+      setReceiveError(err?.response?.data?.detail || 'Could not save the carpet — your photo is kept, tap Save carpet again to retry.');
+    } finally {
+      setReceiveBusy(false);
+    }
+  };
+
+  const submitStatus = async () => {
+    if (!statusModal) return;
+    setStatusBusy(true);
+    try {
+      const { carpet, status, image, thumb } = statusModal;
+      const payload: any = { status };
+      if (image) {
+        if (status === 'washed') {
+          payload.image_washed = image;
+          payload.image_washed_thumb = thumb || image;
+        } else if (status === 'ready') {
+          payload.image_ready = image;
+          payload.image_ready_thumb = thumb || image;
+        }
+      }
+      await api.patch(`/carpets/${carpet.id}`, payload);
+      setStatusModal(null);
+      await fetchCarpets();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Could not update the status — your photo is kept, tap Confirm again to retry.');
+    } finally {
+      setStatusBusy(false);
+    }
+  };
+
+  const submitRelease = async () => {
+    if (!releaseModal) return;
+    setReleaseBusy(true);
+    try {
+      const { carpet, cash, mpesa, washer } = releaseModal;
+      await api.post(`/carpets/${carpet.id}/release`, {
+        cash_paid: toNum(cash),
+        mpesa_paid: toNum(mpesa),
+        washer_id: washer || null,
+      });
+      setReleaseModal(null);
+      await fetchCarpets();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Could not release the carpet');
+    } finally {
+      setReleaseBusy(false);
+    }
+  };
+
+  const submitEdit = async () => {
+    if (!editModal) return;
+    setEditBusy(true);
+    try {
+      const { carpet, receiver_id, characteristics, client_name, customer_phone, expected_price, image, thumb } = editModal;
+      const payload: any = {
+        receiver_id: receiver_id || null,
+        characteristics: characteristics || null,
+        client_name: client_name || null,
+        customer_phone: customer_phone || null,
+        expected_price: toNum(expected_price),
+      };
+      if (image) {
+        payload.image_data = image;
+        payload.image_thumb = thumb || image;
+      }
+      await api.patch(`/carpets/${carpet.id}`, payload);
+      setEditModal(null);
+      await fetchCarpets();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Could not update the carpet');
+    } finally {
+      setEditBusy(false);
+    }
+  };
+
+  const deleteCarpet = async (c: any) => {
+    if (!confirm('Delete this carpet record?')) return;
+    try {
+      await api.delete(`/carpets/${c.id}`);
+      await fetchCarpets();
+    } catch {
+      alert('Could not delete the carpet');
+    }
+  };
+
+  const nextStatusFor = (s: string): 'washed' | 'dried' | 'ready' | null =>
+    s === 'received' ? 'washed' : s === 'washed' ? 'dried' : s === 'dried' ? 'ready' : null;
+
+  const timeline = (c: any) => (
+    <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+      {[['Received', c.created_at], ['Washed', c.washed_at], ['Dried', c.dried_at], ['Ready', c.ready_at], ['Released', c.released_at]].map(([label, ts]) => (
+        <span key={label}>
+          <span className="font-bold text-slate-400 dark:text-slate-500">{label}</span>{' '}
+          {ts ? format(new Date(ts), 'dd/MM HH:mm') : '—'}
+        </span>
+      ))}
+    </div>
+  );
+
+  const thumbs = (c: any) => (
+    <div className="flex gap-1">
+      {[c.image_thumb, c.image_washed_thumb, c.image_ready_thumb].map((src, i) => (
+        <div key={i} className="relative h-12 w-12 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-white/10 dark:bg-white/5">
+          {src ? (
+            <img
+              src={src}
+              alt=""
+              onClick={() => openPhoto(c)}
+              className="h-full w-full cursor-pointer object-cover"
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
+          ) : (
+            <span className="flex h-full w-full items-center justify-center text-slate-300 dark:text-slate-600"><ImageIcon size={14} /></span>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+
+  const STATUS_FLOW = ['received', 'washed', 'dried', 'ready', 'released'] as const;
+  const STATUS_META: Record<(typeof STATUS_FLOW)[number], { label: string; cls: string }> = {
+    received: { label: 'Received', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300' },
+    washed: { label: 'Washed', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
+    dried: { label: 'Dried', cls: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300' },
+    ready: { label: 'Ready', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
+    released: { label: 'Released', cls: 'bg-slate-200 text-slate-600 dark:bg-white/10 dark:text-slate-300' },
   };
 
   useEffect(() => { if (activeTab === 'payday') fetchSettlements(); }, [activeTab]);
@@ -366,12 +578,496 @@ export default function ManagerPanel() {
     { id: 'client-debts', label: 'Client Debts' },
     { id: 'arrivals', label: 'Arrivals' },
     { id: 'prices', label: 'Prices' },
+    { id: 'carpets', label: 'Carpets' },
   ];
 
   const expByCat = expenses.reduce((acc: any, e) => {
     acc[e.category] = (acc[e.category] || 0) + e.amount;
     return acc;
   }, {});
+
+  // ---------- Carpet section (inline in manager panel) ----------
+  function CarpetsSection() {
+    const filtered = carpets.filter((c) => {
+      if (carpetFilter !== 'all' && c.status !== carpetFilter) return false;
+      return true;
+    });
+    const readyCarpets = carpets.filter((c) => c.status === 'ready');
+    const countFor = (s: typeof carpetFilter) => (s === 'all' ? carpets.length : carpets.filter((c) => c.status === s).length);
+
+    return (
+      <div className="space-y-5">
+        {carpetError && <InlineError message={carpetError} onRetry={fetchCarpets} />}
+
+        {/* Carpet stats */}
+        <div className="card overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 bg-slate-50 px-5 py-3 dark:border-white/10 dark:bg-white/5">
+            <div>
+              <h3 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">Carpets</h3>
+              <p className="muted text-xs text-slate-500 dark:text-slate-400">Receive, track washing progress, and release carpets to customers.</p>
+            </div>
+            <button onClick={() => setShowReceive(true)} className="btn-primary inline-flex items-center gap-2">
+              <Plus size={16} /> Receive carpet
+            </button>
+          </div>
+
+          {/* Filter chips */}
+          <div className="flex flex-wrap gap-1.5 px-4 py-3">
+            {(['all', 'received', 'washed', 'dried', 'ready', 'released'] as const).map((s) => (
+              <button
+                key={s}
+                onClick={() => setCarpetFilter(s)}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold capitalize transition ${
+                  carpetFilter === s
+                    ? 'bg-brand-600 text-white'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
+                }`}
+              >
+                {s.charAt(0).toUpperCase() + s.slice(1)}
+                <span className={`ml-1.5 rounded-full px-1.5 text-[10px] ${carpetFilter === s ? 'bg-white/25' : 'bg-slate-200 text-slate-500 dark:bg-white/10 dark:text-slate-400'}`}>
+                  {countFor(s)}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          {/* Ready for pickup banner */}
+          {readyCarpets.length > 0 && (
+            <div className="card-pad rounded-2xl border-l-4 border-emerald-500">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h2 className="section-title text-emerald-600 dark:text-emerald-400">Ready for pickup ({readyCarpets.length})</h2>
+                  <p className="muted text-sm">Dry and ready — call the owners to come collect.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {readyCarpets.slice(0, 5).map((c) => (
+                    <div key={c.id} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 dark:border-white/10 dark:bg-white/5">
+                      {c.image_thumb && (
+                        <img
+                          src={c.image_thumb}
+                          alt=""
+                          className="h-8 w-8 rounded-lg object-cover"
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                      )}
+                      <div className="text-xs">
+                        <p className="font-bold">{c.client_name || 'Client'}</p>
+                        <p className="text-slate-500">{c.characteristics || 'Carpet'}</p>
+                      </div>
+                      {c.customer_phone && (
+                        <a href={`tel:${c.customer_phone}`} className="ml-1 inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2 py-1 text-xs font-bold text-white hover:bg-emerald-700">
+                          <Phone size={12} /> Call
+                        </a>
+                      )}
+                      <button onClick={() => openPhoto(c)} className="ml-1 inline-flex items-center gap-1 rounded-lg bg-violet-600 px-2 py-1 text-xs font-bold text-white hover:bg-violet-700">
+                        View
+                      </button>
+                    </div>
+                  ))}
+                  {readyCarpets.length > 5 && <span className="self-center text-xs text-slate-500">+{readyCarpets.length - 5} more</span>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Table */}
+          <div className="card-pad overflow-x-auto rounded-2xl">
+            {filtered.length === 0 ? (
+              <p className="py-10 text-center text-sm text-slate-400">No carpets{carpetFilter !== 'all' ? ` (${carpetFilter})` : ''} right now.</p>
+            ) : (
+              <table className="w-full text-left text-sm">
+                <thead>
+                  <tr className="border-b border-slate-200/80 text-xs uppercase tracking-wider text-slate-400 dark:border-white/10">
+                    <th className="py-2 pr-3">Photos</th>
+                    <th className="py-2 pr-3">Carpet</th>
+                    <th className="py-2 pr-3">Client</th>
+                    <th className="py-2 pr-3">Status</th>
+                    <th className="py-2 pr-3">Timeline</th>
+                    <th className="py-2 pr-3 text-right">Price</th>
+                    <th className="py-2 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((c) => (
+                    <tr key={c.id} className="border-b border-slate-200/70 dark:border-white/10">
+                      <td className="py-3 pr-3">{thumbs(c)}</td>
+                      <td className="py-3 pr-3">
+                        <p className="font-semibold">{c.characteristics || 'Carpet'}</p>
+                        <p className="text-xs text-slate-400">#{c.id} · receiver {empName(c.receiver_id) || '—'}</p>
+                      </td>
+                      <td className="py-3 pr-3">
+                        {c.client_name ? <p className="font-medium">{c.client_name}</p> : <p className="text-slate-400">—</p>}
+                        {c.customer_phone ? (
+                          <a href={`tel:${c.customer_phone}`} className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline dark:text-brand-300">
+                            <Phone size={11} /> {c.customer_phone}
+                          </a>
+                        ) : null}
+                      </td>
+                      <td className="py-3 pr-3">
+                        <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${STATUS_META[c.status as (typeof STATUS_FLOW)[number]]?.cls || ''}`}>
+                          {STATUS_META[c.status as (typeof STATUS_FLOW)[number]]?.label || c.status}
+                        </span>
+                      </td>
+                      <td className="py-3 pr-3">{timeline(c)}</td>
+                      <td className="py-3 pr-3 text-right font-mono">
+                        <div>Ksh {c.expected_price}</div>
+                        <div className="text-xs text-slate-400">paid {c.cash_paid + c.mpesa_paid}</div>
+                      </td>
+                      <td className="py-3 text-right">
+                        <div className="flex flex-wrap justify-end gap-1">
+                          <>
+                            {c.status === 'received' && (
+                              <button onClick={() => setStatusModal({ carpet: c, status: 'washed', image: '', thumb: '' })}
+                                className="rounded-lg bg-amber-600 px-2 py-1 text-xs font-bold text-white hover:bg-amber-700">Wash</button>
+                            )}
+                            {c.status === 'washed' && (
+                              <button onClick={() => setStatusModal({ carpet: c, status: 'dried', image: '', thumb: '' })}
+                                className="rounded-lg bg-cyan-600 px-2 py-1 text-xs font-bold text-white hover:bg-cyan-700">Dry</button>
+                            )}
+                            {c.status === 'dried' && (
+                              <button onClick={() => setStatusModal({ carpet: c, status: 'ready', image: '', thumb: '' })}
+                                className="rounded-lg bg-emerald-600 px-2 py-1 text-xs font-bold text-white hover:bg-emerald-700">Ready</button>
+                            )}
+                            {c.status !== 'released' && (
+                              <>
+                                <button onClick={() => setReleaseModal({ carpet: c, cash: String(c.expected_price || ''), mpesa: '', washer: '' })}
+                                  className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-700">Release</button>
+                                {nextStatusFor(c.status) && (
+                                  <button onClick={() => setStatusModal({ carpet: c, status: nextStatusFor(c.status)!, image: '', thumb: '' })}
+                                    className="rounded-lg bg-slate-200 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-white/10 dark:text-slate-200">Status</button>
+                                )}
+                              </>
+                            )}
+                          </>
+                          <button onClick={() => openPhoto(c)}
+                            className="rounded-lg bg-violet-600 px-2 py-1 text-xs font-bold text-white hover:bg-violet-700">View</button>
+                          <>
+                            <button onClick={() => setEditModal({
+                              carpet: c,
+                              receiver_id: String(c.receiver_id || ''),
+                              characteristics: c.characteristics || '',
+                              client_name: c.client_name || '',
+                              customer_phone: c.customer_phone || '',
+                              expected_price: String(c.expected_price || ''),
+                              image: c.image_data || '',
+                              thumb: c.image_thumb || '',
+                            })}
+                              className="rounded-lg bg-indigo-600 px-2 py-1 text-xs font-bold text-white hover:bg-indigo-700">Edit</button>
+                            <button onClick={() => deleteCarpet(c)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white hover:bg-red-700"><Trash2 size={12} /></button>
+                          </>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* Receive carpet modal */}
+        {showReceive && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+            <form onSubmit={submitReceive} className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-black tracking-tight">Receive a carpet</h3>
+                <button type="button" onClick={() => setShowReceive(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
+              </div>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold">Carpet photo (required)</span>
+                <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Take a photo now or choose one from your gallery / files.</p>
+                <input
+                  type="file" accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setReceiveCompressing(true);
+                    setReceiveError('');
+                    try {
+                      const { data, thumb } = await compressVariants(file);
+                      setReceive((r) => ({ ...r, image: data, thumb }));
+                    } catch {
+                      setReceiveError('Could not process the image. Try a smaller file.');
+                    } finally {
+                      setReceiveCompressing(false);
+                    }
+                  }}
+                  className="input-base file:mr-2 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-white"
+                />
+                {receiveCompressing && <span className="mt-1 text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
+                {receive.image && <img src={receive.image} alt="" className="mt-2 h-24 w-24 rounded-xl object-cover ring-1 ring-violet-300" />}
+              </label>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-semibold">Description</span>
+                  <input className="input-base" placeholder="e.g. purple rug, 6x8" value={receive.characteristics}
+                    onChange={(e) => setReceive({ ...receive, characteristics: e.target.value })} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-semibold">Expected price (Ksh)</span>
+                  <input type="number" min="0" className="input-base" value={receive.expected_price}
+                    onChange={(e) => setReceive({ ...receive, expected_price: toNum(e.target.value) })} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-semibold">Client name</span>
+                  <input className="input-base" placeholder="e.g. Mary J." value={receive.client_name}
+                    onChange={(e) => setReceive({ ...receive, client_name: e.target.value })} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-semibold">Client phone</span>
+                  <input className="input-base" placeholder="07xx xxx xxx" value={receive.customer_phone}
+                    onChange={(e) => setReceive({ ...receive, customer_phone: e.target.value })} />
+                </label>
+                <label className="block sm:col-span-2">
+                  <span className="mb-1 block text-sm font-semibold">Receiver (washer)</span>
+                  <select className="input-base" value={receive.receiver_id}
+                    onChange={(e) => setReceive({ ...receive, receiver_id: e.target.value })}>
+                    <option value="">Not assigned yet</option>
+                    {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                </label>
+              </div>
+              {receiveError && (
+                <div className="col-span-2">
+                  <span className="text-xs text-red-600 dark:text-red-400">{receiveError}</span>
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button type="submit" disabled={receiveBusy} className="btn-primary flex-1 justify-center">
+                  {receiveBusy && <Loader2 size={15} className="animate-spin" />} Save carpet
+                </button>
+                <button type="button" onClick={() => setShowReceive(false)} className="btn-secondary"><X size={15} /> Cancel</button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* Change status modal */}
+        {statusModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+            <div className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-black tracking-tight">
+                  Mark as {STATUS_META[statusModal.status].label}
+                </h3>
+                <button onClick={() => setStatusModal(null)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3 text-sm dark:bg-white/5">
+                <p className="font-semibold">{statusModal.carpet.characteristics || 'Carpet'} #{statusModal.carpet.id}</p>
+                <p className="text-xs text-slate-500">{statusModal.carpet.client_name || 'No client name'} · {statusModal.carpet.customer_phone || 'no phone'}</p>
+                <p className="mt-1 text-xs">Current: <b>{STATUS_META[statusModal.carpet.status as (typeof STATUS_FLOW)[number]]?.label}</b></p>
+              </div>
+              {statusModal.status === 'dried' ? (
+                <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-xs text-cyan-800 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-200">
+                  Hang the carpet out in the sun to air-dry completely. Mark it <b>Ready</b> only after it is fully dry.
+                </div>
+              ) : (
+                <label className="block">
+                  <span className="mb-1 block text-sm font-semibold">Photo for "{STATUS_META[statusModal.status].label}" (optional)</span>
+                  <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Take a new photo or choose one from your gallery / files.</p>
+                  <input
+                    type="file" accept="image/*"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setStatusCompressing(true);
+                      try {
+                        const { data, thumb } = await compressVariants(file);
+                        setStatusModal((m) => (m ? { ...m, image: data, thumb } : m));
+                      } catch {
+                        alert('Could not process the image. Try a smaller file.');
+                      } finally {
+                        setStatusCompressing(false);
+                      }
+                    }}
+                    className="input-base file:mr-2 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-white"
+                  />
+                  {statusCompressing && <span className="mt-1 text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
+                  {statusModal.image && <img src={statusModal.image} alt="" className="mt-2 h-24 w-24 rounded-xl object-cover ring-1 ring-violet-300" />}
+                </label>
+              )}
+              <div className="flex gap-2">
+                <button onClick={submitStatus} disabled={statusBusy} className="btn-primary flex-1 justify-center">
+                  {statusBusy && <Loader2 size={15} className="animate-spin" />}
+                  Confirm {STATUS_META[statusModal.status].label}
+                </button>
+                <button onClick={() => setStatusModal(null)} className="btn-secondary"><X size={15} /> Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Release modal */}
+        {releaseModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+            <div className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-black tracking-tight">Release carpet</h3>
+                <button onClick={() => setReleaseModal(null)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3 text-sm dark:bg-white/5">
+                <p className="font-semibold">{releaseModal.carpet.characteristics || 'Carpet'} #{releaseModal.carpet.id}</p>
+                <p className="text-xs text-slate-500">Expected Ksh {releaseModal.carpet.expected_price}</p>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-semibold">Cash received (Ksh)</span>
+                  <input type="number" min="0" className="input-base" value={releaseModal.cash}
+                    onChange={(e) => setReleaseModal({ ...releaseModal, cash: e.target.value })} />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm font-semibold">M-Pesa received (Ksh)</span>
+                  <input type="number" min="0" className="input-base" value={releaseModal.mpesa}
+                    onChange={(e) => setReleaseModal({ ...releaseModal, mpesa: e.target.value })} />
+                </label>
+                <label className="block sm:col-span-2">
+                  <span className="mb-1 block text-sm font-semibold">Washer</span>
+                  <select className="input-base" value={releaseModal.washer}
+                    onChange={(e) => setReleaseModal({ ...releaseModal, washer: e.target.value })}>
+                    <option value="">{releaseModal.carpet.receiver_id ? empName(releaseModal.carpet.receiver_id) || 'Receiver' : 'Pick a washer...'}</option>
+                    {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  </select>
+                </label>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={submitRelease} disabled={releaseBusy} className="btn-primary flex-1 justify-center">
+                  {releaseBusy && <Loader2 size={15} className="animate-spin" />} Release carpet
+                </button>
+                <button onClick={() => setReleaseModal(null)} className="btn-secondary"><X size={15} /> Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Edit carpet modal */}
+        {editModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+            <div className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-black tracking-tight">Edit carpet</h3>
+                <button onClick={() => setEditModal(null)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
+              </div>
+              <div className="rounded-xl bg-slate-50 p-3 text-sm dark:bg-white/5">
+                <p className="font-semibold">{editModal.carpet.characteristics || 'Carpet'} #{editModal.carpet.id}</p>
+                <p className="text-xs text-slate-500">Status: {STATUS_META[editModal.carpet.status as (typeof STATUS_FLOW)[number]]?.label}</p>
+              </div>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold">Carpet photo</span>
+                <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Take a new photo or choose one from your gallery / files.</p>
+                <input
+                  type="file" accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setEditCompressing(true);
+                    try {
+                      const { data, thumb } = await compressVariants(file);
+                      setEditModal((m) => (m ? { ...m, image: data, thumb } : m));
+                    } catch {
+                      alert('Could not process the image. Try a smaller file.');
+                    } finally {
+                      setEditCompressing(false);
+                    }
+                  }}
+                  className="input-base file:mr-2 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-white"
+                />
+                {editCompressing && <span className="mt-1 text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
+                {(editModal.thumb || editModal.image) && (
+                  <img src={editModal.thumb || editModal.image} alt="" className="mt-2 h-24 w-24 rounded-xl object-cover ring-1 ring-violet-300" />
+                )}
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold">Owner / Receiver</span>
+                <select className="input-base" value={editModal.receiver_id}
+                  onChange={(e) => setEditModal({ ...editModal, receiver_id: e.target.value })}>
+                  <option value="">Unassigned</option>
+                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold">Characteristics</span>
+                <input className="input-base" value={editModal.characteristics}
+                  onChange={(e) => setEditModal({ ...editModal, characteristics: e.target.value })} />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold">Client name</span>
+                <input className="input-base" value={editModal.client_name}
+                  onChange={(e) => setEditModal({ ...editModal, client_name: e.target.value })} />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold">Client phone</span>
+                <input className="input-base" value={editModal.customer_phone}
+                  onChange={(e) => setEditModal({ ...editModal, customer_phone: e.target.value })} />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold">Expected price (Ksh)</span>
+                <input type="number" min="0" className="input-base" value={editModal.expected_price}
+                  onChange={(e) => setEditModal({ ...editModal, expected_price: e.target.value })} />
+              </label>
+              <div className="flex gap-2">
+                <button onClick={submitEdit} disabled={editBusy} className="btn-primary flex-1 justify-center">
+                  {editBusy && <Loader2 size={15} className="animate-spin" />}
+                  Save changes
+                </button>
+                <button onClick={() => setEditModal(null)} className="btn-secondary"><X size={15} /> Cancel</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Carpet detail / photo viewer */}
+        {viewCarpet && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setViewCarpet(null)}>
+            <div
+              className="relative max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-900 sm:p-5"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                onClick={() => setViewCarpet(null)}
+                className="absolute right-2 top-2 rounded-lg p-2 text-slate-400 hover:bg-white/5 dark:hover:bg-white/10"
+              >
+                <X size={18} />
+              </button>
+              <div className="flex items-center gap-2 mb-3">
+                <h3 className="text-lg font-bold">{viewCarpet.characteristics || 'Carpet'} #{viewCarpet.id}</h3>
+                <span className={`px-2 py-0.5 rounded text-xs font-bold ${STATUS_META[viewCarpet.status as (typeof STATUS_FLOW)[number]]?.cls || ''}`}>
+                  {STATUS_META[viewCarpet.status as (typeof STATUS_FLOW)[number]]?.label || viewCarpet.status}
+                </span>
+              </div>
+              {viewLoading ? (
+                <div className="flex flex-col items-center gap-2 py-10">
+                  <Loader2 size={20} className="animate-spin" />
+                  <p className="text-xs text-slate-500">Loading photo…</p>
+                </div>
+              ) : (
+                <div className="flex items-center justify-center">
+                  <img
+                    src={viewImage || viewCarpet.image_thumb || viewCarpet.image_washed_thumb || viewCarpet.image_ready_thumb || ''}
+                    alt=""
+                    className="max-h-[70vh] w-full max-w-full object-contain"
+                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                  />
+                </div>
+              )}
+              <div className="mt-3 text-xs text-slate-500">
+                <p>Client: {viewCarpet.client_name || '—'}</p>
+                <p>Phone: {viewCarpet.customer_phone || '—'}</p>
+                <p>Expected: Ksh {viewCarpet.expected_price} · Paid: Ksh {viewCarpet.cash_paid + viewCarpet.mpesa_paid}</p>
+                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                  {['Received', 'Washed', 'Dried', 'Ready', 'Released'].map((label, i) => (
+                    <span key={label}>
+                      <span className="font-bold text-slate-400 dark:text-slate-500">{label}</span>{' '}
+                      {['created_at', 'washed_at', 'dried_at', 'ready_at', 'released_at'][i] ? format(new Date(viewCarpet[['created_at', 'washed_at', 'dried_at', 'ready_at', 'released_at'][i]]), 'dd/MM HH:mm') : '—'}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto max-w-[1500px] space-y-6 px-1 py-1 sm:px-2 lg:px-0">
@@ -1181,6 +1877,8 @@ export default function ManagerPanel() {
         </div>
       ) : activeTab === 'prices' ? (
         <PricesPanel />
+      ) : activeTab === 'carpets' ? (
+        <CarpetsSection />
       ) : null}
 
       {activeTab !== 'sheet' && (
