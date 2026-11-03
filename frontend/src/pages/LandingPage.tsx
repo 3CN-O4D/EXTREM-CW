@@ -75,22 +75,6 @@ const SERVICES = [
     icon: Wind,
   },
   {
-    name: 'Engine Wash',
-    price: '300',
-    unit: 'Ksh',
-    desc: 'High-pressure engine bay detailing, done safely.',
-    img: '/images/enginewash2.jpeg',
-    icon: Droplets,
-  },
-  {
-    name: 'Pressurised Engine Wash',
-    price: '300',
-    unit: 'Ksh',
-    desc: 'High-pressure machine wash for deep engine bay cleaning.',
-    img: '/images/enginewash3.jpeg',
-    icon: Droplets,
-  },
-  {
     name: 'Carpet Wash',
     price: '300+',
     unit: 'Ksh',
