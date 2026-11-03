@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../services/api';
 import { format, startOfWeek, addDays, isSameDay, addWeeks } from 'date-fns';
-import { Trash2, Loader2 } from 'lucide-react';
+import { Trash2, Loader2, X } from 'lucide-react';
 import { InlineError } from '../components/States';
 import DaySheet from '../components/DaySheet';
 import PricesPanel from './PricesPanel';
@@ -39,6 +39,9 @@ export default function ManagerPanel() {
     client_name: '', customer_phone: '', description: '', amount: 0, date: format(new Date(), 'yyyy-MM-dd')
   });
   const [summary, setSummary] = useState<any>(null);
+  const [daySummaryOpen, setDaySummaryOpen] = useState(false);
+  const [dayCarpets, setDayCarpets] = useState<any>(null);
+  const [dayCarpetsBusy, setDayCarpetsBusy] = useState(false);
 
   const empMap = Object.fromEntries(employees.map(e => [e.id, e.name]));
   const abbrMap = Object.fromEntries(employees.map(e => [e.id, e.abbreviation]));
@@ -95,6 +98,20 @@ export default function ManagerPanel() {
       const res = await api.get('/debts/');
       setDebts(res.data);
     } catch {}
+  };
+
+  // Carpets received / released for a specific day, plus who is holding them.
+  const fetchDayCarpets = async () => {
+    if (dayCarpetsBusy) return;
+    setDayCarpetsBusy(true);
+    try {
+      const res = await api.get('/carpets/stats');
+      setDayCarpets(res.data);
+    } catch {
+      setDayCarpets(null);
+    } finally {
+      setDayCarpetsBusy(false);
+    }
   };
 
   useEffect(() => { if (activeTab === 'debt') fetchDebts(); }, [activeTab]);
@@ -398,6 +415,17 @@ export default function ManagerPanel() {
         )}
       </div>
 
+      {viewMode === 'day' && (
+        <div className="flex justify-end px-2 pb-1">
+          <button
+            onClick={() => { setDaySummaryOpen(true); void fetchDayCarpets(); }}
+            className="btn-secondary whitespace-nowrap px-4 py-2 text-sm font-semibold"
+          >
+            Day Summary
+          </button>
+        </div>
+      )}
+
       {/* Net cash stat */}
       {summary && (
         <div className="card-pad rounded-2xl border border-slate-200/80 bg-slate-50 dark:border-white/10 dark:bg-white/5">
@@ -422,6 +450,212 @@ export default function ManagerPanel() {
               <p className={`text-xl font-bold ${summary.balance >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
                 Ksh {summary.balance}
               </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Day summary popup — financials, carpets in/out, who holds carpets, debts */}
+      {daySummaryOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+          onClick={() => setDaySummaryOpen(false)}
+        >
+          <div
+            className="relative max-w-3xl w-full max-h-[90vh] overflow-y-auto rounded-3xl bg-white dark:bg-slate-900 p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-black tracking-tight">
+                Day Summary — {format(selectedDay, 'EEE dd MMM yyyy')}
+              </h3>
+              <button
+                onClick={() => setDaySummaryOpen(false)}
+                className="rounded-lg p-2 text-slate-400 hover:bg-white/5 dark:hover:bg-white/10"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="grid gap-3 mb-6 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                <p className="text-[10px] font-bold uppercase text-slate-400">Cash</p>
+                <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                  Ksh {summary?.total_cash_received ?? 0}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                <p className="text-[10px] font-bold uppercase text-slate-400">M-Pesa</p>
+                <p className="text-xl font-bold text-brand-600 dark:text-brand-300">
+                  Ksh {summary?.total_mpesa_received ?? 0}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                <p className="text-[10px] font-bold uppercase text-slate-400">Total Paid</p>
+                <p className="text-xl font-bold text-slate-900 dark:text-white">
+                  Ksh {summary?.total_paid_received ?? 0}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                <p className="text-[10px] font-bold uppercase text-slate-400">Wages</p>
+                <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                  Ksh {summary?.total_labor_gross ?? 0}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 mb-6 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                <p className="text-[10px] font-bold uppercase text-slate-400">Shortfall</p>
+                <p className="text-xl font-bold text-red-600 dark:text-red-400">
+                  Ksh {summary?.total_shortfall_withheld ?? 0}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                <p className="text-[10px] font-bold uppercase text-slate-400">Net Wages</p>
+                <p className="text-xl font-bold text-slate-900 dark:text-white">
+                  Ksh {summary?.net_labor_wages ?? 0}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                <p className="text-[10px] font-bold uppercase text-slate-400">Jobs</p>
+                <p className="text-xl font-bold text-slate-900 dark:text-white">
+                  {summary?.jobs_count ?? 0}
+                </p>
+              </div>
+              <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                <p className="text-[10px] font-bold uppercase text-slate-400">Balance</p>
+                <p className={`text-xl font-bold ${(summary?.balance ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                  Ksh {summary?.balance ?? 0}
+                </p>
+              </div>
+            </div>
+
+            {/* Carpets for the day */}
+            <div className="mb-6 border-t border-slate-200/80 pt-6 dark:border-white/10">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-bold tracking-tight">Carpets</h4>
+                {dayCarpetsBusy && <span className="text-xs text-slate-400">loading…</span>}
+              </div>
+              <div className="grid gap-3 mb-4 sm:grid-cols-4">
+                <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Carpets In</p>
+                  <p className="text-xl font-bold text-blue-600 dark:text-blue-400">
+                    {dayCarpets?.daily?.find((d: any) => String(d.date).startsWith(format(selectedDay, 'yyyy-MM-dd')))?.received ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Carpets Out</p>
+                  <p className="text-xl font-bold text-violet-600 dark:text-violet-300">
+                    {dayCarpets?.daily?.find((d: any) => String(d.date).startsWith(format(selectedDay, 'yyyy-MM-dd')))?.released ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Held Now</p>
+                  <p className="text-xl font-bold text-slate-900 dark:text-white">
+                    {dayCarpets?.employees?.reduce((s: number, e: any) => s + Number(e.total || 0) - Number(e.released || 0), 0) ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Released Today</p>
+                  <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                    {dayCarpets?.daily?.find((d: any) => String(d.date).startsWith(format(selectedDay, 'yyyy-MM-dd')))?.released ?? 0}
+                  </p>
+                </div>
+              </div>
+
+              {dayCarpets?.employees && dayCarpets.employees.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200/70 bg-white dark:bg-slate-900/50">
+                        <th className="py-2 pr-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">Staff</th>
+                        <th className="py-2 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">All Carpets</th>
+                        <th className="py-2 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Held Now</th>
+                        <th className="py-2 pr-4 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Released</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {dayCarpets.employees.map((e: any) => {
+                        const held = Number(e.total || 0) - Number(e.released || 0);
+                        return held > 0 ? (
+                          <tr key={e.id} className="border-t border-slate-200/70 dark:border-white/10">
+                            <td className="py-2 pr-3 text-left text-xs font-medium text-slate-700 dark:text-slate-300">
+                              {e.name} {e.abbreviation ? `(${e.abbreviation})` : ''}
+                            </td>
+                            <td className="py-2 pr-3 text-right text-xs text-slate-900 dark:text-white">{e.total}</td>
+                            <td className="py-2 pr-3 text-right text-xs font-bold text-violet-600 dark:text-violet-300">{held}</td>
+                            <td className="py-2 pr-4 text-right text-xs text-slate-500 dark:text-slate-400">{e.released}</td>
+                          </tr>
+                        ) : null;
+                      })}
+                      {dayCarpets.employees.every((e: any) => Number(e.total || 0) - Number(e.released || 0) === 0) && (
+                        <tr><td colSpan={4} className="py-4 text-center text-xs text-slate-400">No carpets currently held.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Debts */}
+            <div className="border-t border-slate-200/80 pt-6 dark:border-white/10">
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-bold tracking-tight">Debts</h4>
+              </div>
+              <div className="grid gap-3 mb-4 sm:grid-cols-4">
+                <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Open Debts</p>
+                  <p className="text-xl font-bold text-red-600 dark:text-red-400">
+                    {debts.filter((d: any) => Number(d.balance || 0) > 0).length}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Outstanding Balance</p>
+                  <p className="text-xl font-bold text-red-600 dark:text-red-400">
+                    Ksh {debts.reduce((s: number, d: any) => s + Math.max(0, Number(d.balance || 0)), 0)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Total Amount</p>
+                  <p className="text-xl font-bold text-slate-900 dark:text-white">
+                    Ksh {debts.reduce((s: number, d: any) => s + Number(d.amount || 0), 0)}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase text-slate-400">Already Paid</p>
+                  <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
+                    Ksh {debts.reduce((s: number, d: any) => s + Number(d.paid || 0), 0)}
+                  </p>
+                </div>
+              </div>
+              {debts.length > 0 && (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200/70 bg-white dark:bg-slate-900/50">
+                        <th className="py-2 pr-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">Debtor</th>
+                        <th className="py-2 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Service</th>
+                        <th className="py-2 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Amount</th>
+                        <th className="py-2 pr-4 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Balance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {debts.filter((d: any) => Number(d.balance || 0) > 0).map((d: any) => (
+                        <tr key={d.id} className="border-t border-slate-200/70 dark:border-white/10">
+                          <td className="py-2 pr-3 text-left text-xs text-slate-700 dark:text-slate-300">
+                            {d.other_name || empMap[d.employee_id] || d.employee_id}
+                          </td>
+                          <td className="py-2 pr-3 text-right text-xs text-slate-500 dark:text-slate-400">{d.service || '—'}</td>
+                          <td className="py-2 pr-3 text-right text-xs text-slate-900 dark:text-white">Ksh {d.amount}</td>
+                          <td className="py-2 pr-4 text-right text-xs font-bold text-red-600 dark:text-red-400">Ksh {d.balance}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              {debts.length === 0 && <p className="text-xs text-slate-400">No debts on record.</p>}
             </div>
           </div>
         </div>

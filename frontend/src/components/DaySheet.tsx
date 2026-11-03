@@ -301,7 +301,9 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   }, [dayStr]);
 
   useEffect(() => {
-    void reload();
+    // Switching days must hit the server so the table actually changes —
+    // never serve a stale cached copy for a different day.
+    void reload({ fresh: true });
   }, [reload]);
 
   // Keep the sheet live without ever showing the loading screen again:
