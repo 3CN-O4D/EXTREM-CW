@@ -90,6 +90,8 @@ function txToRow(tx: any): SheetRow {
   };
 }
 
+const REFRESH_MS = 3 * 60 * 1000; // 3 minutes
+
 export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const [rows, setRows] = useState<SheetRow[]>([]);
   const [carpetStats, setCarpetStats] = useState<any>(null);
@@ -98,6 +100,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const [loadError, setLoadError] = useState('');
   const [savingAll, setSavingAll] = useState(false);
   const [prices, setPrices] = useState<Record<string, any>>({});
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null);
 
   // drafts & popovers
   const [smsOpen, setSmsOpen] = useState<string | null>(null);
@@ -292,6 +295,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
       for (const p of priceRes.data) priceMap[p.category] = p;
       setPrices(priceMap);
       setLoadError('');
+      setLastRefresh(new Date());
     } catch (err: any) {
       setRows((prev) => prev.map((r) => ({ ...r, saving: false })));
       setLoadError(
@@ -317,7 +321,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   useEffect(() => {
     const interval = window.setInterval(() => {
       if (document.visibilityState === 'visible') void reload({ fresh: true });
-    }, 30_000);
+    }, REFRESH_MS);
     const onCacheUpdated = (event: Event) => {
       const key = (event as CustomEvent<{ key?: string }>).detail?.key || '';
       if (!/\/transactions\/|\/stats\/summary|\/carpets\/stats/.test(key)) return;
@@ -341,8 +345,9 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
       const merged = { ...(existing || { _key: key, kind: 'tx' as const, draft: true, cash: 0, mpesa: 0, sender: '', ref: '', time: nowHHmm(), expected: 0, category: 'car' }), ...patch };
       const cat = merged.category || 'car';
       const expected = merged.expected || STANDARD[cat] || (merged.cash || 0) + (merged.mpesa || 0);
+      const washerId = merged.washer_id == null || merged.washer_id === '' ? null : Number(merged.washer_id);
       const payload: any = {
-        ...(merged.washer_id && { washer_id: Number(merged.washer_id) }),
+        ...(washerId != null && Number.isFinite(washerId) && { washer_id: washerId }),
         category: cat,
         expected_price: expected,
         cash_paid: merged.cash || 0,
@@ -529,6 +534,20 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   return (
     <div className="space-y-5">
       {loadError && <InlineError message={loadError} onRetry={() => reload()} />}
+      {lastRefresh && (
+        <div className="flex items-center gap-2 px-2">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Auto-refresh (3 min)</span>
+          <div className="flex-1 h-1.5 rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
+            <div
+              className="h-full bg-brand-500 transition-all duration-1000 ease-linear"
+              style={{ width: `${Math.min(100, ((Date.now() - lastRefresh.getTime()) / REFRESH_MS) * 100)}%` }}
+            />
+          </div>
+          <span className="text-[10px] text-slate-400 w-16 text-right">
+            {Math.max(0, Math.ceil((REFRESH_MS - (Date.now() - lastRefresh.getTime())) / 1000))}s
+          </span>
+        </div>
+      )}
 
       {/* Empty day wording */}
       {rows.length === 0 && (
