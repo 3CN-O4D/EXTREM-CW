@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ImageIcon, Loader2, Phone, Plus, Trash2, X } from 'lucide-react';
-import { format } from 'date-fns';
+import { addDays, format, startOfWeek } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { compressVariants } from '../utils/image';
 import { InlineError, PageError, PageLoading } from '../components/States';
 
-const STATUS_FLOW = ['received', 'washed', 'ready', 'released'] as const;
+const STATUS_FLOW = ['received', 'washed', 'dried', 'ready', 'released'] as const;
 type Status = (typeof STATUS_FLOW)[number];
 
 const STATUS_META: Record<Status, { label: string; cls: string }> = {
   received: { label: 'Received', cls: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300' },
   washed: { label: 'Washed', cls: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300' },
+  dried: { label: 'Dried', cls: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300' },
   ready: { label: 'Ready', cls: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' },
   released: { label: 'Released', cls: 'bg-slate-200 text-slate-600 dark:bg-white/10 dark:text-slate-300' },
 };
@@ -32,11 +33,17 @@ export default function CarpetsPanel() {
 
   const [carpets, setCarpets] = useState<any[]>([]);
   const [employees, setEmployees] = useState<any[]>([]);
-  const [carpetStats, setCarpetStats] = useState<any>(null);
   const [filter, setFilter] = useState<'all' | Status>('all');
   const [employeeFilter, setEmployeeFilter] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [weekOffset, setWeekOffset] = useState(0);
+  const [selectedDayIdx, setSelectedDayIdx] = useState(() => {
+    const today = new Date();
+    const start = startOfWeek(today, { weekStartsOn: 1 });
+    const idx = Math.floor((today.getTime() - start.getTime()) / 86400000);
+    return idx >= 0 && idx < 5 ? idx : 0;
+  });
   const [viewCarpet, setViewCarpet] = useState<any>(null);
   const [viewImage, setViewImage] = useState<string | null>(null);
   const [viewLoading, setViewLoading] = useState(false);
@@ -49,7 +56,7 @@ export default function CarpetsPanel() {
   const [receiveError, setReceiveError] = useState('');
 
   // change status (washed / ready) with optional photo
-  const [statusModal, setStatusModal] = useState<{ carpet: any; status: 'washed' | 'ready'; image: string; thumb: string } | null>(null);
+  const [statusModal, setStatusModal] = useState<{ carpet: any; status: 'washed' | 'dried' | 'ready'; image: string; thumb: string } | null>(null);
   const [statusBusy, setStatusBusy] = useState(false);
   const [statusCompressing, setStatusCompressing] = useState(false);
 
@@ -75,12 +82,6 @@ export default function CarpetsPanel() {
       setCarpets(myCarpets);
     } catch (err: any) {
       setError(err?.response?.data?.detail || 'Could not load carpets.');
-    }
-    try {
-      const statsRes = await api.get('/carpets/stats');
-      setCarpetStats(statsRes.data);
-    } catch (err: any) {
-      setCarpetStats(null);
     }
     setLoading(false);
   }, [user?.id, isEmployee]);
@@ -146,7 +147,7 @@ export default function CarpetsPanel() {
         if (status === 'washed') {
           payload.image_washed = image;
           payload.image_washed_thumb = thumb || image;
-        } else {
+        } else if (status === 'ready') {
           payload.image_ready = image;
           payload.image_ready_thumb = thumb || image;
         }
@@ -225,10 +226,89 @@ export default function CarpetsPanel() {
   const countFor = (s: 'all' | Status) => (s === 'all' ? carpets.length : carpets.filter((c) => c.status === s).length);
   const countForEmployee = (empId: number) => carpets.filter((c) => c.receiver_id === empId).length;
 
+  // ---- Day / week carpet stats (computed from the list already loaded) ----
+  const weekStart = startOfWeek(addDays(new Date(), weekOffset * 7), { weekStartsOn: 1 });
+  const weekEnd = addDays(weekStart, 7);
+  const weekDays = Array.from({ length: 5 }, (_, i) => addDays(weekStart, i));
+  const keyOf = (d: Date) => format(d, 'yyyy-MM-dd');
+  const inWeek = (ts: string | null | undefined) => {
+    if (!ts) return false;
+    const d = new Date(ts);
+    return d >= weekStart && d < weekEnd;
+  };
+  const tappedOn = (ts: string | null | undefined, key: string) => !!ts && keyOf(new Date(ts)) === key;
+
+  // Managers/admins get the full staff list; an employee only sees their own row.
+  const statEmployees = (employees.length > 0
+    ? employees
+    : user
+      ? [{ id: user.id, name: user.full_name, abbreviation: user.abbreviation }]
+      : []
+  ).map((e: any) => ({ id: e.id, name: e.name || e.full_name, abbreviation: e.abbreviation }));
+
+  const dayStats = weekDays.map((d) => {
+    const key = keyOf(d);
+    return {
+      date: d,
+      key,
+      received: carpets.filter((c) => tappedOn(c.created_at, key)).length,
+      washed: carpets.filter((c) => tappedOn(c.washed_at, key)).length,
+      dried: carpets.filter((c) => tappedOn(c.dried_at, key)).length,
+      ready: carpets.filter((c) => tappedOn(c.ready_at, key)).length,
+      released: carpets.filter((c) => tappedOn(c.released_at, key)).length,
+    };
+  });
+
+  const selectedDay = dayStats[Math.min(selectedDayIdx, dayStats.length - 1)] ?? dayStats[0];
+
+  const dayRows = statEmployees.map((e: any) => {
+    const mine = carpets.filter((c) => c.receiver_id === e.id);
+    return {
+      ...e,
+      received: mine.filter((c) => tappedOn(c.created_at, selectedDay.key)).length,
+      washed: mine.filter((c) => tappedOn(c.washed_at, selectedDay.key)).length,
+      dried: mine.filter((c) => tappedOn(c.dried_at, selectedDay.key)).length,
+      ready: mine.filter((c) => tappedOn(c.ready_at, selectedDay.key)).length,
+      released: mine.filter((c) => tappedOn(c.released_at, selectedDay.key)).length,
+    };
+  });
+
+  const weekRows = statEmployees.map((e: any) => {
+    const mine = carpets.filter((c) => c.receiver_id === e.id);
+    return {
+      ...e,
+      received: mine.filter((c) => inWeek(c.created_at)).length,
+      washed: mine.filter((c) => inWeek(c.washed_at)).length,
+      dried: mine.filter((c) => inWeek(c.dried_at)).length,
+      ready: mine.filter((c) => inWeek(c.ready_at)).length,
+      released: mine.filter((c) => inWeek(c.released_at)).length,
+      holding: mine.filter((c) => c.status !== 'released').length,
+      total: mine.length,
+    };
+  });
+
+  const weekTotals = weekRows.reduce(
+    (acc: any, e: any) => {
+      acc.received += e.received;
+      acc.washed += e.washed;
+      acc.dried += e.dried;
+      acc.ready += e.ready;
+      acc.released += e.released;
+      acc.holding += e.holding;
+      acc.total += e.total;
+      return acc;
+    },
+    { received: 0, washed: 0, dried: 0, ready: 0, released: 0, holding: 0, total: 0 },
+  );
+
+  const nextStatusFor = (s: string): 'washed' | 'dried' | 'ready' | null =>
+    s === 'received' ? 'washed' : s === 'washed' ? 'dried' : s === 'dried' ? 'ready' : null;
+
   const timeline = (c: any) => {
     const cells: Array<[string, string | null]> = [
       ['Received', c.created_at],
       ['Washed', c.washed_at],
+      ['Dried', c.dried_at],
       ['Ready', c.ready_at],
       ['Released', c.released_at],
     ];
@@ -271,110 +351,160 @@ export default function CarpetsPanel() {
     <div className="space-y-5">
       {error && <InlineError message={error} />}
 
-      {/* Carpet stats */}
-      {carpetStats && (
-        <div className="card overflow-hidden">
-          <div className="flex items-center justify-between border-b border-slate-200/80 bg-slate-50 px-5 py-3 dark:border-white/10 dark:bg-white/5">
+      {/* Carpet stats: Mon–Fri daily buttons + weekly breakdown */}
+      <div className="card overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 bg-slate-50 px-5 py-3 dark:border-white/10 dark:bg-white/5">
+          <div>
             <h3 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">Carpet Stats</h3>
-            <p className="muted text-xs text-slate-500 dark:text-slate-400">Aggregate totals and per-employee breakdown</p>
+            <p className="muted text-xs text-slate-500 dark:text-slate-400">Pick a weekday for that day's counts, then see the weekly totals.</p>
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200/70 bg-white dark:bg-slate-900/50">
-                  <th className="py-3 pr-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500">Employee</th>
-                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Total Received</th>
-                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Received</th>
-                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Washed</th>
-                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Ready</th>
-                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Released</th>
-                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Unwashed</th>
-                </tr>
-              </thead>
-              <tbody>
-                {isEmployee
-                  ? carpetStats.employees.map((e: any) => (
-                      <tr key={e.id} className="border-b border-slate-200/70 dark:border-white/10 hover:bg-slate-50/70 dark:hover:bg-white/[0.03]">
-                        <td className="py-3 pr-3 text-left text-xs font-medium text-slate-700 dark:text-slate-300">
-                          {e.name} {e.abbreviation ? `(${e.abbreviation})` : ''}
-                        </td>
-                        <td className="py-3 pr-3 text-right text-xs text-slate-900 dark:text-white">{e.total}</td>
-                        <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{e.received}</td>
-                        <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{e.washed}</td>
-                        <td className="py-3 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{e.ready}</td>
-                        <td className="py-3 pr-3 text-right text-xs text-slate-600 dark:text-slate-400">{e.released}</td>
-                        <td className="py-3 pr-3 text-right text-xs text-red-600 dark:text-red-400">{e.unwashed}</td>
-                      </tr>
-                    ))
-                  : (
-                    <>
-                      <tr className="border-b border-slate-200/70 bg-brand-50 dark:bg-brand-500/10 font-bold">
-                        <td className="py-3 pr-3 text-left text-xs text-slate-700 dark:text-slate-300">Total Received</td>
-                        <td className="py-3 pr-3 text-right text-xs text-slate-900 dark:text-white">{carpetStats.total}</td>
-                        <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{carpetStats.received}</td>
-                        <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{carpetStats.washed}</td>
-                        <td className="py-3 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{carpetStats.ready}</td>
-                        <td className="py-3 pr-3 text-right text-xs text-slate-600 dark:text-slate-400">{carpetStats.released}</td>
-                        <td className="py-3 pr-3 text-right text-xs text-red-600 dark:text-red-400">{carpetStats.unwashed}</td>
-                      </tr>
-                      {carpetStats.employees.map((e: any) => (
-                        <tr key={e.id} className="border-b border-slate-200/70 dark:border-white/10 hover:bg-slate-50/70 dark:hover:bg-white/[0.03]">
-                          <td className="py-3 pr-3 text-left text-xs font-medium text-slate-700 dark:text-slate-300">
-                            {e.name} {e.abbreviation ? `(${e.abbreviation})` : ''}
-                          </td>
-                          <td className="py-3 pr-3 text-right text-xs text-slate-900 dark:text-white">{e.total}</td>
-                          <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{e.received}</td>
-                          <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{e.washed}</td>
-                          <td className="py-3 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{e.ready}</td>
-                          <td className="py-3 pr-3 text-right text-xs text-slate-600 dark:text-slate-400">{e.released}</td>
-                          <td className="py-3 pr-3 text-right text-xs text-red-600 dark:text-red-400">{e.unwashed}</td>
-                        </tr>
-                      ))}
-                    </>
-                  )}
-              </tbody>
-            </table>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setWeekOffset((o) => o - 1)}
+              className="rounded-lg border border-slate-200 px-2 py-1 text-sm font-bold text-slate-500 hover:bg-white dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10"
+              aria-label="Previous week"
+            >
+              ‹
+            </button>
+            <span className="rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-slate-600 dark:bg-white/5 dark:text-slate-300">
+              {format(weekStart, 'dd MMM')} – {format(addDays(weekStart, 6), 'dd MMM yyyy')}
+            </span>
+            <button
+              onClick={() => setWeekOffset((o) => o + 1)}
+              className="rounded-lg border border-slate-200 px-2 py-1 text-sm font-bold text-slate-500 hover:bg-white dark:border-white/10 dark:text-slate-300 dark:hover:bg-white/10"
+              aria-label="Next week"
+            >
+              ›
+            </button>
           </div>
         </div>
-      )}
 
-      {/* Daily carpet stats */}
-      {carpetStats?.daily && carpetStats.daily.length > 0 && (
-        <div className="card overflow-hidden mt-5">
-          <div className="flex items-center justify-between border-b border-slate-200/80 bg-slate-50 px-5 py-3 dark:border-white/10 dark:bg-white/5">
-            <h3 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">Daily Stats (Last 7 Days)</h3>
-            <p className="muted text-xs text-slate-500 dark:text-slate-400">Carpets received per day</p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200/70 bg-white dark:bg-slate-900/50">
-                  <th className="py-3 pr-3 text-left text-xs font-bold uppercase tracking-wider text-slate-500">Date</th>
-                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Total</th>
-                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Received</th>
-                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Washed</th>
-                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Ready</th>
-                  <th className="py-3 pr-3 text-right text-xs font-bold uppercase tracking-wider text-slate-500">Released</th>
-                </tr>
-              </thead>
-              <tbody>
-                {carpetStats.daily.map((d: any) => (
-                  <tr key={d.date} className="border-b border-slate-200/70 dark:border-white/10 hover:bg-slate-50/70 dark:hover:bg-white/[0.03]">
-                    <td className="py-3 pr-3 text-left text-xs font-medium text-slate-700 dark:text-slate-300">
-                      {new Date(d.date).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
-                    </td>
-                    <td className="py-3 pr-3 text-right text-xs text-slate-900 dark:text-white">{d.total}</td>
-                    <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{d.received}</td>
-                    <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{d.washed}</td>
-                    <td className="py-3 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{d.ready}</td>
-                    <td className="py-3 pr-3 text-right text-xs text-slate-600 dark:text-slate-400">{d.released}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+        {/* Day buttons */}
+        <div className="flex gap-2 overflow-x-auto px-4 py-3">
+          {dayStats.map((d, i) => {
+            const active = i === selectedDayIdx;
+            return (
+              <button
+                key={d.key}
+                onClick={() => setSelectedDayIdx(i)}
+                className={`min-w-[92px] rounded-xl border px-3 py-2 text-left transition ${
+                  active
+                    ? 'border-brand-500 bg-brand-50 text-brand-700 dark:border-brand-500 dark:bg-brand-500/15 dark:text-brand-200'
+                    : 'border-slate-200 bg-white text-slate-600 hover:border-brand-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-300'
+                }`}
+              >
+                <span className="block text-[10px] font-bold uppercase tracking-wider opacity-70">{format(d.date, 'EEE')}</span>
+                <span className="block text-sm font-black">{format(d.date, 'dd/MM')}</span>
+                <span className="block text-[10px] opacity-70">{d.received} in · {d.released} out</span>
+              </button>
+            );
+          })}
         </div>
-      )}
+
+        {/* Selected day summary */}
+        <div className="grid grid-cols-2 gap-3 px-4 pb-4 sm:grid-cols-5">
+          {[
+            { label: 'Received', value: selectedDay.received, cls: 'text-blue-600 dark:text-blue-400' },
+            { label: 'Washed', value: selectedDay.washed, cls: 'text-amber-600 dark:text-amber-400' },
+            { label: 'Dried', value: selectedDay.dried, cls: 'text-cyan-600 dark:text-cyan-400' },
+            { label: 'Ready', value: selectedDay.ready, cls: 'text-emerald-600 dark:text-emerald-400' },
+            { label: 'Released', value: selectedDay.released, cls: 'text-violet-600 dark:text-violet-300' },
+          ].map((s) => (
+            <div key={s.label} className="rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{s.label}</p>
+              <p className={`mt-0.5 text-lg font-black ${s.cls}`}>{s.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Per-employee for selected day */}
+        <div className="overflow-x-auto border-t border-slate-200/70 dark:border-white/10">
+          <table className="w-full border-collapse text-left text-sm">
+            <thead>
+              <tr className="bg-white dark:bg-slate-900/50">
+                <th className="py-2 pr-3 pl-4 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">{format(selectedDay.date, 'EEE dd MMM')} — employee</th>
+                <th className="py-2 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Received</th>
+                <th className="py-2 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Washed</th>
+                <th className="py-2 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Dried</th>
+                <th className="py-2 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Ready</th>
+                <th className="py-2 pr-4 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Released</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dayRows.map((e: any) => (
+                <tr key={e.id} className="border-t border-slate-200/70 dark:border-white/10">
+                  <td className="py-2 pr-3 pl-4 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    {e.name} {e.abbreviation ? `(${e.abbreviation})` : ''}
+                  </td>
+                  <td className="py-2 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{e.received}</td>
+                  <td className="py-2 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{e.washed}</td>
+                  <td className="py-2 pr-3 text-right text-xs text-cyan-600 dark:text-cyan-400">{e.dried}</td>
+                  <td className="py-2 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{e.ready}</td>
+                  <td className="py-2 pr-4 text-right text-xs text-violet-600 dark:text-violet-300">{e.released}</td>
+                </tr>
+              ))}
+              {dayRows.length === 0 && (
+                <tr><td colSpan={6} className="py-4 text-center text-xs text-slate-400">No staff records.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Weekly carpet stats */}
+      <div className="card overflow-hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 bg-slate-50 px-5 py-3 dark:border-white/10 dark:bg-white/5">
+          <div>
+            <h3 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">Weekly Stats</h3>
+            <p className="muted text-xs text-slate-500 dark:text-slate-400">Who received / released how many, and who is holding how many now.</p>
+          </div>
+          <span className="rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-slate-600 dark:bg-white/5 dark:text-slate-300">
+            {format(weekStart, 'dd MMM')} – {format(addDays(weekStart, 6), 'dd MMM yyyy')}
+          </span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-left text-sm">
+            <thead>
+              <tr className="bg-white dark:bg-slate-900/50">
+                <th className="py-3 pr-3 pl-4 text-left text-[11px] font-bold uppercase tracking-wider text-slate-500">Employee</th>
+                <th className="py-3 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Received</th>
+                <th className="py-3 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Washed</th>
+                <th className="py-3 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Dried</th>
+                <th className="py-3 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Ready</th>
+                <th className="py-3 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Released</th>
+                <th className="py-3 pr-3 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">Holding now</th>
+                <th className="py-3 pr-4 text-right text-[11px] font-bold uppercase tracking-wider text-slate-500">All time</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t border-slate-200/70 bg-brand-50 font-bold dark:bg-brand-500/10">
+                <td className="py-3 pr-3 pl-4 text-xs text-slate-700 dark:text-slate-300">All staff</td>
+                <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{weekTotals.received}</td>
+                <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{weekTotals.washed}</td>
+                <td className="py-3 pr-3 text-right text-xs text-cyan-600 dark:text-cyan-400">{weekTotals.dried}</td>
+                <td className="py-3 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{weekTotals.ready}</td>
+                <td className="py-3 pr-3 text-right text-xs text-violet-600 dark:text-violet-300">{weekTotals.released}</td>
+                <td className="py-3 pr-3 text-right text-xs text-slate-900 dark:text-white">{weekTotals.holding}</td>
+                <td className="py-3 pr-4 text-right text-xs text-slate-900 dark:text-white">{weekTotals.total}</td>
+              </tr>
+              {weekRows.map((e: any) => (
+                <tr key={e.id} className="border-t border-slate-200/70 hover:bg-slate-50/70 dark:border-white/10 dark:hover:bg-white/[0.03]">
+                  <td className="py-3 pr-3 pl-4 text-xs font-medium text-slate-700 dark:text-slate-300">
+                    {e.name} {e.abbreviation ? `(${e.abbreviation})` : ''}
+                  </td>
+                  <td className="py-3 pr-3 text-right text-xs text-blue-600 dark:text-blue-400">{e.received}</td>
+                  <td className="py-3 pr-3 text-right text-xs text-amber-600 dark:text-amber-400">{e.washed}</td>
+                  <td className="py-3 pr-3 text-right text-xs text-cyan-600 dark:text-cyan-400">{e.dried}</td>
+                  <td className="py-3 pr-3 text-right text-xs text-emerald-600 dark:text-emerald-400">{e.ready}</td>
+                  <td className="py-3 pr-3 text-right text-xs text-violet-600 dark:text-violet-300">{e.released}</td>
+                  <td className="py-3 pr-3 text-right text-xs font-bold text-slate-900 dark:text-white">{e.holding}</td>
+                  <td className="py-3 pr-4 text-right text-xs text-slate-500 dark:text-slate-400">{e.total}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* Ready for pickup banner */}
       {readyCarpets.length > 0 && (
@@ -508,6 +638,10 @@ export default function CarpetsPanel() {
                               className="rounded-lg bg-amber-600 px-2 py-1 text-xs font-bold text-white hover:bg-amber-700">Wash</button>
                           )}
                           {c.status === 'washed' && (
+                            <button onClick={() => setStatusModal({ carpet: c, status: 'dried', image: '', thumb: '' })}
+                              className="rounded-lg bg-cyan-600 px-2 py-1 text-xs font-bold text-white hover:bg-cyan-700">Dry</button>
+                          )}
+                          {c.status === 'dried' && (
                             <button onClick={() => setStatusModal({ carpet: c, status: 'ready', image: '', thumb: '' })}
                               className="rounded-lg bg-emerald-600 px-2 py-1 text-xs font-bold text-white hover:bg-emerald-700">Ready</button>
                           )}
@@ -515,8 +649,10 @@ export default function CarpetsPanel() {
                             <>
                               <button onClick={() => setReleaseModal({ carpet: c, cash: String(c.expected_price || ''), mpesa: '', washer: '' })}
                                 className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-700">Release</button>
-                              <button onClick={() => setStatusModal({ carpet: c, status: c.status === 'received' ? 'washed' : 'ready', image: '', thumb: '' })}
-                                className="rounded-lg bg-slate-200 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-white/10 dark:text-slate-200">Status</button>
+                              {nextStatusFor(c.status) && (
+                                <button onClick={() => setStatusModal({ carpet: c, status: nextStatusFor(c.status)!, image: '', thumb: '' })}
+                                  className="rounded-lg bg-slate-200 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-white/10 dark:text-slate-200">Status</button>
+                              )}
                             </>
                           )}
                         </>
@@ -640,29 +776,35 @@ export default function CarpetsPanel() {
               <p className="text-xs text-slate-500">{statusModal.carpet.client_name || 'No client name'} · {statusModal.carpet.customer_phone || 'no phone'}</p>
               <p className="mt-1 text-xs">Current: <b>{STATUS_META[statusModal.carpet.status as Status]?.label}</b></p>
             </div>
-            <label className="block">
-              <span className="mb-1 block text-sm font-semibold">Photo for "{STATUS_META[statusModal.status].label}" (optional)</span>
-              <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Take a new photo or choose one from your gallery / files.</p>
-              <input
-                type="file" accept="image/*"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  setStatusCompressing(true);
-                  try {
-                    const { data, thumb } = await compressVariants(file);
-                    setStatusModal((m) => (m ? { ...m, image: data, thumb } : m));
-                  } catch {
-                    alert('Could not process the image. Try a smaller file.');
-                  } finally {
-                    setStatusCompressing(false);
-                  }
-                }}
-                className="input-base file:mr-2 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-white"
-              />
-              {statusCompressing && <span className="mt-1 text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
-              {statusModal.image && <img src={statusModal.image} alt="" className="mt-2 h-24 w-24 rounded-xl object-cover ring-1 ring-violet-300" />}
-            </label>
+            {statusModal.status === 'dried' ? (
+              <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-xs text-cyan-800 dark:border-cyan-500/30 dark:bg-cyan-500/10 dark:text-cyan-200">
+                Hang the carpet out in the sun to air-dry completely. Mark it <b>Ready</b> only after it is fully dry.
+              </div>
+            ) : (
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold">Photo for "{STATUS_META[statusModal.status].label}" (optional)</span>
+                <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Take a new photo or choose one from your gallery / files.</p>
+                <input
+                  type="file" accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    setStatusCompressing(true);
+                    try {
+                      const { data, thumb } = await compressVariants(file);
+                      setStatusModal((m) => (m ? { ...m, image: data, thumb } : m));
+                    } catch {
+                      alert('Could not process the image. Try a smaller file.');
+                    } finally {
+                      setStatusCompressing(false);
+                    }
+                  }}
+                  className="input-base file:mr-2 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-white"
+                />
+                {statusCompressing && <span className="mt-1 text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
+                {statusModal.image && <img src={statusModal.image} alt="" className="mt-2 h-24 w-24 rounded-xl object-cover ring-1 ring-violet-300" />}
+              </label>
+            )}
             <div className="flex gap-2">
               <button onClick={submitStatus} disabled={statusBusy} className="btn-primary flex-1 justify-center">
                 {statusBusy && <Loader2 size={15} className="animate-spin" />}
@@ -861,6 +1003,7 @@ export default function CarpetsPanel() {
                   {[
                     ['Received', viewCarpet.created_at],
                     ['Washed', viewCarpet.washed_at],
+                    ['Dried', viewCarpet.dried_at],
                     ['Ready', viewCarpet.ready_at],
                     ['Released', viewCarpet.released_at],
                   ].map(([label, ts]) => (

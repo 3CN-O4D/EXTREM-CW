@@ -364,7 +364,7 @@ export default function EmployeeDashboard() {
 
       <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow overflow-hidden">
         <h2 className="text-xl font-semibold mb-4 text-violet-600">My Carpets — Status &amp; Timeline</h2>
-        <p className="muted text-xs mb-4">Track your carpets from received → washed → ready → released.</p>
+        <p className="muted text-xs mb-4">Track your carpets from received → washed → dried → ready → released.</p>
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead>

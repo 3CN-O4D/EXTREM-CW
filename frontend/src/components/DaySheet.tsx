@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Check,
@@ -239,15 +239,16 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
 
   const dayStr = format(selectedDay, 'yyyy-MM-dd');
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (opts: { fresh?: boolean } = {}) => {
     const params = { day: format(selectedDay, 'yyyy-MM-dd') };
+    const cfg = (extra: any = {}) => ({ ...extra, skipCache: opts.fresh });
     try {
       const [txRes, sumRes, priceRes, carpetStatsRes] = await Promise.all([
-        api.get('/transactions/', { params }),
-        api.get('/stats/summary', { params }),
-        api.get('/prices/'),
+        api.get('/transactions/', cfg({ params })),
+        api.get('/stats/summary', cfg({ params })),
+        api.get('/prices/', cfg()),
         // Stats only — never the carpet list/images. The full board lives on /carpets.
-        api.get('/carpets/stats').catch(() => null),
+        api.get('/carpets/stats', cfg()).catch(() => null),
       ]);
       setRows((prev) => {
         // Merge server rows with local drafts / just-saved rows by id, so a row
@@ -294,6 +295,28 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
 
   useEffect(() => {
     void reload();
+  }, [reload]);
+
+  // Keep the sheet live without ever showing the loading screen again:
+  // a quiet network refresh every 30s while the tab is visible, plus an
+  // immediate reload when the shared cache finishes a background revalidation.
+  const syncTimer = useRef<number | null>(null);
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void reload({ fresh: true });
+    }, 30_000);
+    const onCacheUpdated = (event: Event) => {
+      const key = (event as CustomEvent<{ key?: string }>).detail?.key || '';
+      if (!/\/transactions\/|\/stats\/summary|\/carpets\/stats/.test(key)) return;
+      if (syncTimer.current) window.clearTimeout(syncTimer.current);
+      syncTimer.current = window.setTimeout(() => void reload(), 250);
+    };
+    window.addEventListener('api:cache-updated', onCacheUpdated);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener('api:cache-updated', onCacheUpdated);
+      if (syncTimer.current) window.clearTimeout(syncTimer.current);
+    };
   }, [reload]);
 
   const persistRow = useCallback(
@@ -497,7 +520,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
           { label: 'Wages', value: `Ksh ${totals.wages}`, cls: ((totals.wages ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400') },
           { label: 'Shortfall', value: `Ksh ${shortfall0(totals.shortfall)}`, cls: 'text-red-600 dark:text-red-400' },
           { label: 'Jobs', value: `${rows.filter((r) => !r.draft).length}`, cls: 'text-slate-900 dark:text-white' },
-          { label: 'Carpets in', value: `${carpetStats ? Number(carpetStats.received) + Number(carpetStats.washed) + Number(carpetStats.ready) : 0}`, cls: 'text-violet-600 dark:text-violet-300' },
+          { label: 'Carpets in', value: `${carpetStats ? Number(carpetStats.received) + Number(carpetStats.washed) + Number(carpetStats.dried) + Number(carpetStats.ready) : 0}`, cls: 'text-violet-600 dark:text-violet-300' },
           { label: 'Carpets ready', value: `${carpetStats?.ready ?? 0}`, cls: 'text-emerald-600 dark:text-emerald-400' },
           { label: 'Expenses', value: `Ksh ${summary?.total_expenses ?? 0}`, cls: 'text-red-600 dark:text-red-400' },
           { label: 'Net Cash', value: `Ksh ${(summary?.total_cash_received ?? 0) - (summary?.total_expenses ?? 0)}`, cls: ((summary?.total_cash_received ?? 0) - (summary?.total_expenses ?? 0)) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' },
@@ -657,10 +680,11 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
             </div>
             <Link to="/carpets" className="btn-secondary px-3 py-1.5 text-xs">Open Carpets</Link>
           </div>
-          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-5">
             {[
               { label: 'Received', value: carpetStats.received, cls: 'text-blue-600 dark:text-blue-400' },
               { label: 'Washed', value: carpetStats.washed, cls: 'text-amber-600 dark:text-amber-400' },
+              { label: 'Dried', value: carpetStats.dried, cls: 'text-cyan-600 dark:text-cyan-400' },
               { label: 'Ready', value: carpetStats.ready, cls: 'text-emerald-600 dark:text-emerald-400' },
               { label: 'Released', value: carpetStats.released, cls: 'text-slate-600 dark:text-slate-400' },
             ].map((s) => (
@@ -675,7 +699,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
               <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">How many each employee holds</p>
               <div className="flex flex-wrap gap-1.5">
                 {carpetStats.employees.map((e: any) => {
-                  const held = Number(e.received) + Number(e.washed) + Number(e.ready);
+                  const held = Number(e.received) + Number(e.washed) + Number(e.dried) + Number(e.ready);
                   return (
                     <span key={e.id} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
                       {e.full_name || e.name} <span className="font-black text-violet-600 dark:text-violet-300">{held}</span>

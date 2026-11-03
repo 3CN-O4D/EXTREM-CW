@@ -140,8 +140,9 @@ export interface CarpetRow {
   cash_paid: number;
   mpesa_paid: number;
   is_washed: boolean;
-  status: string; // 'received' | 'washed' | 'ready' | 'released'
+  status: string; // 'received' | 'washed' | 'dried' | 'ready' | 'released'
   washed_at: Date | null;
+  dried_at: Date | null;
   ready_at: Date | null;
   released_at: Date | null;
 }

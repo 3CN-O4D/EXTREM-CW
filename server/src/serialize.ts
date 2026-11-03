@@ -182,6 +182,7 @@ function carpetJson(c: CarpetRow, includeImage: boolean): Record<string, unknown
     is_washed: c.is_washed,
     status: c.status,
     washed_at: iso(c.washed_at),
+    dried_at: iso(c.dried_at),
     ready_at: iso(c.ready_at),
     released_at: iso(c.released_at),
   };

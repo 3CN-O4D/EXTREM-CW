@@ -34445,6 +34445,7 @@ function carpetJson(c, includeImage) {
     is_washed: c.is_washed,
     status: c.status,
     washed_at: iso(c.washed_at),
+    dried_at: iso(c.dried_at),
     ready_at: iso(c.ready_at),
     released_at: iso(c.released_at)
   };
@@ -35673,7 +35674,7 @@ router8.get(
       params.push(user.id);
       conds.push(`(receiver_id = $${params.length} OR submitter_id = $${params.length})`);
     }
-    if (status && ["received", "washed", "ready", "released"].includes(status)) {
+    if (status && ["received", "washed", "dried", "ready", "released"].includes(status)) {
       params.push(status);
       conds.push(`status = $${params.length}`);
     }
@@ -35693,6 +35694,7 @@ router8.get(
           COUNT(*) as total,
           COUNT(*) FILTER (WHERE status = 'received') as received,
           COUNT(*) FILTER (WHERE status = 'washed') as washed,
+          COUNT(*) FILTER (WHERE status = 'dried') as dried,
           COUNT(*) FILTER (WHERE status = 'ready') as ready,
           COUNT(*) FILTER (WHERE status = 'released') as released
         FROM carpets`
@@ -35700,14 +35702,16 @@ router8.get(
     const total = Number(aggregate.total || 0);
     const received = Number(aggregate.received || 0);
     const washed = Number(aggregate.washed || 0);
+    const dried = Number(aggregate.dried || 0);
     const ready = Number(aggregate.ready || 0);
     const released = Number(aggregate.released || 0);
-    const unwashed = received + (total - received - washed - ready - released);
+    const unwashed = received + (total - received - washed - dried - ready - released);
     const perEmp = (await pool.query(
       `SELECT u.id, u.full_name, u.abbreviation,
           COUNT(c.id) as total,
           COUNT(*) FILTER (WHERE c.status = 'received') as received,
           COUNT(*) FILTER (WHERE c.status = 'washed') as washed,
+          COUNT(*) FILTER (WHERE c.status = 'dried') as dried,
           COUNT(*) FILTER (WHERE c.status = 'ready') as ready,
           COUNT(*) FILTER (WHERE c.status = 'released') as released
         FROM users u
@@ -35720,9 +35724,10 @@ router8.get(
       const t = Number(e.total || 0);
       const r = Number(e.received || 0);
       const w = Number(e.washed || 0);
+      const d = Number(e.dried || 0);
       const rd = Number(e.ready || 0);
       const rel = Number(e.released || 0);
-      const un = r + (t - r - w - rd - rel);
+      const un = r + (t - r - w - d - rd - rel);
       return {
         id: e.id,
         name: e.full_name,
@@ -35730,6 +35735,7 @@ router8.get(
         total: t,
         received: r,
         washed: w,
+        dried: d,
         ready: rd,
         released: rel,
         unwashed: un
@@ -35741,6 +35747,7 @@ router8.get(
           COUNT(*) as total,
           COUNT(*) FILTER (WHERE status = 'received') as received,
           COUNT(*) FILTER (WHERE status = 'washed') as washed,
+          COUNT(*) FILTER (WHERE status = 'dried') as dried,
           COUNT(*) FILTER (WHERE status = 'ready') as ready,
           COUNT(*) FILTER (WHERE status = 'released') as released
         FROM carpets
@@ -35753,6 +35760,7 @@ router8.get(
       total: Number(d.total || 0),
       received: Number(d.received || 0),
       washed: Number(d.washed || 0),
+      dried: Number(d.dried || 0),
       ready: Number(d.ready || 0),
       released: Number(d.released || 0)
     }));
@@ -35760,6 +35768,7 @@ router8.get(
       total,
       received,
       washed,
+      dried,
       ready,
       released,
       unwashed,
@@ -35882,17 +35891,23 @@ router8.patch(
     };
     if (body.status !== void 0) {
       const st = asOptStr(body.status)?.toLowerCase();
-      if (!st || !["received", "washed", "ready"].includes(st)) {
-        throw new HttpError(422, "status must be one of: received, washed, ready (released is done via release)");
+      if (!st || !["received", "washed", "dried", "ready"].includes(st)) {
+        throw new HttpError(422, "status must be one of: received, washed, dried, ready (released is done via release)");
       }
       if (st === "washed") {
         put("status", "washed");
         put("is_washed", true);
         put("washed_at", now);
+      } else if (st === "dried") {
+        put("status", "dried");
+        put("is_washed", true);
+        put("dried_at", now);
+        put("washed_at", now);
       } else if (st === "ready") {
         put("status", "ready");
         put("is_washed", true);
         put("ready_at", now);
+        put("dried_at", now);
         put("washed_at", now);
       } else {
         put("status", "received");

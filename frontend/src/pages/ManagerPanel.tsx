@@ -38,8 +38,6 @@ export default function ManagerPanel() {
   const [clientDebtForm, setClientDebtForm] = useState({
     client_name: '', customer_phone: '', description: '', amount: 0, date: format(new Date(), 'yyyy-MM-dd')
   });
-  const [, setSheetRows] = useState<any[]>([]);
-  const [, setIsAdmin] = useState(false);
   const [summary, setSummary] = useState<any>(null);
 
   const empMap = Object.fromEntries(employees.map(e => [e.id, e.name]));
@@ -99,26 +97,9 @@ export default function ManagerPanel() {
     } catch {}
   };
 
-  useEffect(() => { fetchDebts(); }, []);
+  useEffect(() => { if (activeTab === 'debt') fetchDebts(); }, [activeTab]);
 
-  // ---------- sheet-data fetching ----------
-  useEffect(() => {
-    const loadSheet = async () => {
-      const all = await api.get('/transactions/', {
-        params: { day: format(selectedDay, 'yyyy-MM-dd') }
-      }).then(r => r.data);
-      const userRole = localStorage.getItem('userRole') || 'employee';
-      const userId = Number(localStorage.getItem('userId') || 0);
-      const mine = userRole !== 'admin'
-        ? all.filter((t: any) => String(t.submitter_id) === userId.toString())
-        : all;
-      setSheetRows(mine);
-      setIsAdmin(userRole === 'admin');
-    };
-    loadSheet();
-    const interval = setInterval(loadSheet, 10_000); // real-time refresh
-    return () => clearInterval(interval);
-  }, [selectedDay]);
+  // ---------- tab data loads lazily so /manage opens with only what it needs ----------
 
   const handleExpenseSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -171,7 +152,7 @@ export default function ManagerPanel() {
     try { const res = await api.get('/vehicles/'); setArrivals(res.data); } catch {}
   };
 
-  useEffect(() => { fetchArrivals(); }, [activeTab]);
+  useEffect(() => { if (activeTab === 'arrivals') fetchArrivals(); }, [activeTab]);
 
   const settleArrivalFor = async (id: number, cash: number, mpesa: number, washerId: number | null) => {
     try {
@@ -218,7 +199,13 @@ export default function ManagerPanel() {
     try { const res = await api.get('/client-debts/'); setClientDebts(res.data); } catch {}
   };
 
-  useEffect(() => { fetchSettlements(); fetchClientDebts(); }, []);
+  useEffect(() => { if (activeTab === 'payday') fetchSettlements(); }, [activeTab]);
+  useEffect(() => { if (activeTab === 'client-debts') fetchClientDebts(); }, [activeTab]);
+  useEffect(() => {
+    if (activeTab !== 'expense') return;
+    const params = viewMode === 'day' ? { day: format(selectedDay, 'yyyy-MM-dd') } : {};
+    api.get('/expenses/', { params }).then((r) => setExpenses(r.data)).catch(() => {});
+  }, [activeTab, viewMode, selectedDay]);
 
   const handleSettleWeek = async () => {
     if (!confirm(`Run payday for the week of ${format(weekStart, 'PPP')} (${weekId})?\n\nEveryone's weekly wages are paid out after covering ALL open debts. Anything short carries forward; payable balance resets to zero so Monday starts fresh. A week can only be settled once.\n\nContinue?`)) return;
