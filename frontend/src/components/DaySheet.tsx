@@ -262,6 +262,8 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         // that was just POSTed keeps its local _key (no focus loss) and is never
         // duplicated. Subsequent keystrokes PUT to this id instead of POSTing.
         const serverRows: SheetRow[] = txRes.data.map(txToRow);
+        // A fresh fetch (e.g. day switch) replaces the whole sheet for that day.
+        if (opts.fresh) return serverRows;
         const serverById = new Map<number, SheetRow>();
         for (const sr of serverRows) if (sr.id != null) serverById.set(sr.id, sr);
 
