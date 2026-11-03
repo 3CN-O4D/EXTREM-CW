@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { parsePaymentSms } from '../utils/smsParser';
 import { InlineError } from './States';
@@ -21,7 +22,7 @@ export interface DaySheetProps {
 }
 
 const STANDARD: Record<string, number> = {
-  bicycle: 50, motorcycle: 70, taxi: 150, car: 200, midrange: 300, lorry: 500, carpet: 300, vacuum: 300, engine: 300, exterior: 500, other: 0,
+  bicycle: 50, motorcycle: 70, taxi: 150, car: 200, midrange: 300, lorry: 500, carpet: 300, vacuum: 300, engine: 300, exterior: 300, other: 0,
 };
 const CATEGORY_LABELS: Record<string, string> = {
   bicycle: 'Bicycle', motorcycle: 'Motorcycle', taxi: 'Taxi', car: 'Car',
@@ -89,6 +90,7 @@ function txToRow(tx: any): SheetRow {
 
 export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const [rows, setRows] = useState<SheetRow[]>([]);
+  const [carpetStats, setCarpetStats] = useState<any>(null);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -240,10 +242,12 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const reload = useCallback(async () => {
     const params = { day: format(selectedDay, 'yyyy-MM-dd') };
     try {
-      const [txRes, sumRes, priceRes] = await Promise.all([
+      const [txRes, sumRes, priceRes, carpetStatsRes] = await Promise.all([
         api.get('/transactions/', { params }),
         api.get('/stats/summary', { params }),
         api.get('/prices/'),
+        // Stats only — never the carpet list/images. The full board lives on /carpets.
+        api.get('/carpets/stats').catch(() => null),
       ]);
       setRows((prev) => {
         // Merge server rows with local drafts / just-saved rows by id, so a row
@@ -270,6 +274,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         return result;
       });
       setSummary(sumRes.data);
+      setCarpetStats(carpetStatsRes?.data ?? null);
       // Index prices by category for quick lookup
       const priceMap: Record<string, any> = {};
       for (const p of priceRes.data) priceMap[p.category] = p;
@@ -492,6 +497,8 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
           { label: 'Wages', value: `Ksh ${totals.wages}`, cls: ((totals.wages ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400') },
           { label: 'Shortfall', value: `Ksh ${shortfall0(totals.shortfall)}`, cls: 'text-red-600 dark:text-red-400' },
           { label: 'Jobs', value: `${rows.filter((r) => !r.draft).length}`, cls: 'text-slate-900 dark:text-white' },
+          { label: 'Carpets in', value: `${carpetStats ? Number(carpetStats.received) + Number(carpetStats.washed) + Number(carpetStats.ready) : 0}`, cls: 'text-violet-600 dark:text-violet-300' },
+          { label: 'Carpets ready', value: `${carpetStats?.ready ?? 0}`, cls: 'text-emerald-600 dark:text-emerald-400' },
           { label: 'Expenses', value: `Ksh ${summary?.total_expenses ?? 0}`, cls: 'text-red-600 dark:text-red-400' },
           { label: 'Net Cash', value: `Ksh ${(summary?.total_cash_received ?? 0) - (summary?.total_expenses ?? 0)}`, cls: ((summary?.total_cash_received ?? 0) - (summary?.total_expenses ?? 0)) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' },
           { label: 'Balance', value: `Ksh ${summary?.balance ?? 0}`, cls: (summary?.balance ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' },
@@ -620,7 +627,7 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
             { cat: 'taxi', label: 'Taxi · 150', expected: 150 },
             { cat: 'midrange', label: 'Mid · 300', expected: 300 },
             { cat: 'lorry', label: 'Lorry · 500', expected: 500 },
-            { cat: 'exterior', label: 'Exterior · 500', expected: prices.exterior?.max_price ?? 500 },
+            { cat: 'exterior', label: `Exterior · ${prices.exterior?.min_price ?? 300}`, expected: Number(prices.exterior?.min_price ?? 300) },
             { cat: 'motorcycle', label: 'Bike · 70', expected: 70 },
             { cat: 'bicycle', label: 'Cycle · 50', expected: 50 },
             { cat: 'other', label: 'Other', expected: 0 },
@@ -640,6 +647,48 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         </div>
       </div>
 
+      {/* Carpet stats only — the full board (photos, statuses, release) is on /carpets */}
+      {carpetStats && (
+        <div className="card overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-200/80 px-5 py-3 dark:border-white/10">
+            <div>
+              <h3 className="text-sm font-black tracking-tight">Carpet stats</h3>
+              <p className="muted text-xs">Counts only — open Carpets for photos, statuses and release.</p>
+            </div>
+            <Link to="/carpets" className="btn-secondary px-3 py-1.5 text-xs">Open Carpets</Link>
+          </div>
+          <div className="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
+            {[
+              { label: 'Received', value: carpetStats.received, cls: 'text-blue-600 dark:text-blue-400' },
+              { label: 'Washed', value: carpetStats.washed, cls: 'text-amber-600 dark:text-amber-400' },
+              { label: 'Ready', value: carpetStats.ready, cls: 'text-emerald-600 dark:text-emerald-400' },
+              { label: 'Released', value: carpetStats.released, cls: 'text-slate-600 dark:text-slate-400' },
+            ].map((s) => (
+              <div key={s.label} className="rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{s.label}</p>
+                <p className={`mt-0.5 text-lg font-black ${s.cls}`}>{s.value}</p>
+              </div>
+            ))}
+          </div>
+          {carpetStats.employees?.length > 0 && (
+            <div className="border-t border-slate-200/80 px-4 py-3 dark:border-white/10">
+              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">How many each employee holds</p>
+              <div className="flex flex-wrap gap-1.5">
+                {carpetStats.employees.map((e: any) => {
+                  const held = Number(e.received) + Number(e.washed) + Number(e.ready);
+                  return (
+                    <span key={e.id} className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                      {e.full_name || e.name} <span className="font-black text-violet-600 dark:text-violet-300">{held}</span>
+                      <span className="ml-1 text-[10px] text-slate-400">({e.received} in · {e.ready} ready)</span>
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Day summary / end-of-day */}
       {eodOpen && summary && (
         <div className="card overflow-hidden">
@@ -653,12 +702,14 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
               <button onClick={() => setEodOpen(false)} className="rounded-xl p-2 text-slate-400 hover:bg-white/5"><X size={16} /></button>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-px bg-slate-200 dark:bg-white/10 md:grid-cols-4">
+          <div className="grid grid-cols-2 gap-px bg-slate-200 dark:bg-white/10 md:grid-cols-3">
             {[
               { label: 'Cash received', value: `Ksh ${summary.total_cash_received}`, cls: 'text-emerald-600' },
               { label: 'M-Pesa received', value: `Ksh ${totals.mpesa}`, cls: 'text-brand-600' },
               { label: 'Expenses', value: `Ksh ${summary.total_expenses}`, cls: 'text-red-600' },
-              { label: 'Labor (wages)', value: `Ksh ${summary.total_labor_expense}`, cls: 'text-violet-600' },
+              { label: 'Gross wages', value: `Ksh ${summary.total_labor_gross ?? summary.total_labor_expense}`, cls: 'text-violet-600' },
+              { label: 'Shortfall withheld', value: `Ksh ${summary.total_shortfall_withheld ?? 0}`, cls: 'text-red-600' },
+              { label: 'Net wages', value: `Ksh ${summary.net_labor_wages ?? summary.total_labor_expense}`, cls: 'text-violet-600' },
             ].map((s) => (
               <div key={s.label} className="bg-white p-4 dark:bg-slate-900">
                 <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{s.label}</p>
@@ -673,7 +724,14 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
                 {summary.labor_breakdown.map((e: any) => (
                   <div key={e.abbreviation} className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2 dark:border-white/10">
                     <span className="text-sm font-semibold">{e.name} <span className="muted">({e.abbreviation})</span></span>
-                    <span className="font-mono text-sm font-black text-emerald-600 dark:text-emerald-400">Ksh {e.wages}</span>
+                    <span className="text-right font-mono text-sm font-black text-emerald-600 dark:text-emerald-400">
+                      Ksh {e.wages}
+                      {Number(e.shortfall) > 0 && (
+                        <span className="block text-[11px] font-semibold text-red-500 dark:text-red-400">
+                          {e.gross} − {e.shortfall}
+                        </span>
+                      )}
+                    </span>
                   </div>
                 ))}
               </div>

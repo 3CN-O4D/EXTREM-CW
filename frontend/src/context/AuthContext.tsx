@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import api from '../services/api';
+import api, { clearApiCache } from '../services/api';
 
 export interface User {
   id?: number;
@@ -112,6 +112,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const logout = () => {
+    clearApiCache();
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     localStorage.removeItem('userRole');

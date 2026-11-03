@@ -175,7 +175,9 @@ export default function AdminDashboard() {
     { title: 'Net Cash', value: `Ksh ${summary.total_cash_received - summary.total_expenses}`, icon: <Wallet size={15} />, cls: (summary.total_cash_received - summary.total_expenses) >= 0 ? 'from-green-500 to-emerald-600' : 'from-red-500 to-rose-600' },
     { title: 'Balance', value: `Ksh ${summary.balance}`, icon: <Coins size={15} />, cls: (summary.balance ?? 0) >= 0 ? 'from-green-500 to-emerald-600' : 'from-red-500 to-rose-600' },
     { title: 'Jobs', value: totalJobs, icon: <Car size={15} />, cls: 'from-cyan-500 to-sky-600' },
-    { title: 'Labor (wages)', value: `Ksh ${summary.total_labor_expense}`, icon: <PiggyBank size={15} />, cls: 'from-violet-500 to-purple-600' },
+    { title: 'Labor (gross)', value: `Ksh ${summary.total_labor_gross ?? summary.total_labor_expense}`, icon: <PiggyBank size={15} />, cls: 'from-violet-500 to-purple-600' },
+    { title: 'Shortfall withheld', value: `Ksh ${summary.total_shortfall_withheld ?? 0}`, icon: <PiggyBank size={15} />, cls: 'from-red-500 to-rose-600' },
+    { title: 'Net wages', value: `Ksh ${summary.net_labor_wages ?? summary.total_labor_expense}`, icon: <PiggyBank size={15} />, cls: 'from-violet-500 to-purple-600' },
     { title: 'Employee debts', value: `Ksh ${summary.total_debts}`, icon: <PiggyBank size={15} />, cls: 'from-orange-500 to-amber-600' },
     { title: 'Client debts', value: `Ksh ${summary.total_client_debts ?? 0}`, icon: <PiggyBank size={15} />, cls: 'from-rose-500 to-pink-600' },
     { title: 'Debtors', value: debtors.length, icon: <Users size={15} />, cls: 'from-fuchsia-500 to-pink-600' },
@@ -415,12 +417,25 @@ export default function AdminDashboard() {
                 {summary.labor_breakdown.map((e: any) => (
                   <div key={e.abbreviation} className="flex justify-between text-sm">
                     <span>{e.name} <span className="muted">({e.abbreviation})</span></span>
-                    <span className="font-mono">Ksh {e.wages}</span>
+                    <span className="font-mono">
+                      Ksh {e.gross ?? e.wages}
+                      {Number(e.shortfall) > 0 && (
+                        <span className="ml-1 text-xs text-red-600 dark:text-red-400">−{e.shortfall}</span>
+                      )}
+                    </span>
                   </div>
                 ))}
                 <div className="flex justify-between border-t border-slate-200 pt-2 text-sm font-black dark:border-white/10">
-                  <span>Total labor</span>
-                  <span className="font-mono">Ksh {summary.total_labor_expense}</span>
+                  <span>Gross wages</span>
+                  <span className="font-mono">Ksh {summary.total_labor_gross ?? summary.total_labor_expense}</span>
+                </div>
+                <div className="flex justify-between text-sm font-bold text-red-600 dark:text-red-400">
+                  <span>Shortfall withheld</span>
+                  <span className="font-mono">−Ksh {summary.total_shortfall_withheld ?? 0}</span>
+                </div>
+                <div className="flex justify-between text-sm font-black">
+                  <span>Net wages</span>
+                  <span className="font-mono">Ksh {summary.net_labor_wages ?? summary.total_labor_expense}</span>
                 </div>
               </div>
             ) : <p className="muted text-sm">No labor costs.</p>}

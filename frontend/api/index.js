@@ -35293,7 +35293,13 @@ router5.get(
       pool.query(`SELECT COALESCE(SUM(cash_paid),0) AS v FROM transactions ${txConds}`, txParams),
       pool.query(`SELECT COALESCE(SUM(mpesa_paid),0) AS v FROM transactions ${txConds}`, txParams),
       pool.query(`SELECT COALESCE(SUM(amount),0) AS v FROM expenses ${expConds}`, expParams),
-      pool.query(`SELECT COALESCE(SUM(final_payout),0) AS v FROM transactions ${txConds}`, txParams),
+      pool.query(
+        `SELECT COALESCE(SUM(final_payout),0) AS v,
+                COALESCE(SUM(GREATEST(final_payout,0)),0) AS gross,
+                COALESCE(SUM(ABS(LEAST(final_payout,0))),0) AS withheld
+         FROM transactions ${txConds}`,
+        txParams
+      ),
       pool.query(`SELECT COALESCE(SUM(net_business_remittance),0) AS v FROM transactions ${txConds}`, txParams),
       pool.query(`SELECT COALESCE(SUM(misc_amount),0) AS v FROM transactions ${txConds}`, txParams),
       pool.query(
@@ -35305,7 +35311,10 @@ router5.get(
       pool.query(`SELECT COALESCE(SUM(debt_balance),0) AS v FROM users`),
       pool.query(`SELECT COALESCE(SUM(amount - paid),0) AS v FROM client_debts`),
       pool.query(
-        `SELECT users.full_name, users.abbreviation, SUM(transactions.final_payout) AS wages
+        `SELECT users.full_name, users.abbreviation,
+                SUM(transactions.final_payout) AS wages,
+                SUM(GREATEST(transactions.final_payout,0)) AS gross,
+                SUM(ABS(LEAST(transactions.final_payout,0))) AS shortfall
          FROM users JOIN transactions ON users.id = transactions.washer_id
          WHERE ${day ? "date(transactions.timestamp) = $1::date" : "transactions.week_id = $1"}
          GROUP BY users.id`,
@@ -35334,6 +35343,8 @@ router5.get(
     const totalMpesaV = Number(totalMpesa.rows[0].v);
     const expensesV = Number(expenses.rows[0].v);
     const laborV = Number(labor.rows[0].v);
+    const laborGross = Number(labor.rows[0].gross);
+    const laborWithheld = Number(labor.rows[0].withheld);
     res.json({
       week_id,
       day: day ?? null,
@@ -35344,13 +35355,18 @@ router5.get(
       total_expenses: expensesV,
       balance: totalCashV + totalMpesaV - expensesV,
       total_labor_expense: laborV,
+      total_labor_gross: laborGross,
+      total_shortfall_withheld: laborWithheld,
+      net_labor_wages: laborV,
       total_revenue: Number(revenue.rows[0].v),
       misc_total: Number(miscTotal.rows[0].v),
       misc_items: miscItems,
       labor_breakdown: empLabor.rows.map((e) => ({
         name: e.full_name,
         abbreviation: e.abbreviation,
-        wages: Number(e.wages)
+        wages: Number(e.wages),
+        gross: Number(e.gross),
+        shortfall: Number(e.shortfall)
       })),
       category_counts: categoryCounts,
       total_debts: Number(totalDebt.rows[0].v),
