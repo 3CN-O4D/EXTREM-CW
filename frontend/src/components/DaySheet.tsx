@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertCircle,
   AlertTriangle,
+  Calendar,
   Check,
   Loader2,
   MessageSquareText,
@@ -510,6 +512,12 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
 
   const pendingDrafts = rows.filter((r) => r.draft).length;
 
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const selected = new Date(selectedDay);
+  selected.setHours(0, 0, 0, 0);
+  const isFutureDay = selected > today;
+
   if (loading && rows.length === 0) {
     return (
       <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-6 text-sm font-medium text-slate-500 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-400">
@@ -521,6 +529,23 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   return (
     <div className="space-y-5">
       {loadError && <InlineError message={loadError} onRetry={() => reload()} />}
+
+      {/* Empty day wording */}
+      {rows.length === 0 && (
+        <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-12 text-center text-sm font-medium text-slate-500 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-400">
+          {isFutureDay ? (
+            <>
+              <Calendar size={20} />
+              <span>No activity yet — {format(selectedDay, 'EEEE dd MMM yyyy')} hasn't arrived.</span>
+            </>
+          ) : (
+            <>
+              <AlertCircle size={20} />
+              <span>No transactions recorded for {format(selectedDay, 'EEEE dd MMM yyyy')} yet.</span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Live stats bar */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-8">
