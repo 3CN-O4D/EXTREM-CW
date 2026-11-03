@@ -106,11 +106,18 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
 
   const [duplicates, setDuplicates] = useState<Set<string>>(new Set());
 
+  const normalizeKey = (s: string) => (s || '').replace(/\s/g, '').toUpperCase();
+
+  // A row is a true duplicate only when the plate number, payment details
+  // (cash + mpesa) and payer name all match. Strip spaces from the plate and
+  // payer name before comparing so "KCA 123" and "KCA123" are treated the same.
   const computeDuplicates = (rowsToCheck: SheetRow[]) => {
     const seen = new Map<string, string[]>();
     rowsToCheck.forEach((r) => {
       if (r.draft && !r.id) return; // skip unsaved drafts without server id
-      const key = `${r.category}|${(r.item || '').toUpperCase()}`;
+      const plate = normalizeKey(r.item);
+      const payer = normalizeKey(r.sender);
+      const key = `${r.category}|${plate}|${r.cash}|${r.mpesa}|${payer}`;
       if (!seen.has(key)) seen.set(key, []);
       seen.get(key)!.push(r._key);
     });

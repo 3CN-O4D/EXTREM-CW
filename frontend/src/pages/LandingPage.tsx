@@ -25,6 +25,7 @@ const NAV = [
   { label: 'Visit', href: '#contact' },
 ];
 
+// Public-facing service menu: exactly 7 items (no standalone engine wash).
 const SERVICES = [
   {
     name: 'Bicycle Wash',
