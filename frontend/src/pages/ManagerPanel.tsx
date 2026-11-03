@@ -595,6 +595,15 @@ export default function ManagerPanel() {
     const readyCarpets = carpets.filter((c) => c.status === 'ready');
     const countFor = (s: typeof carpetFilter) => (s === 'all' ? carpets.length : carpets.filter((c) => c.status === s).length);
 
+    // Ensure employees are loaded for the washer/receiver dropdowns (backup fetch in case
+    // the mount-level fetch hasn't completed yet when the carpets tab is first opened).
+    useEffect(() => {
+      if (employees.length === 0) {
+        api.get('/stats/employees', { params: { basic: 1 } })
+          .then(res => setEmployees(res.data));
+      }
+    }, [employees.length]);
+
     return (
       <div className="space-y-5">
         {carpetError && <InlineError message={carpetError} onRetry={fetchCarpets} />}
@@ -823,7 +832,7 @@ export default function ManagerPanel() {
                   <select className="input-base" value={receive.receiver_id}
                     onChange={(e) => setReceive({ ...receive, receiver_id: e.target.value })}>
                     <option value="">Not assigned yet</option>
-                    {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    {employees.map((e) => <option key={e.id} value={e.id}>{e.name || e.abbreviation || 'Unknown'}</option>)}
                   </select>
                 </label>
               </div>
@@ -925,7 +934,7 @@ export default function ManagerPanel() {
                   <select className="input-base" value={releaseModal.washer}
                     onChange={(e) => setReleaseModal({ ...releaseModal, washer: e.target.value })}>
                     <option value="">{releaseModal.carpet.receiver_id ? empName(releaseModal.carpet.receiver_id) || 'Receiver' : 'Pick a washer...'}</option>
-                    {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    {employees.map((e) => <option key={e.id} value={e.id}>{e.name || e.abbreviation || 'Unknown'}</option>)}
                   </select>
                 </label>
               </div>
@@ -981,7 +990,7 @@ export default function ManagerPanel() {
                 <select className="input-base" value={editModal.receiver_id}
                   onChange={(e) => setEditModal({ ...editModal, receiver_id: e.target.value })}>
                   <option value="">Unassigned</option>
-                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name || e.abbreviation || 'Unknown'}</option>)}
                 </select>
               </label>
               <label className="block">
@@ -1492,7 +1501,7 @@ export default function ManagerPanel() {
               <select className="input-base" value={tipForm.employee_id}
                 onChange={e => setTipForm({ ...tipForm, employee_id: e.target.value })} required>
                 <option value="">Select Employee</option>
-                {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                {employees.map(e => <option key={e.id} value={e.id}>{e.name || e.abbreviation || 'Unknown'}</option>)}
               </select>
             </label>
             <label className="block">
@@ -1545,7 +1554,7 @@ export default function ManagerPanel() {
                   <select className="input-base" value={debtForm.employee_id}
                     onChange={e => setDebtForm({ ...debtForm, employee_id: e.target.value })} required>
                     <option value="">Select Employee</option>
-                    {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                    {employees.map(e => <option key={e.id} value={e.id}>{e.name || e.abbreviation || 'Unknown'}</option>)}
                   </select>
                 </label>
               )}
@@ -1659,7 +1668,7 @@ export default function ManagerPanel() {
               <select className="input-base" value={repaymentForm.employee_id}
                 onChange={e => setRepaymentForm({ ...repaymentForm, employee_id: e.target.value })} required>
                 <option value="">Select Employee</option>
-                {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                {employees.map(e => <option key={e.id} value={e.id}>{e.name || e.abbreviation || 'Unknown'}</option>)}
               </select>
             </label>
             <label className="block">
@@ -1946,7 +1955,7 @@ export default function ManagerPanel() {
                       <td className="py-2">
                         <select className="input-base px-2 py-1 text-xs" value={editForm.washer_id}
                           onChange={e => setEditForm({ ...editForm, washer_id: e.target.value })}>
-                          {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+                          {employees.map(e => <option key={e.id} value={e.id}>{e.name || e.abbreviation || 'Unknown'}</option>)}
                         </select>
                       </td>
                       <td className="py-2">
