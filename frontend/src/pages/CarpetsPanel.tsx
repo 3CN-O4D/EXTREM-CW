@@ -37,7 +37,9 @@ export default function CarpetsPanel() {
   const [employeeFilter, setEmployeeFilter] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [viewCarpet, setViewCarpet] = useState<any>(null);
+  const [viewImage, setViewImage] = useState<string | null>(null);
+  const [viewLoading, setViewLoading] = useState(false);
 
   // receive carpet
   const [showReceive, setShowReceive] = useState(false);
@@ -93,11 +95,18 @@ export default function CarpetsPanel() {
   }, [fetchCarpets]);
 
   const openPhoto = async (c: any) => {
+    // Open the detail modal immediately (list data is already available) and
+    // load the full-resolution photo in the background.
+    setViewCarpet(c);
+    setViewImage(null);
+    setViewLoading(true);
     try {
       const res = await api.get(`/carpets/${c.id}`);
-      setPhotoPreview(res.data.image_data || res.data.image_washed || res.data.image_ready || null);
+      setViewImage(res.data.image_data || res.data.image_washed || res.data.image_ready || c.image_thumb || null);
     } catch {
-      setPhotoPreview(c.image_thumb || c.image_washed_thumb || c.image_ready_thumb || null);
+      setViewImage(c.image_thumb || c.image_washed_thumb || c.image_ready_thumb || null);
+    } finally {
+      setViewLoading(false);
     }
   };
 
@@ -783,13 +792,86 @@ export default function CarpetsPanel() {
         </div>
       )}
 
-      {/* Photo preview */}
-      {photoPreview && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setPhotoPreview(null)}>
-          <div className="relative max-w-3xl w-full" onClick={(e) => e.stopPropagation()}>
-            <button onClick={() => setPhotoPreview(null)}
-              className="absolute -right-3 -top-3 flex h-8 w-8 items-center justify-center rounded-full bg-red-600 text-white font-bold">×</button>
-            <img src={photoPreview} alt="carpet preview" className="w-full rounded-lg shadow-2xl" />
+      {/* Carpet detail / photo viewer */}
+      {viewCarpet && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setViewCarpet(null)}>
+          <div
+            className="relative max-h-[92vh] w-full max-w-4xl overflow-y-auto rounded-2xl bg-white p-4 shadow-2xl dark:bg-slate-900 sm:p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              onClick={() => setViewCarpet(null)}
+              className="absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-red-600 font-bold text-white"
+              aria-label="Close"
+            >
+              ×
+            </button>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="flex min-h-[220px] items-center justify-center overflow-hidden rounded-xl bg-slate-100 dark:bg-white/5">
+                {viewLoading ? (
+                  <div className="flex flex-col items-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400">
+                    <Loader2 size={22} className="animate-spin text-violet-600 dark:text-violet-300" />
+                    Loading photo…
+                  </div>
+                ) : viewImage ? (
+                  <img src={viewImage} alt="carpet" className="max-h-[70vh] w-full object-contain" />
+                ) : (
+                  <div className="flex flex-col items-center gap-2 text-sm text-slate-400">
+                    <ImageIcon size={26} />
+                    No photo for this carpet
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3 text-sm">
+                <div>
+                  <h3 className="pr-8 text-lg font-black tracking-tight">{viewCarpet.characteristics || 'Carpet'} #{viewCarpet.id}</h3>
+                  <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-bold ${STATUS_META[viewCarpet.status as Status]?.cls || ''}`}>
+                    {STATUS_META[viewCarpet.status as Status]?.label || viewCarpet.status}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Client</p>
+                    <p className="font-semibold">{viewCarpet.client_name || '—'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Phone</p>
+                    {viewCarpet.customer_phone ? (
+                      <a href={`tel:${viewCarpet.customer_phone}`} className="font-semibold text-brand-600 hover:underline dark:text-brand-300">
+                        {viewCarpet.customer_phone}
+                      </a>
+                    ) : (
+                      <p className="text-slate-400">—</p>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Receiver</p>
+                    <p className="font-semibold">{empName(viewCarpet.receiver_id) || 'Unassigned'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Expected price</p>
+                    <p className="font-mono font-semibold">Ksh {viewCarpet.expected_price}</p>
+                  </div>
+                </div>
+
+                <div className="space-y-1 rounded-xl border border-slate-200 p-3 dark:border-white/10">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Timeline</p>
+                  {[
+                    ['Received', viewCarpet.created_at],
+                    ['Washed', viewCarpet.washed_at],
+                    ['Ready', viewCarpet.ready_at],
+                    ['Released', viewCarpet.released_at],
+                  ].map(([label, ts]) => (
+                    <div key={String(label)} className="flex items-center justify-between gap-3 text-xs">
+                      <span className="font-semibold text-slate-500 dark:text-slate-400">{label}</span>
+                      <span className="font-mono">{ts ? format(new Date(ts as string), 'dd MMM yyyy HH:mm') : '—'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
