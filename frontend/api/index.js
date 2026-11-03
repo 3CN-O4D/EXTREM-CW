@@ -35379,6 +35379,14 @@ router5.get(
   "/employees",
   wrap(async (req, res) => {
     await requireRole(req, M3);
+    if (req.query.basic === "1") {
+      const basic = (await pool.query(
+        "SELECT id, full_name, abbreviation FROM users WHERE role = 'EMPLOYEE' ORDER BY full_name"
+      )).rows;
+      return res.json(
+        basic.map((e) => ({ id: e.id, name: e.full_name, abbreviation: e.abbreviation }))
+      );
+    }
     validateDay(req.query.day ?? null);
     const scope = {
       day: req.query.day,

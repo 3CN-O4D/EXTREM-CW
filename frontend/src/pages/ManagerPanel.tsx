@@ -44,7 +44,7 @@ export default function ManagerPanel() {
   const abbrMap = Object.fromEntries(employees.map(e => [e.id, e.abbreviation]));
 
   useEffect(() => {
-    api.get('/stats/employees')
+    api.get('/stats/employees', { params: { basic: 1 } })
       .then(res => setEmployees(res.data))
       .catch((err: any) => setLoadError(err?.response?.data?.detail || 'Could not load employees.'));
   }, []);
@@ -130,7 +130,7 @@ export default function ManagerPanel() {
       });
       alert('Repayment logged!');
       setRepaymentForm({ employee_id: '', amount: 0 });
-      api.get('/stats/employees').then(res => setEmployees(res.data));
+      api.get('/stats/employees', { params: { basic: 1 } }).then(res => setEmployees(res.data));
     } catch { alert('Error logging repayment'); }
   };
 
@@ -144,7 +144,7 @@ export default function ManagerPanel() {
       });
       alert('Tip logged!');
       setTipForm({ employee_id: '', amount: 0, method: 'wages' });
-      api.get('/stats/employees').then(res => setEmployees(res.data));
+      api.get('/stats/employees', { params: { basic: 1 } }).then(res => setEmployees(res.data));
     } catch { alert('Error logging tip'); }
   };
 
@@ -214,7 +214,7 @@ export default function ManagerPanel() {
       setSettlementResult(res.data);
       alert('Payday complete! See the breakdown below.');
       fetchSettlements();
-      api.get('/stats/employees').then(r => setEmployees(r.data));
+      api.get('/stats/employees', { params: { basic: 1 } }).then(r => setEmployees(r.data));
     } catch (err: any) {
       alert(err?.response?.data?.detail || 'Could not settle this week');
       fetchSettlements();
@@ -259,7 +259,7 @@ export default function ManagerPanel() {
       await api.put(`/debts/${debtId}`, { amount: toNum(debtEdit.amount), paid: toNum(debtEdit.paid) });
       setEditingDebt(null);
       fetchDebts();
-      api.get('/stats/employees').then(res => setEmployees(res.data));
+      api.get('/stats/employees', { params: { basic: 1 } }).then(res => setEmployees(res.data));
     } catch (e: any) { alert(e.response?.data?.detail || 'Could not update the debt'); }
   };
 
@@ -267,7 +267,7 @@ export default function ManagerPanel() {
     try {
       await api.put(`/debts/${debtId}`, { paid: full ? amount : Math.floor(amount / 2) });
       fetchDebts();
-      api.get('/stats/employees').then(res => setEmployees(res.data));
+      api.get('/stats/employees', { params: { basic: 1 } }).then(res => setEmployees(res.data));
     } catch (e: any) { alert(e.response?.data?.detail || 'Could not update the debt'); }
   };
 
@@ -276,7 +276,7 @@ export default function ManagerPanel() {
     try {
       await api.delete(`/debts/${debtId}`);
       fetchDebts();
-      api.get('/stats/employees').then(res => setEmployees(res.data));
+      api.get('/stats/employees', { params: { basic: 1 } }).then(res => setEmployees(res.data));
     } catch { alert('Error removing debt'); }
   };
 

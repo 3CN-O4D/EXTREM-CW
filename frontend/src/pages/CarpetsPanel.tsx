@@ -88,7 +88,7 @@ export default function CarpetsPanel() {
 
   useEffect(() => {
     void fetchCarpets();
-    api.get('/stats/employees')
+    api.get('/stats/employees', { params: { basic: 1 } })
       .then((r) => setEmployees(r.data))
       .catch(() => {
         setEmployees([]);

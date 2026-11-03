@@ -211,6 +211,18 @@ router.get(
   '/employees',
   wrap(async (req: AuthRequest, res) => {
     await requireRole(req, M);
+    // Lightweight directory mode for pickers and name lookups: skip the
+    // expensive per-employee stats fan-out.
+    if (req.query.basic === '1') {
+      const basic = (
+        await pool.query(
+          "SELECT id, full_name, abbreviation FROM users WHERE role = 'EMPLOYEE' ORDER BY full_name",
+        )
+      ).rows;
+      return res.json(
+        basic.map((e: any) => ({ id: e.id, name: e.full_name, abbreviation: e.abbreviation })),
+      );
+    }
     validateDay((req.query.day as string) ?? null);
     const scope: StatsScope = {
       day: req.query.day as string | undefined,
