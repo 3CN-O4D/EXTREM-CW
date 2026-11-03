@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
-  Camera,
   Check,
-  ImageIcon,
   Loader2,
   MessageSquareText,
   Plus,
@@ -14,7 +12,6 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import api from '../services/api';
-import { compressVariants } from '../utils/image';
 import { parsePaymentSms } from '../utils/smsParser';
 import { InlineError } from './States';
 
@@ -92,7 +89,6 @@ function txToRow(tx: any): SheetRow {
 
 export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const [rows, setRows] = useState<SheetRow[]>([]);
-  const [carpets, setCarpets] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -102,8 +98,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   // drafts & popovers
   const [smsOpen, setSmsOpen] = useState<string | null>(null);
   const [smsText, setSmsText] = useState('');
-  const [showReceive, setShowReceive] = useState(false);
-  const [showRelease, setShowRelease] = useState(false);
   const [addonOpen, setAddonOpen] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState<SheetRow | null>(null);
   const [editForm, setEditForm] = useState<any>({});
@@ -239,18 +233,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
     }
   };
 
-  // carpet receive form
-  const [receive, setReceive] = useState({
-    image: '', thumb: '', characteristics: '', client_name: '', customer_phone: '',
-    receiver_id: '', expected_price: 300,
-  });
-  const [receiveBusy, setReceiveBusy] = useState(false);
-
-  // carpet release form
-  const [releaseCarpetId, setReleaseCarpetId] = useState('');
-  const [releaseCash, setReleaseCash] = useState('');
-  const [releaseWasher, setReleaseWasher] = useState('');
-  const [releaseBusy, setReleaseBusy] = useState(false);
   const [eodOpen, setEodOpen] = useState(false);
 
   const dayStr = format(selectedDay, 'yyyy-MM-dd');
@@ -258,9 +240,8 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   const reload = useCallback(async () => {
     const params = { day: format(selectedDay, 'yyyy-MM-dd') };
     try {
-      const [txRes, carpetRes, sumRes, priceRes] = await Promise.all([
+      const [txRes, sumRes, priceRes] = await Promise.all([
         api.get('/transactions/', { params }),
-        api.get('/carpets/'),
         api.get('/stats/summary', { params }),
         api.get('/prices/'),
       ]);
@@ -288,7 +269,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
         }
         return result;
       });
-      setCarpets(carpetRes.data.filter((c: any) => c.status !== 'released'));
       setSummary(sumRes.data);
       // Index prices by category for quick lookup
       const priceMap: Record<string, any> = {};
@@ -310,15 +290,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
   useEffect(() => {
     void reload();
   }, [reload]);
-
-  const empName = (id: any) => {
-    const e = employees.find((x) => x.id === Number(id));
-    return e ? e.name : '';
-  };
-  const empAbbr = (id: any) => {
-    const e = employees.find((x) => x.id === Number(id));
-    return e ? e.abbreviation : '';
-  };
 
   const persistRow = useCallback(
     (key: string, patch: Partial<SheetRow>): Promise<unknown> => {
@@ -483,58 +454,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
     setSmsText('');
   };
 
-  const submitReceive = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!receive.image) {
-      alert('Take a photo of the carpet first — it is required on arrival.');
-      return;
-    }
-    setReceiveBusy(true);
-    try {
-      await api.post('/carpets/', {
-        receiver_id: receive.receiver_id ? Number(receive.receiver_id) : null,
-        characteristics: receive.characteristics || 'Carpet',
-        client_name: receive.client_name || null,
-        customer_phone: receive.customer_phone || null,
-        image_data: receive.image,
-        image_thumb: receive.thumb || receive.image,
-        expected_price: toNum(receive.expected_price),
-        cash_paid: 0,
-        mpesa_paid: 0,
-      });
-      setReceive({ image: '', thumb: '', characteristics: '', client_name: '', customer_phone: '', receiver_id: '', expected_price: 300 });
-      setShowReceive(false);
-      await reload();
-    } catch (err: any) {
-      alert(err?.response?.data?.detail || 'Could not log the carpet');
-    } finally {
-      setReceiveBusy(false);
-    }
-  };
-
-  const submitRelease = async () => {
-    if (!releaseCarpetId) {
-      alert('Pick a carpet to release.');
-      return;
-    }
-    setReleaseBusy(true);
-    try {
-      await api.post(`/carpets/${releaseCarpetId}/release`, {
-        cash_paid: toNum(releaseCash),
-        ...(releaseWasher ? { washer_id: Number(releaseWasher) } : {}),
-      });
-      setShowRelease(false);
-      setReleaseCarpetId('');
-      setReleaseCash('');
-      setReleaseWasher('');
-      await reload();
-    } catch (err: any) {
-      alert(err?.response?.data?.detail || 'Could not release the carpet');
-    } finally {
-      setReleaseBusy(false);
-    }
-  };
-
   const totals = useMemo(() => {
     let cash = 0, mpesa = 0, paid = 0, shortfall = 0, wages = 0;
     const counts: Record<string, number> = {};
@@ -560,8 +479,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
     );
   }
 
-  const heldNames = (c: any) => empName(c.receiver_id) || empAbbr(c.receiver_id) || 'Unassigned';
-
   return (
     <div className="space-y-5">
       {loadError && <InlineError message={loadError} onRetry={() => reload()} />}
@@ -575,7 +492,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
           { label: 'Wages', value: `Ksh ${totals.wages}`, cls: ((totals.wages ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400') },
           { label: 'Shortfall', value: `Ksh ${shortfall0(totals.shortfall)}`, cls: 'text-red-600 dark:text-red-400' },
           { label: 'Jobs', value: `${rows.filter((r) => !r.draft).length}`, cls: 'text-slate-900 dark:text-white' },
-          { label: 'Carpets in', value: `${carpets.length}`, cls: 'text-violet-600 dark:text-violet-300' },
           { label: 'Expenses', value: `Ksh ${summary?.total_expenses ?? 0}`, cls: 'text-red-600 dark:text-red-400' },
           { label: 'Net Cash', value: `Ksh ${(summary?.total_cash_received ?? 0) - (summary?.total_expenses ?? 0)}`, cls: ((summary?.total_cash_received ?? 0) - (summary?.total_expenses ?? 0)) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' },
           { label: 'Balance', value: `Ksh ${summary?.balance ?? 0}`, cls: (summary?.balance ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' },
@@ -721,75 +637,8 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
               <Plus size={12} className="mr-1 inline" />{label}
             </button>
           ))}
-          <span className="mx-1 h-5 w-px bg-slate-200 dark:bg-white/10" />
-          <button
-            onClick={() => setShowReceive(true)}
-            className="rounded-xl bg-violet-600 px-3 py-1.5 text-xs font-bold text-white shadow-md shadow-violet-500/20 transition hover:bg-violet-700"
-          >
-            <Camera size={12} className="mr-1 inline" /> Carpet received
-          </button>
-          <button
-            onClick={() => setShowRelease(true)}
-            className="rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-bold text-white shadow-md shadow-emerald-500/20 transition hover:bg-emerald-700"
-          >
-            Release carpet
-          </button>
         </div>
       </div>
-
-      {/* Held carpets card */}
-      {carpets.length > 0 && (
-        <div className="card overflow-hidden">
-          <div className="flex items-center justify-between border-b border-slate-200/80 px-5 py-3 dark:border-white/10">
-            <div>
-              <h3 className="text-sm font-black tracking-tight">Carpets in the shop ({carpets.length})</h3>
-              <p className="muted text-xs">Carpets in the shop — received, washed or ready to release.</p>
-            </div>
-            <button onClick={() => setShowRelease(true)} className="btn-primary px-3 py-1.5 text-xs">
-              Release
-            </button>
-          </div>
-          <div className="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
-            {carpets.map((c) => (
-              <div key={c.id} className="flex gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-white/10 dark:bg-white/5">
-                {c.image_thumb ? (
-                  <img
-                    src={c.image_thumb}
-                    alt=""
-                    className="h-16 w-16 shrink-0 rounded-xl object-cover"
-                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                  />
-                ) : (
-                  <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400 dark:bg-white/5">
-                    <ImageIcon size={20} />
-                  </span>
-                )}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-bold">{c.characteristics || 'Carpet'}</p>
-                  <p className="muted truncate text-xs">{c.client_name || 'No name'}{c.customer_phone ? ` · ${c.customer_phone}` : ''}</p>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">
-                    <span className="font-semibold">{heldNames(c)}</span> · Ksh {c.expected_price}
-                  </p>
-                </div>
-                <div className="flex flex-col gap-1">
-                  <button
-                    onClick={() => { setReleaseCarpetId(String(c.id)); setReleaseCash(String(c.expected_price || '')); setReleaseWasher(c.receiver_id ? String(c.receiver_id) : ''); setShowRelease(true); }}
-                    className="rounded-lg bg-emerald-600 px-2 py-1 text-[11px] font-bold text-white transition hover:bg-emerald-700"
-                  >
-                    Release
-                  </button>
-                  <button
-                    onClick={async () => { if (confirm('Delete this carpet record?')) { try { await api.delete(`/carpets/${c.id}`); await reload(); } catch { alert('Could not delete carpet'); } } }}
-                    className="rounded-lg bg-red-600 px-2 py-1 text-[11px] font-bold text-white transition hover:bg-red-700"
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Day summary / end-of-day */}
       {eodOpen && summary && (
@@ -839,163 +688,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
             </div>
           </div>
         </div>
-      )}
-
-      {/* Carpet receive modal */}
-      {showReceive && (
-        <Modal onClose={() => setShowReceive(false)} title="Receive a carpet">
-          <form onSubmit={submitReceive} className="space-y-4">
-            <div className="flex items-center gap-4">
-              <label className="flex w-full cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-violet-300 bg-violet-50/50 py-6 text-violet-700 transition hover:bg-violet-50 dark:border-violet-500/40 dark:bg-violet-500/5 dark:text-violet-300 dark:hover:bg-violet-500/10">
-                <Camera size={22} />
-                <span className="text-xs font-bold">{receive.image ? 'Change photo' : 'Take carpet photo'}</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  className="hidden"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    const { data, thumb } = await compressVariants(file);
-                    setReceive((r) => ({ ...r, image: data, thumb }));
-                  }}
-                />
-              </label>
-              {receive.image && (
-                <img src={receive.image} alt="" className="h-20 w-20 rounded-xl object-cover ring-1 ring-violet-300" />
-              )}
-            </div>
-
-            <label className="block">
-              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Carpet description</span>
-              <input className="input-base" placeholder="e.g. Blue Persian, large" value={receive.characteristics} onChange={(e) => setReceive({ ...receive, characteristics: e.target.value })} />
-            </label>
-
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Client name</span>
-                <input className="input-base" placeholder="Optional" value={receive.client_name} onChange={(e) => setReceive({ ...receive, client_name: e.target.value })} />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Owner phone</span>
-                <input className="input-base" placeholder="e.g. 0712..." value={receive.customer_phone} onChange={(e) => setReceive({ ...receive, customer_phone: e.target.value })} />
-              </label>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Receiver</span>
-                <select className="input-base" value={receive.receiver_id} onChange={(e) => setReceive({ ...receive, receiver_id: e.target.value })}>
-                  <option value="">Pick a washer…</option>
-                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name} ({e.abbreviation})</option>)}
-                </select>
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Expected price</span>
-                <input type="number" min="0" className="input-base" value={receive.expected_price} onChange={(e) => setReceive({ ...receive, expected_price: toNum(e.target.value) })} />
-              </label>
-            </div>
-
-            <div className="flex gap-2 pt-1">
-              <button type="submit" disabled={receiveBusy} className="btn-primary flex-1 justify-center">
-                {receiveBusy && <Loader2 size={15} className="animate-spin" />}
-                Save carpet
-              </button>
-              <button type="button" onClick={() => setShowReceive(false)} className="btn-secondary justify-center"><X size={15} /> Cancel</button>
-            </div>
-          </form>
-        </Modal>
-      )}
-
-      {/* Carpet release modal */}
-      {showRelease && (
-        <Modal onClose={() => setShowRelease(false)} title="Release a carpet">
-          <div className="space-y-4">
-            <div>
-              <p className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                Pick the carpet to release — tap its photo to match it to the physical carpet
-              </p>
-              {carpets.length === 0 ? (
-                <p className="muted rounded-xl border border-dashed border-slate-200 px-3 py-4 text-center text-xs dark:border-white/10">
-                  No carpets in the shop right now.
-                </p>
-              ) : (
-                <div className="grid max-h-64 grid-cols-2 gap-2 overflow-y-auto pr-1 sm:grid-cols-3">
-                  {carpets.map((c) => {
-                    const selected = releaseCarpetId === String(c.id);
-                    return (
-                      <button
-                        type="button"
-                        key={c.id}
-                        onClick={() => {
-                          setReleaseCarpetId(String(c.id));
-                          setReleaseCash(String(c.expected_price || ''));
-                          setReleaseWasher(c.receiver_id ? String(c.receiver_id) : '');
-                        }}
-                        className={`group overflow-hidden rounded-2xl border text-left transition ${
-                          selected
-                            ? 'border-brand-500 ring-2 ring-brand-500/30'
-                            : 'border-slate-200 hover:border-brand-300 dark:border-white/10 dark:hover:border-brand-500/50'
-                        }`}
-                      >
-                        <div className="relative aspect-square w-full overflow-hidden bg-slate-100 dark:bg-white/5">
-                          {c.image_thumb ? (
-                            <img
-                              src={c.image_thumb}
-                              alt=""
-                              className="h-full w-full object-cover transition group-hover:scale-105"
-                              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                            />
-                          ) : (
-                            <span className="flex h-full w-full items-center justify-center text-slate-400"><ImageIcon size={22} /></span>
-                          )}
-                          {selected && (
-                            <span className="absolute right-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-brand-600 text-white shadow">
-                              <Check size={12} />
-                            </span>
-                          )}
-                        </div>
-                        <div className="px-2 py-1.5">
-                          <p className="truncate text-xs font-bold">{c.characteristics || 'Carpet'}</p>
-                          <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
-                            {c.client_name || 'No name'} · {heldNames(c)} · Ksh {c.expected_price}
-                          </p>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Cash received</span>
-                <input type="number" min="0" className="input-base" value={releaseCash} onChange={(e) => setReleaseCash(e.target.value)} placeholder="Ksh 0" />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Who washed it</span>
-                <select className="input-base" value={releaseWasher} onChange={(e) => setReleaseWasher(e.target.value)}>
-                  <option value="">Use the receiver</option>
-                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name} ({e.abbreviation})</option>)}
-                </select>
-              </label>
-            </div>
-
-            <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-400/10 dark:text-amber-300">
-              Releasing creates the wash transaction (wages included). Any unpaid balance goes to the client-debt list, and the carpet photo is deleted after 7 days.
-            </p>
-
-            <div className="flex gap-2 pt-1">
-              <button onClick={submitRelease} disabled={releaseBusy} className="btn-primary flex-1 justify-center bg-emerald-600 from-emerald-500 to-teal-500 shadow-emerald-500/20 hover:bg-emerald-700">
-                {releaseBusy && <Loader2 size={15} className="animate-spin" />}
-                Confirm release
-              </button>
-              <button onClick={() => setShowRelease(false)} className="btn-secondary justify-center"><X size={15} /> Cancel</button>
-            </div>
-          </div>
-        </Modal>
       )}
 
       {/* Edit row modal */}
@@ -1062,20 +754,6 @@ export default function DaySheet({ employees, selectedDay }: DaySheetProps) {
 
 function shortfall0(v: number): number {
   return v || 0;
-}
-
-function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-      <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl dark:border-white/10 dark:bg-slate-900">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-lg font-black tracking-tight">{title}</h3>
-          <button onClick={onClose} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
 }
 
 function RowFragment({
