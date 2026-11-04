@@ -329,7 +329,7 @@ export default function ManagerPanel() {
   const handleEdit = (tx: any) => {
     setEditingTx(tx.id);
     setEditForm({
-      washer_id: tx.washer_id.toString(),
+      washer_id: tx.washer_id?.toString() || '',
       category: tx.category,
       expected_price: tx.expected_price,
       cash_paid: tx.cash_paid,
@@ -362,9 +362,9 @@ export default function ManagerPanel() {
         payload.washer_id = wid;
       }
       if (editForm.category) payload.category = editForm.category;
-      if (editForm.expected_price) payload.expected_price = parseFloat(editForm.expected_price);
-      if (editForm.cash_paid !== undefined) payload.cash_paid = parseFloat(editForm.cash_paid);
-      if (editForm.mpesa_paid !== undefined) payload.mpesa_paid = parseFloat(editForm.mpesa_paid);
+      payload.expected_price = parseFloat(editForm.expected_price) || 0;
+      payload.cash_paid = parseFloat(editForm.cash_paid) || 0;
+      payload.mpesa_paid = parseFloat(editForm.mpesa_paid) || 0;
       payload.mpesa_transaction_id = editForm.mpesa_transaction_id || null;
       payload.mpesa_sender_name = editForm.mpesa_sender_name || null;
       payload.manual_tip = parseFloat(editForm.manual_tip) || 0;
@@ -379,7 +379,7 @@ export default function ManagerPanel() {
       await api.put(`/transactions/${txId}`, payload);
       alert('Transaction updated!');
       setEditingTx(null);
-      fetchTransactions();
+      await fetchTransactions();
     } catch (err: any) {
       alert(err?.response?.data?.detail || 'Error updating transaction');
     }
