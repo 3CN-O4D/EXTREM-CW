@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool } from '../db';
 import { HttpError, getCurrentWeekId, wrap } from '../utils';
-import { asFloat, asOptStr } from '../finance';
+import { asFloat, asOptStr, money } from '../finance';
 import { requireRole } from '../auth';
 import { ROLES } from '../types';
 
@@ -16,7 +16,7 @@ router.post(
     const body = req.body || {};
     const employee_id = Number(body.employee_id);
     if (!Number.isInteger(employee_id)) throw new HttpError(422, 'employee_id must be an integer');
-    const amount = asFloat(body.amount, 'amount');
+    const amount = money(asFloat(body.amount, 'amount'));
     if (amount < 0) throw new HttpError(422, 'amount must be >= 0');
     const method = (asOptStr(body.method) ?? '').toLowerCase();
     if (method !== 'cash' && method !== 'wages') {

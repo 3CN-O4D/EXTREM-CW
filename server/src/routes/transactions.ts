@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool, queryOne } from '../db';
 import { HttpError, getCurrentWeekId, validateDay, wrap } from '../utils';
-import { asFloat, asInt, asBool, asOptFloat, asOptInt, asOptStr, requireEnum, calculateTransaction, PriceConfig } from '../finance';
+import { asFloat, asInt, asBool, asOptFloat, asOptInt, asOptStr, requireEnum, calculateTransaction, money, PriceConfig } from '../finance';
 import { TransactionSummary, EmployeeFinancials, LedgerRouting } from '../finance';
 import { getCurrentUser, requireRole, AuthRequest } from '../auth';
 import { SERVICE_CATEGORIES, TIP_METHODS } from '../types';
@@ -55,14 +55,14 @@ export function parseCreate(body: Record<string, unknown>): CreateData {
   const data: CreateData = {
     washer_id: asInt(body.washer_id, 'washer_id'),
     category: requireEnum(asOptStr(body.category) ?? '', SERVICE_CATEGORIES, 'category'),
-    expected_price: asFloat(body.expected_price, 'expected_price'),
-    cash_paid: asFloat(body.cash_paid, 'cash_paid'),
-    mpesa_paid: asFloat(body.mpesa_paid, 'mpesa_paid'),
+    expected_price: money(asFloat(body.expected_price, 'expected_price')),
+    cash_paid: money(asFloat(body.cash_paid, 'cash_paid')),
+    mpesa_paid: money(asFloat(body.mpesa_paid, 'mpesa_paid')),
     mpesa_transaction_id: asOptStr(body.mpesa_transaction_id),
     mpesa_sender_name: asOptStr(body.mpesa_sender_name),
-    manual_tip: asOptFloat(body.manual_tip, 'manual_tip') ?? 0,
+    manual_tip: money(asOptFloat(body.manual_tip, 'manual_tip') ?? 0),
     tip_method: requireEnum(asOptStr(body.tip_method) ?? '', TIP_METHODS, 'tip_method'),
-    misc_amount: asOptFloat(body.misc_amount, 'misc_amount') ?? 0,
+    misc_amount: money(asOptFloat(body.misc_amount, 'misc_amount') ?? 0),
     misc_description: asOptStr(body.misc_description),
     has_car_wash: body.has_car_wash === undefined ? false : asBool(body.has_car_wash, 'has_car_wash'),
     has_vacuum: body.has_vacuum === undefined ? false : asBool(body.has_vacuum, 'has_vacuum'),
@@ -484,18 +484,18 @@ function mergeUpdate(tx: TxRow, u: Record<string, any>): CreateData {
       SERVICE_CATEGORIES,
       'category',
     ),
-    expected_price: asOptFloat(present('expected_price', tx.expected_price), 'expected_price')!,
-    cash_paid: asOptFloat(present('cash_paid', tx.cash_paid), 'cash_paid')!,
-    mpesa_paid: asOptFloat(present('mpesa_paid', tx.mpesa_paid), 'mpesa_paid')!,
+    expected_price: money(asOptFloat(present('expected_price', tx.expected_price), 'expected_price')!),
+    cash_paid: money(asOptFloat(present('cash_paid', tx.cash_paid), 'cash_paid')!),
+    mpesa_paid: money(asOptFloat(present('mpesa_paid', tx.mpesa_paid), 'mpesa_paid')!),
     mpesa_transaction_id: present('mpesa_transaction_id', tx.mpesa_transaction_id) ?? null,
     mpesa_sender_name: present('mpesa_sender_name', tx.mpesa_sender_name) ?? null,
-    manual_tip: asOptFloat(present('manual_tip', tx.manual_tip), 'manual_tip') ?? 0,
+    manual_tip: money(asOptFloat(present('manual_tip', tx.manual_tip), 'manual_tip') ?? 0),
     tip_method: requireEnum(
       present('tip_method', tx.tip_method.toLowerCase()),
       TIP_METHODS,
       'tip_method',
     ),
-    misc_amount: asOptFloat(present('misc_amount', tx.misc_amount ?? 0), 'misc_amount') ?? 0,
+    misc_amount: money(asOptFloat(present('misc_amount', tx.misc_amount ?? 0), 'misc_amount') ?? 0),
     misc_description: present('misc_description', tx.misc_description) ?? null,
     has_car_wash: asBool(present('has_car_wash', tx.has_car_wash), 'has_car_wash'),
     has_vacuum: asBool(present('has_vacuum', tx.has_vacuum), 'has_vacuum'),

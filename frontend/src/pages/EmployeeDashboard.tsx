@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { format } from 'date-fns';
+import { Check, Image as ImageIcon, Plus, Printer, Trash2 } from 'lucide-react';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
-import { format } from 'date-fns';
 import { PageError, PageLoading, InlineError } from '../components/States';
 const logoImg = '/images/logo.jpeg';
 
@@ -153,8 +155,9 @@ export default function EmployeeDashboard() {
   const pendingArrivals = arrivals.filter(a => a.status !== 'settled');
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4 sm:space-y-5">
       {error && <InlineError message={error} onRetry={fetchEmpData} />}
+
       <div className="hidden print:flex print:items-center print:justify-center print:gap-4 print:mb-4 print:border-b print:pb-4">
         <img src={logoImg} alt="EXTREME" className="h-16 object-contain" />
         <div className="text-center">
@@ -163,356 +166,420 @@ export default function EmployeeDashboard() {
           <p className="text-xs text-gray-500">+254 728 597 862</p>
         </div>
       </div>
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">My Performance — Week {weekId}</h1>
-        <button onClick={() => window.print()} className="bg-primary-600 text-white px-4 py-2 rounded print:hidden">
-          Generate My Receipt
+
+      {/* Header */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <p className="eyebrow">My week · {weekId}</p>
+          <h1 className="mt-0.5 text-xl font-extrabold tracking-tight sm:text-2xl">
+            {user?.full_name ? `Hi, ${String(user.full_name).split(' ')[0]}` : 'My performance'}
+          </h1>
+          <p className="muted text-xs">
+            {stats.jobs_count} jobs · Ksh {stats.revenue_generated} generated this week
+          </p>
+        </div>
+        <button onClick={() => window.print()} className="btn-secondary btn-sm print:hidden">
+          <Printer size={15} /> My receipt
         </button>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:grid-cols-4">
-        <StatCard title="Wages This Week" value={`Ksh ${stats.wages_earned}`} color="bg-green-600" />
-        <StatCard title="Jobs This Week" value={stats.jobs_count} color="bg-sky-600" />
-        <StatCard title="Revenue Generated" value={`Ksh ${stats.revenue_generated}`} color="bg-blue-600" />
-        <StatCard title="Current Debt" value={`Ksh ${stats.current_debt}`} color="bg-red-600" />
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 print:grid-cols-4">
-        <StatCard title="Shortfalls This Week" value={`Ksh ${stats.shortfall_total}`} color="bg-red-400" />
-        <StatCard title="Carpets Received" value={stats.carpets_received} color="bg-amber-600" />
-        <StatCard title="Carpets Released" value={stats.carpets_released} color="bg-purple-600" />
-        <StatCard title="Payable Balance" value={`Ksh ${stats.payable_balance}`} color="bg-emerald-700" />
+      {/* Stats */}
+      <div className="stat-grid">
+        {[
+          { label: 'Wages', value: `Ksh ${stats.wages_earned}`, cls: 'text-emerald-600 dark:text-emerald-400' },
+          { label: 'Jobs', value: stats.jobs_count, cls: 'text-slate-900 dark:text-white' },
+          { label: 'Revenue', value: `Ksh ${stats.revenue_generated}`, cls: 'text-brand-600 dark:text-brand-300' },
+          { label: 'Debt', value: `Ksh ${stats.current_debt}`, cls: 'text-red-600 dark:text-red-400' },
+          { label: 'Shortfalls', value: `Ksh ${stats.shortfall_total}`, cls: 'text-red-600 dark:text-red-400' },
+          { label: 'Carpets in', value: stats.carpets_received, cls: 'text-amber-600 dark:text-amber-400' },
+          { label: 'Carpets out', value: stats.carpets_released, cls: 'text-violet-600 dark:text-violet-300' },
+          { label: 'Payable', value: `Ksh ${stats.payable_balance}`, cls: 'text-emerald-600 dark:text-emerald-400' },
+        ].map((s) => (
+          <div key={s.label} className="stat-tile">
+            <p className="stat-label">{s.label}</p>
+            <p className={`stat-value ${s.cls}`}>{s.value}</p>
+          </div>
+        ))}
       </div>
 
       {(user?.role === 'admin' || user?.role === 'manager') && (
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
-        <h2 className="text-xl font-semibold mb-1 text-sky-600">Vehicles Waiting (log on arrival)</h2>
-        <p className="text-sm text-gray-500 mb-4">
-          Log a vehicle the moment it arrives — no money needed yet. Take the payment any
-          time before it turns red (24h). Red rows count against you.
-        </p>
-
-        <form onSubmit={logArrival} className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end mb-4">
-          <label className="text-sm">
-            <span className="block text-gray-600 mb-1">Plate number</span>
-            <input value={plate} onChange={e => setPlate(e.target.value)} placeholder="KDY 123A"
-              className="w-full border rounded px-3 py-2 uppercase" required />
-          </label>
-          <label className="text-sm">
-            <span className="block text-gray-600 mb-1">Type</span>
-            <select value={arrivalCategory} onChange={e => {
-              setArrivalCategory(e.target.value);
-              const c = VEHICLE_CATEGORIES.find(x => x.key === e.target.value);
-              if (c) setArrivalPrice(String(c.price));
-            }} className="w-full border rounded px-3 py-2">
-              {VEHICLE_CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label} (Ksh {c.price})</option>)}
-            </select>
-          </label>
-          <label className="text-sm">
-            <span className="block text-gray-600 mb-1">Expected price</span>
-            <input type="number" min="0" value={arrivalPrice} onChange={e => setArrivalPrice(e.target.value)}
-              className="w-full border rounded px-3 py-2" />
-          </label>
-          <button type="submit" className="col-span-2 md:col-span-1 bg-sky-600 text-white px-4 py-2 rounded">
-            Log Arrival
-          </button>
-        </form>
-
-        {arrivalMsg && <p className="text-sm text-gray-600 mb-3">{arrivalMsg}</p>}
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b">
-                <th className="py-2">Arrived</th>
-                <th className="py-2">Plate</th>
-                <th className="py-2">Type</th>
-                <th className="py-2 text-right">Expected</th>
-                <th className="py-2 text-right">Paid</th>
-                <th className="py-2">Status</th>
-                <th className="py-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {pendingArrivals.length === 0 && (
-                <tr><td colSpan={7} className="py-4 text-center text-gray-400 text-sm">No vehicles waiting.</td></tr>
-              )}
-              {pendingArrivals.map(a => (
-                <tr key={a.id}
-                  className={`border-b ${a.overdue ? 'bg-red-100 dark:bg-red-900/40' : ''}`}>
-                  <td className="py-2 text-sm">{format(new Date(a.created_at), 'dd/MM HH:mm')}</td>
-                  <td className="py-2 font-mono text-sm">{a.plate_number}</td>
-                  <td className="py-2 text-sm capitalize">{a.category}</td>
-                  <td className="py-2 font-mono text-right text-sm">Ksh {a.expected_price}</td>
-                  <td className="py-2 font-mono text-right text-sm">Ksh {(a.cash_paid || 0) + (a.mpesa_paid || 0)}</td>
-                  <td className="py-2 text-sm">
-                    {a.status === 'expired' || a.overdue ? (
-                      <span className="text-red-600 font-semibold">Overdue — counts against you</span>
-                    ) : (
-                      <span className="text-amber-600">Waiting for payment</span>
-                    )}
-                  </td>
-                  <td className="py-2 text-right text-sm">
-                    <button onClick={() => {
-                      setSettleRow(settleRow === a.id ? null : a.id);
-                      setSettleCash('');
-                      setSettleMpesa('');
-                    }} className="text-sky-600 underline mr-2">Take payment</button>
-                    <button onClick={() => deleteArrival(a.id)} className="text-red-600 underline">Remove</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {settleRow !== null && (
-          <div className="mt-4 p-4 border rounded bg-slate-50 dark:bg-slate-700/40">
-            <p className="text-sm font-semibold mb-2">
-              Payment for {arrivals.find(a => a.id === settleRow)?.plate_number} (cash + mpesa, money is money)
-            </p>
-            <div className="flex flex-wrap gap-3 items-end">
-              <label className="text-sm">
-                <span className="block text-gray-600 mb-1">Cash</span>
-                <input type="number" min="0" value={settleCash} onChange={e => setSettleCash(e.target.value)}
-                  className="w-32 border rounded px-3 py-2" />
-              </label>
-              <label className="text-sm">
-                <span className="block text-gray-600 mb-1">M-Pesa</span>
-                <input type="number" min="0" value={settleMpesa} onChange={e => setSettleMpesa(e.target.value)}
-                  className="w-32 border rounded px-3 py-2" />
-              </label>
-              <button onClick={() => settleArrival(settleRow)}
-                className="bg-emerald-600 text-white px-4 py-2 rounded">Record Payment</button>
-              <button onClick={() => setSettleRow(null)} className="px-4 py-2 rounded border">Cancel</button>
+        <section className="card overflow-hidden">
+          <div className="section-head border-b border-slate-200/80 px-4 py-3 dark:border-white/10">
+            <div>
+              <h2 className="text-sm font-black tracking-tight">Vehicles waiting</h2>
+              <p className="muted text-xs">Log on arrival, take payment before 24h.</p>
             </div>
+            <span className="chip chip-soft pointer-events-none">
+              {pendingArrivals.length} waiting
+            </span>
           </div>
-        )}
-      </div>
+
+          <form onSubmit={logArrival} className="grid grid-cols-2 gap-2 border-b border-slate-200/80 px-4 py-3 dark:border-white/10 sm:grid-cols-4 sm:items-end">
+            <label className="block">
+              <span className="label">Plate</span>
+              <input value={plate} onChange={e => setPlate(e.target.value)} placeholder="KDY 123A"
+                className="input-base input-sm uppercase" required />
+            </label>
+            <label className="block">
+              <span className="label">Type</span>
+              <select value={arrivalCategory} onChange={e => {
+                setArrivalCategory(e.target.value);
+                const c = VEHICLE_CATEGORIES.find(x => x.key === e.target.value);
+                if (c) setArrivalPrice(String(c.price));
+              }} className="input-base input-sm">
+                {VEHICLE_CATEGORIES.map(c => <option key={c.key} value={c.key}>{c.label} · {c.price}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="label">Expected (Ksh)</span>
+              <input type="number" min="0" value={arrivalPrice} onChange={e => setArrivalPrice(e.target.value)}
+                className="input-base input-sm" />
+            </label>
+            <button type="submit" className="btn-primary btn-sm col-span-2 sm:col-span-1">
+              <Plus size={15} /> Log arrival
+            </button>
+          </form>
+
+          {arrivalMsg && <p className="border-b border-slate-200/80 px-4 py-2 text-xs font-semibold text-brand-700 dark:border-white/10 dark:text-brand-300">{arrivalMsg}</p>}
+
+          <div className="divide-y divide-slate-100 dark:divide-white/5">
+            {pendingArrivals.length === 0 && (
+              <p className="px-4 py-6 text-center text-sm text-slate-400">No vehicles waiting.</p>
+            )}
+            {pendingArrivals.map(a => {
+              const paid = (a.cash_paid || 0) + (a.mpesa_paid || 0);
+              const overdue = a.status === 'expired' || a.overdue;
+              const settling = settleRow === a.id;
+              return (
+                <div key={a.id} className={`px-4 py-3 ${overdue ? 'bg-red-50 dark:bg-red-500/5' : ''}`}>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-lg bg-slate-100 px-2 py-1 font-mono text-xs font-bold uppercase dark:bg-white/10">
+                      {a.plate_number}
+                    </span>
+                    <span className="text-xs font-semibold capitalize text-slate-600 dark:text-slate-300">{a.category}</span>
+                    <span className="muted text-[11px]">{format(new Date(a.created_at), 'dd/MM HH:mm')}</span>
+                    <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                      overdue
+                        ? 'bg-red-600 text-white'
+                        : 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300'
+                    }`}>
+                      {overdue ? 'Overdue' : 'Awaiting payment'}
+                    </span>
+                    <span className="ml-auto font-mono text-sm font-bold">Ksh {a.expected_price}</span>
+                  </div>
+
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    <span className="muted text-xs">Paid Ksh {paid}</span>
+                    <div className="ml-auto flex items-center gap-1">
+                      <button onClick={() => {
+                        setSettleRow(settling ? null : a.id);
+                        setSettleCash('');
+                        setSettleMpesa('');
+                      }} className="btn-primary btn-sm">
+                        {settling ? 'Cancel' : 'Take payment'}
+                      </button>
+                      <button onClick={() => deleteArrival(a.id)} aria-label="Remove arrival"
+                        className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10">
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {settling && (
+                    <div className="mt-2 rounded-xl border border-brand-200 bg-brand-50/60 p-2 dark:border-brand-400/20 dark:bg-brand-500/5">
+                      <p className="mb-2 text-xs font-bold">
+                        Payment for {a.plate_number} — cash + M-Pesa
+                      </p>
+                      <div className="flex flex-wrap items-end gap-2">
+                        <label className="block min-w-[92px] flex-1">
+                          <span className="label">Cash</span>
+                          <input type="number" min="0" value={settleCash} onChange={e => setSettleCash(e.target.value)}
+                            className="input-base input-sm" />
+                        </label>
+                        <label className="block min-w-[92px] flex-1">
+                          <span className="label">M-Pesa</span>
+                          <input type="number" min="0" value={settleMpesa} onChange={e => setSettleMpesa(e.target.value)}
+                            className="input-base input-sm" />
+                        </label>
+                        <button onClick={() => settleArrival(a.id)} className="btn-success btn-sm">
+                          <Check size={15} /> Record
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </section>
       )}
 
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
-        <h2 className="text-xl font-semibold mb-4 text-primary-600">Wage Breakdown (per day)</h2>
+      {/* Wage breakdown */}
+      <section className="card overflow-hidden">
+        <div className="section-head border-b border-slate-200/80 px-4 py-3 dark:border-white/10">
+          <div>
+            <h2 className="text-sm font-black tracking-tight">Wage breakdown</h2>
+            <p className="muted text-xs">What each day of this week paid.</p>
+          </div>
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+            Ksh {stats.wages_earned}
+          </span>
+        </div>
         {stats.wage_breakdown.length > 0 ? (
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b"><th className="py-2">Day</th><th className="py-2">Wages</th></tr>
-            </thead>
-            <tbody>
-              {stats.wage_breakdown.map((d: any) => (
-                <tr key={d.day} className="border-b">
-                  <td className="py-2">{format(new Date(d.day), 'EEE dd MMM')}</td>
-                  <td className="py-2 font-mono">Ksh {d.wages}</td>
-                </tr>
-              ))}
-              <tr>
-                <td className="py-2 font-bold">Total ({stats.jobs_count} jobs)</td>
-                <td className="py-2 font-mono font-bold">Ksh {stats.wages_earned}</td>
-              </tr>
-            </tbody>
-          </table>
-        ) : <p className="text-gray-400 text-sm">No wages logged this week yet.</p>}
-      </div>
+          <div className="divide-y divide-slate-100 dark:divide-white/5">
+            {stats.wage_breakdown.map((d: any) => {
+              const width = stats.wages_earned > 0 ? Math.max(4, Math.round((Number(d.wages) / Number(stats.wages_earned)) * 100)) : 0;
+              return (
+                <div key={d.day} className="flex items-center gap-3 px-4 py-2.5">
+                  <span className="w-20 shrink-0 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                    {format(new Date(d.day), 'EEE dd MMM')}
+                  </span>
+                  <div className="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
+                    <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400" style={{ width: `${width}%` }} />
+                  </div>
+                  <span className="w-20 shrink-0 text-right font-mono text-sm font-bold">Ksh {d.wages}</span>
+                </div>
+              );
+            })}
+            <div className="flex items-center justify-between bg-slate-50/80 px-4 py-3 dark:bg-white/5">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-400">Total · {stats.jobs_count} jobs</span>
+              <span className="font-mono text-base font-black">Ksh {stats.wages_earned}</span>
+            </div>
+          </div>
+        ) : (
+          <p className="px-4 py-6 text-center text-sm text-slate-400">No wages logged this week yet.</p>
+        )}
+      </section>
 
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
-        <h2 className="text-xl font-semibold mb-4 text-primary-600">Service Breakdown</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      {/* Service breakdown */}
+      <section className="card-pad">
+        <div className="section-head mb-3">
+          <div>
+            <h2 className="text-sm font-black tracking-tight">Service breakdown</h2>
+            <p className="muted text-xs">Jobs by category this week.</p>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
           {Object.entries(stats.service_counts).map(([cat, count]: any) => (
-            <div key={cat} className="flex justify-between p-3 border rounded dark:border-slate-700">
-              <span className="capitalize">{cat === 'other' ? 'Others' : cat}</span>
-              <span className="font-bold">{count}</span>
+            <div key={cat} className="flex items-center justify-between rounded-xl border border-slate-200/80 px-3 py-2 dark:border-white/10">
+              <span className="truncate text-xs font-semibold capitalize text-slate-600 dark:text-slate-300">
+                {cat === 'other' ? 'Others' : cat}
+              </span>
+              <span className="ml-2 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-black text-brand-700 dark:bg-brand-500/15 dark:text-brand-300">
+                {count}
+              </span>
             </div>
           ))}
         </div>
-      </div>
+      </section>
 
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow overflow-hidden">
-        <h2 className="text-xl font-semibold mb-4">Cars Washed This Week</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b">
-                <th className="py-2">Time</th>
-                <th className="py-2">Category</th>
-                <th className="py-2">Plate / Item</th>
-                <th className="py-2 text-right">Expected</th>
-                <th className="py-2 text-right">Paid</th>
-                <th className="py-2 text-right">Shortfall</th>
-                <th className="py-2 text-right">My Payout</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transactions.length === 0 && (
-                <tr><td colSpan={7} className="py-6 text-center text-gray-400">No washes this week.</td></tr>
-              )}
-              {transactions.map(tx => (
-                <tr key={tx.id} className="border-b">
-                  <td className="py-2 text-sm">{format(new Date(tx.timestamp), 'EEE dd/MM HH:mm')}</td>
-                  <td className="py-2 capitalize">{tx.custom_category || tx.category}</td>
-                  <td className="py-2 text-xs font-mono">{tx.category === 'other' ? tx.custom_category || '-' : (tx.plate_number || '-')}</td>
-                  <td className="py-2 font-mono text-right">Ksh {tx.expected_price}</td>
-                  <td className="py-2 font-mono text-right">Ksh {tx.total_paid}</td>
-                  <td className="py-2 font-mono text-right text-red-600">{(tx.shortfall || 0) > 0 ? `Ksh ${tx.shortfall}` : '-'}</td>
-                  <td className="py-2 font-bold text-right">{tx.final_payout < 0 ? (
-                    <span className="text-red-600">Debt Ksh {Math.abs(tx.final_payout)}</span>
-                  ) : `Ksh ${tx.final_payout}`}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {/* Cars washed */}
+      <section className="card overflow-hidden">
+        <div className="section-head border-b border-slate-200/80 px-4 py-3 dark:border-white/10">
+          <div>
+            <h2 className="text-sm font-black tracking-tight">Cars washed</h2>
+            <p className="muted text-xs">Every job you logged this week.</p>
+          </div>
+          <span className="chip chip-soft pointer-events-none">{transactions.length}</span>
         </div>
-      </div>
 
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow overflow-hidden">
-        <h2 className="text-xl font-semibold mb-4 text-violet-600">My Carpets — Status &amp; Timeline</h2>
-        <p className="muted text-xs mb-4">Track your carpets from received → washed → dried → ready → released.</p>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200/70 dark:border-white/10">
-                <th className="py-2 pr-3">Photo</th>
-                <th className="py-2 pr-3">Carpet</th>
-                <th className="py-2 pr-3">Client</th>
-                <th className="py-2 pr-3">Status</th>
-                <th className="py-2 pr-3">Timeline</th>
-                <th className="py-2 pr-3 text-right">Expected</th>
-                <th className="py-2 pr-3 text-right">Paid</th>
-              </tr>
-            </thead>
-            <tbody>
-              {carpets.length === 0 && (
-                <tr><td colSpan={7} className="py-8 text-center text-gray-400 text-sm">No carpets assigned to you.</td></tr>
-              )}
-              {carpets.map(c => {
-                const STATUS_COLOR: Record<string, string> = {
-                  received: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
-                  washed: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
-                  ready: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
-                  released: 'bg-slate-200 text-slate-600 dark:bg-white/10 dark:text-slate-300',
-                };
-                const cells: Array<[string, string | null]> = [
-                  ['Received', c.created_at],
-                  ['Washed', c.washed_at],
-                  ['Ready', c.ready_at],
-                  ['Released', c.released_at],
-                ];
-                return (
-                  <tr key={c.id} className="border-b border-slate-200/70 dark:border-white/10">
-                    <td className="py-3 pr-3">
-                      {c.image_thumb ? (
-                        <img src={c.image_thumb} alt="carpet" onClick={() => openCarpetPhoto(c)}
-                          className="h-10 w-10 object-cover rounded border cursor-pointer" />
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="py-3 pr-3">
-                      <p className="font-medium">{c.characteristics || 'Carpet'}</p>
-                      <p className="text-xs text-gray-500">#{c.id}</p>
-                    </td>
-                    <td className="py-3 pr-3">
-                      {c.client_name ? <div className="font-medium">{c.client_name}</div> : <div className="text-gray-400">—</div>}
-                      {c.customer_phone && <div className="text-xs text-gray-500">{c.customer_phone}</div>}
-                    </td>
-                    <td className="py-3 pr-3">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${STATUS_COLOR[c.status] || ''}`}>
-                        {c.status.charAt(0).toUpperCase() + c.status.slice(1)}
-                      </span>
-                    </td>
-                    <td className="py-3 pr-3 text-[10px] text-gray-500">
-                      {cells.map(([label, ts]) => (
-                        <div key={label} className="flex items-center gap-1">
-                          <span className="font-semibold text-slate-400">{label}</span>{' '}
-                          {ts ? format(new Date(ts), 'dd/MM HH:mm') : '—'}
-                        </div>
-                      ))}
-                    </td>
-                    <td className="py-3 pr-3 font-mono text-right text-sm">Ksh {c.expected_price}</td>
-                    <td className="py-3 pr-3 font-mono text-right text-sm">Ksh {c.cash_paid + c.mpesa_paid}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
-        <h2 className="text-xl font-semibold mb-4 text-red-600">My Debts</h2>
-        {debts.length > 0 && (
-          <table className="w-full text-left mb-4">
-            <thead>
-              <tr className="border-b">
-                <th className="py-2">Date</th>
-                <th className="py-2">Service</th>
-                <th className="py-2">Notes / Description</th>
-                <th className="py-2 text-right">Amount</th>
-                <th className="py-2 text-right">Paid</th>
-                <th className="py-2 text-right">Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {debts.map(d => (
-                <tr key={d.id} className="border-b">
-                  <td className="py-2 text-sm">{format(new Date(d.date), 'dd/MM/yyyy')}</td>
-                  <td className="py-2">{d.service || 'Loan'}</td>
-                  <td className="py-2 text-xs text-gray-500">{d.notes || '-'}</td>
-                  <td className="py-2 font-mono text-right">Ksh {d.amount}</td>
-                  <td className="py-2 font-mono text-right">Ksh {d.paid}</td>
-                  <td className="py-2 font-mono font-bold text-right text-red-600">Ksh {d.balance}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <h3 className="font-semibold mb-2">Shortfall Debts (auto)</h3>
-        {stats.debt_sources && stats.debt_sources.length > 0 ? (
-          <ul className="space-y-2">
-            {stats.debt_sources.map((d: any) => (
-              <li key={d.id} className="flex justify-between p-2 border border-red-200 rounded bg-red-50 dark:bg-red-900/20 dark:border-red-800">
-                <span className="text-sm">
-                  {d.custom_category || d.category}{d.plate_number ? ` (${d.plate_number})` : ''} — {new Date(d.timestamp).toLocaleDateString()}
+        <div className="divide-y divide-slate-100 dark:divide-white/5">
+          {transactions.length === 0 && (
+            <p className="px-4 py-6 text-center text-sm text-slate-400">No washes this week.</p>
+          )}
+          {transactions.map(tx => (
+            <div key={tx.id} className="px-4 py-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-mono text-xs font-bold uppercase">
+                  {tx.category === 'other' ? tx.custom_category || 'Other' : tx.plate_number || '—'}
                 </span>
-                <span className="font-bold text-red-600">Ksh {d.shortfall}</span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-gray-400 text-sm">No shortfall debts</p>
-        )}
-      </div>
+                <span className="chip chip-soft pointer-events-none capitalize">
+                  {tx.custom_category || tx.category}
+                </span>
+                <span className="muted ml-auto text-[11px]">{format(new Date(tx.timestamp), 'EEE dd/MM HH:mm')}</span>
+              </div>
+              <div className="mt-2 grid grid-cols-4 gap-2 text-xs">
+                <div>
+                  <p className="stat-label">Expected</p>
+                  <p className="font-mono font-semibold">Ksh {tx.expected_price}</p>
+                </div>
+                <div>
+                  <p className="stat-label">Paid</p>
+                  <p className="font-mono font-semibold">Ksh {tx.total_paid}</p>
+                </div>
+                <div>
+                  <p className="stat-label">Shortfall</p>
+                  <p className={`font-mono font-semibold ${(tx.shortfall || 0) > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}`}>
+                    {(tx.shortfall || 0) > 0 ? `Ksh ${tx.shortfall}` : '—'}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="stat-label">My payout</p>
+                  <p className={`font-mono font-bold ${tx.final_payout < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                    {tx.final_payout < 0 ? `−Ksh ${Math.abs(tx.final_payout)}` : `Ksh ${tx.final_payout}`}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </section>
 
-      <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow">
-        <h2 className="text-xl font-semibold mb-4 text-emerald-600">My Repayments</h2>
-        {repayments.length > 0 ? (
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b"><th className="py-2">Date</th><th className="py-2 text-right">Amount Paid Off</th></tr>
-            </thead>
-            <tbody>
-              {repayments.map(r => (
-                <tr key={r.id} className="border-b">
-                  <td className="py-2 text-sm">{format(new Date(r.timestamp), 'dd MMM yyyy HH:mm')}</td>
-                  <td className="py-2 font-mono text-right">Ksh {r.amount}</td>
-                </tr>
+      {/* Carpets */}
+      <section className="card overflow-hidden">
+        <div className="section-head border-b border-slate-200/80 px-4 py-3 dark:border-white/10">
+          <div>
+            <h2 className="text-sm font-black tracking-tight">My carpets</h2>
+            <p className="muted text-xs">Received → washed → dried → ready → released.</p>
+          </div>
+          <Link to="/carpets" className="btn-secondary btn-sm">Open board</Link>
+        </div>
+
+        <div className="divide-y divide-slate-100 dark:divide-white/5">
+          {carpets.length === 0 && (
+            <p className="px-4 py-6 text-center text-sm text-slate-400">No carpets assigned to you.</p>
+          )}
+          {carpets.map(c => {
+            const STATUS_COLOR: Record<string, string> = {
+              received: 'bg-blue-100 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300',
+              washed: 'bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300',
+              dried: 'bg-cyan-100 text-cyan-700 dark:bg-cyan-500/15 dark:text-cyan-300',
+              ready: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300',
+              released: 'bg-slate-200 text-slate-600 dark:bg-white/10 dark:text-slate-300',
+            };
+            const cells: Array<[string, string | null]> = [
+              ['Received', c.created_at],
+              ['Washed', c.washed_at],
+              ['Ready', c.ready_at],
+              ['Released', c.released_at],
+            ];
+            return (
+              <div key={c.id} className="flex gap-3 px-4 py-3">
+                {c.image_thumb ? (
+                  <img src={c.image_thumb} alt="carpet" onClick={() => openCarpetPhoto(c)}
+                    className="h-14 w-14 shrink-0 cursor-pointer rounded-xl border border-slate-200 object-cover dark:border-white/10" />
+                ) : (
+                  <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-slate-400 dark:bg-white/5">
+                    <ImageIcon size={18} />
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="truncate text-sm font-bold">{c.characteristics || 'Carpet'}</p>
+                    <span className="text-[10px] font-semibold text-slate-400">#{c.id}</span>
+                    <span className={`ml-auto rounded-full px-2 py-0.5 text-[10px] font-bold capitalize ${STATUS_COLOR[c.status] || ''}`}>
+                      {c.status}
+                    </span>
+                  </div>
+                  <p className="muted mt-0.5 truncate text-xs">
+                    {c.client_name || 'No client name'}{c.customer_phone ? ` · ${c.customer_phone}` : ''}
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-slate-500 dark:text-slate-400">
+                    {cells.filter(([, ts]) => ts).map(([label, ts]) => (
+                      <span key={label}>
+                        <span className="font-bold text-slate-400">{label}</span> {format(new Date(ts as string), 'dd/MM HH:mm')}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="shrink-0 text-right">
+                  <p className="stat-label">Paid</p>
+                  <p className="font-mono text-sm font-bold">Ksh {c.cash_paid + c.mpesa_paid}</p>
+                  <p className="mt-1 text-[10px] text-slate-400">of {c.expected_price}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Debts */}
+      <section className="card overflow-hidden">
+        <div className="section-head border-b border-slate-200/80 px-4 py-3 dark:border-white/10">
+          <div>
+            <h2 className="text-sm font-black tracking-tight">My debts</h2>
+            <p className="muted text-xs">Loans and shortfalls still owed.</p>
+          </div>
+          <span className="rounded-full bg-red-50 px-3 py-1 text-xs font-bold text-red-600 dark:bg-red-500/10 dark:text-red-300">
+            Ksh {stats.current_debt}
+          </span>
+        </div>
+
+        <div className="divide-y divide-slate-100 dark:divide-white/5">
+          {debts.length === 0 && (
+            <p className="px-4 py-5 text-center text-sm text-slate-400">No loans on record.</p>
+          )}
+          {debts.map(d => (
+            <div key={d.id} className="flex flex-wrap items-center gap-2 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-bold">{d.service || 'Loan'}</p>
+                <p className="muted text-xs">{format(new Date(d.date), 'dd MMM yyyy')}{d.notes ? ` · ${d.notes}` : ''}</p>
+              </div>
+              <div className="text-right">
+                <p className="font-mono text-sm font-bold text-red-600 dark:text-red-400">Ksh {d.balance}</p>
+                <p className="text-[10px] text-slate-400">paid {d.paid} of {d.amount}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="border-t border-slate-200/80 px-4 py-3 dark:border-white/10">
+          <h3 className="mb-2 text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400">Shortfall debts (auto)</h3>
+          {stats.debt_sources && stats.debt_sources.length > 0 ? (
+            <div className="space-y-1.5">
+              {stats.debt_sources.map((d: any) => (
+                <div key={d.id} className="flex items-center justify-between rounded-xl border border-red-200 bg-red-50 px-3 py-2 dark:border-red-500/30 dark:bg-red-500/10">
+                  <span className="min-w-0 truncate text-xs font-semibold">
+                    {d.custom_category || d.category}{d.plate_number ? ` (${d.plate_number})` : ''} — {new Date(d.timestamp).toLocaleDateString()}
+                  </span>
+                  <span className="ml-2 font-mono text-sm font-bold text-red-600 dark:text-red-400">Ksh {d.shortfall}</span>
+                </div>
               ))}
-            </tbody>
-          </table>
-        ) : <p className="text-gray-400 text-sm">No repayments this week.</p>}
-      </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">No shortfall debts.</p>
+          )}
+        </div>
+      </section>
+
+      {/* Repayments */}
+      <section className="card overflow-hidden">
+        <div className="section-head border-b border-slate-200/80 px-4 py-3 dark:border-white/10">
+          <div>
+            <h2 className="text-sm font-black tracking-tight">My repayments</h2>
+            <p className="muted text-xs">Money paid back this week.</p>
+          </div>
+        </div>
+        {repayments.length > 0 ? (
+          <div className="divide-y divide-slate-100 dark:divide-white/5">
+            {repayments.map(r => (
+              <div key={r.id} className="flex items-center justify-between px-4 py-2.5">
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  {format(new Date(r.timestamp), 'dd MMM yyyy HH:mm')}
+                </span>
+                <span className="font-mono text-sm font-bold text-emerald-600 dark:text-emerald-400">Ksh {r.amount}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="px-4 py-5 text-center text-sm text-slate-400">No repayments this week.</p>
+        )}
+      </section>
 
       {photoPreview && (
-        <div className="fixed inset-0 bg-black/70 z-50 flex items-center justify-center p-4" onClick={() => setPhotoPreview(null)}>
-          <div className="relative max-w-3xl w-full" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" onClick={() => setPhotoPreview(null)}>
+          <div className="relative w-full max-w-3xl" onClick={e => e.stopPropagation()}>
             <button onClick={() => setPhotoPreview(null)}
-              className="absolute -top-3 -right-3 bg-red-600 text-white w-8 h-8 rounded-full font-bold">×</button>
-            <img src={photoPreview} alt="carpet preview" className="w-full rounded-lg shadow-2xl" />
+              aria-label="Close photo"
+              className="absolute -right-2 -top-2 z-10 flex h-9 w-9 items-center justify-center rounded-full bg-red-600 font-bold text-white shadow-lg">×</button>
+            <img src={photoPreview} alt="carpet preview" className="w-full rounded-2xl shadow-2xl" />
           </div>
         </div>
       )}
 
       {receipt && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm">
-          <div className="receipt-print-area w-full max-w-md rounded-2xl bg-white p-6 text-slate-900 shadow-2xl">
+          <div className="receipt-print-area w-full max-w-md rounded-3xl bg-white p-6 text-slate-900 shadow-2xl">
             <div className="flex items-start justify-between border-b border-slate-200 pb-4">
               <div>
                 <p className="text-lg font-black tracking-wide text-blue-700">EXTREME AUTO CARWASH</p>
@@ -553,26 +620,16 @@ export default function EmployeeDashboard() {
             </dl>
             <p className="mt-4 text-center text-xs text-slate-400">Thank you for washing with Extreme!</p>
             <div className="mt-4 flex gap-2 print:hidden">
-              <button onClick={printReceipt} className="flex-1 rounded-xl bg-blue-700 px-4 py-2 text-sm font-bold text-white">
-                Print receipt
+              <button onClick={printReceipt} className="btn-primary flex-1">
+                <Printer size={15} /> Print
               </button>
-              <button onClick={() => setReceipt(null)} className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600">
+              <button onClick={() => setReceipt(null)} className="btn-secondary flex-1">
                 Close
               </button>
             </div>
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function StatCard({ title, value, color }: any) {
-  return (
-    <div className={`${color} relative overflow-hidden rounded-2xl p-5 text-white shadow-lg`}>
-      <div className="absolute -right-4 -top-6 h-20 w-20 rounded-full bg-white/10" />
-      <div className="relative text-xs font-semibold uppercase tracking-wider text-white/70">{title}</div>
-      <div className="relative mt-2 text-2xl font-black tracking-tight">{value}</div>
     </div>
   );
 }

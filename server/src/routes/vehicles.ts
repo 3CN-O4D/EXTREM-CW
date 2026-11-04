@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool, queryOne } from '../db';
 import { HttpError, toUtcTimestamp, wrap } from '../utils';
-import { asOptFloat, asOptStr, requireEnum } from '../finance';
+import { asOptFloat, asOptStr, requireEnum, money } from '../finance';
 import { requireRole, getCurrentUser } from '../auth';
 import { ROLES, SERVICE_CATEGORIES } from '../types';
 import { CarpetRow, UserRow } from '../types';
@@ -88,11 +88,11 @@ function serializeArrival(a: ArrivalRow): Record<string, unknown> {
     created_at: toUtcTimestamp(a.created_at),
     plate_number: a.plate_number,
     category: a.category.toLowerCase(),
-    expected_price: a.expected_price,
+    expected_price: money(a.expected_price),
     submitter_id: a.submitter_id,
     washer_id: a.washer_id,
-    cash_paid: a.cash_paid,
-    mpesa_paid: a.mpesa_paid,
+    cash_paid: money(a.cash_paid),
+    mpesa_paid: money(a.mpesa_paid),
     status: a.status,
     debt_id: a.debt_id,
     transaction_id: a.transaction_id,
@@ -146,7 +146,7 @@ router.post(
       SERVICE_CATEGORIES.filter((c) => c !== 'carpet'),
       'category',
     );
-    const expected_price = asOptFloat(body.expected_price, 'expected_price') ?? getStandardPrice(category);
+    const expected_price = money(asOptFloat(body.expected_price, 'expected_price') ?? getStandardPrice(category));
     if (expected_price < 0) throw new HttpError(422, 'expected_price must be >= 0');
     let washer_id: number | null = null;
     if (body.washer_id !== undefined && body.washer_id !== null && body.washer_id !== '') {
@@ -198,8 +198,8 @@ router.patch(
       );
     }
     if (body.expected_price !== undefined) {
-      const v = asOptFloat(body.expected_price, 'expected_price');
-      if (v !== undefined && v < 0) throw new HttpError(422, 'expected_price must be >= 0');
+      const v = money(asOptFloat(body.expected_price, 'expected_price'));
+      if (v < 0) throw new HttpError(422, 'expected_price must be >= 0');
       put('expected_price', v);
     }
     if (body.washer_id !== undefined && body.washer_id !== null && body.washer_id !== '') {
@@ -272,8 +272,8 @@ router.post(
     }
 
     const body = req.body || {};
-    const cash_paid = asOptFloat(body.cash_paid, 'cash_paid') ?? 0;
-    const mpesa_paid = asOptFloat(body.mpesa_paid, 'mpesa_paid') ?? 0;
+    const cash_paid = money(asOptFloat(body.cash_paid, 'cash_paid') ?? 0);
+    const mpesa_paid = money(asOptFloat(body.mpesa_paid, 'mpesa_paid') ?? 0);
     for (const [k, v] of [['cash_paid', cash_paid], ['mpesa_paid', mpesa_paid]] as const) {
       if (v < 0) throw new HttpError(422, `${k} must be >= 0`);
     }
@@ -293,7 +293,7 @@ router.post(
     const txData: CreateData = {
       washer_id: washerId,
       category: a.category.toLowerCase(),
-      expected_price: a.expected_price,
+      expected_price: money(a.expected_price),
       cash_paid,
       mpesa_paid,
       mpesa_transaction_id: null,

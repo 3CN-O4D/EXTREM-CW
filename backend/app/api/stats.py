@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import case, func
 from datetime import datetime
 from app.db.session import get_db
 from app.models.models import Transaction, Expense, Repayment, User, UserRole, Carpet
 from app.services.utils import get_current_week_id, validate_day
 from app.api.deps import check_role, get_current_user
 from app.models.models import User as UserModel
+from app.services.finance import money
 
 router = APIRouter()
 
@@ -48,7 +49,7 @@ def _collect_employee_stats(emp, db: Session, week_id: str = None, day: str = No
             week_id = get_current_week_id()
         daily = daily.filter(Transaction.week_id == week_id)
     daily = daily.group_by(func.date(Transaction.timestamp)).all()
-    wage_breakdown = [{"day": d.day, "day_of_week": _weekday(d.day), "wages": d.wages} for d in daily]
+    wage_breakdown = [{"day": d.day, "day_of_week": _weekday(d.day), "wages": money(d.wages)} for d in daily]
 
     debt_txns = db.query(Transaction).filter(
         Transaction.washer_id == emp.id,
@@ -59,8 +60,8 @@ def _collect_employee_stats(emp, db: Session, week_id: str = None, day: str = No
         "timestamp": t.timestamp.isoformat(),
         "category": t.category.value,
         "custom_category": t.custom_category,
-        "expected_price": t.expected_price,
-        "shortfall": t.shortfall,
+        "expected_price": money(t.expected_price),
+        "shortfall": money(t.shortfall),
         "plate_number": t.plate_number
     } for t in debt_txns]
 
@@ -69,7 +70,7 @@ def _collect_employee_stats(emp, db: Session, week_id: str = None, day: str = No
     misc_items = [{
         "id": t.id,
         "timestamp": t.timestamp.isoformat(),
-        "amount": t.misc_amount,
+        "amount": money(t.misc_amount),
         "description": t.misc_description,
         "category": t.category.value,
         "custom_category": t.custom_category,
@@ -88,15 +89,15 @@ def _collect_employee_stats(emp, db: Session, week_id: str = None, day: str = No
         "name": emp.full_name,
         "abbreviation": emp.abbreviation,
         "jobs_count": jobs_count,
-        "revenue_generated": emp_revenue,
-        "wages_earned": emp_wages,
-        "shortfall_total": emp_shortfall,
+        "revenue_generated": money(emp_revenue),
+        "wages_earned": money(emp_wages),
+        "shortfall_total": money(emp_shortfall),
         "wage_breakdown": wage_breakdown,
-        "current_debt": emp.debt_balance,
-        "payable_balance": emp.payable_balance,
+        "current_debt": money(emp.debt_balance),
+        "payable_balance": money(emp.payable_balance),
         "service_counts": emp_counts,
         "debt_sources": debt_sources,
-        "misc_earned": misc,
+        "misc_earned": money(misc),
         "misc_items": misc_items,
         "carpets_received": carpets_received,
         "carpets_released": carpets_released
@@ -122,9 +123,13 @@ def get_summary(
         query = query.filter(Transaction.week_id == week_id)
         exp_query = exp_query.filter(Expense.week_id == week_id)
 
-    total_cash = query.with_entities(func.sum(Transaction.total_paid)).scalar() or 0.0
+    total_cash = query.with_entities(func.sum(Transaction.cash_paid)).scalar() or 0.0
+    total_mpesa = query.with_entities(func.sum(Transaction.mpesa_paid)).scalar() or 0.0
+    total_paid = total_cash + total_mpesa
     expenses = exp_query.with_entities(func.sum(Expense.amount)).scalar() or 0.0
-    labor = query.filter(Transaction.final_payout > 0).with_entities(func.sum(Transaction.final_payout)).scalar() or 0.0
+    labor = query.with_entities(func.sum(Transaction.final_payout)).scalar() or 0.0
+    labor_gross = query.filter(Transaction.final_payout > 0).with_entities(func.sum(Transaction.final_payout)).scalar() or 0.0
+    labor_withheld = query.filter(Transaction.final_payout < 0).with_entities(func.sum(-Transaction.final_payout)).scalar() or 0.0
     revenue = query.with_entities(func.sum(Transaction.net_business_remittance)).scalar() or 0.0
     misc_total = query.with_entities(func.sum(Transaction.misc_amount)).scalar() or 0.0
 
@@ -132,7 +137,7 @@ def get_summary(
     misc_items = [{
         "id": t.id,
         "timestamp": t.timestamp.isoformat(),
-        "amount": t.misc_amount,
+        "amount": money(t.misc_amount),
         "description": t.misc_description,
         "category": t.category.value,
         "custom_category": t.custom_category,
@@ -140,19 +145,41 @@ def get_summary(
         "washer": f"{t.washer.full_name} ({t.washer.abbreviation})" if t.washer else None
     } for t in misc_txns]
 
-    # Per-employee labor breakdown
+    # Per-employee labor breakdown. Keep every employee in the list (zero-filled)
+    # so the day stats table matches the Express backend.
+    labor_filter = (
+        func.date(Transaction.timestamp) == day
+        if day
+        else Transaction.week_id == week_id
+    )
     emp_labor = db.query(
-        User.full_name, User.abbreviation,
-        func.sum(Transaction.final_payout).label("wages")
-    ).join(Transaction, User.id == Transaction.washer_id).filter(
-        Transaction.final_payout > 0
-    ).group_by(User.id)
-    if day:
-        emp_labor = emp_labor.filter(func.date(Transaction.timestamp) == day)
-    else:
-        emp_labor = emp_labor.filter(Transaction.week_id == week_id)
-    emp_labor = emp_labor.all()
-    labor_breakdown = [{"name": e.full_name, "abbreviation": e.abbreviation, "wages": e.wages} for e in emp_labor]
+        User.full_name,
+        User.abbreviation,
+        func.coalesce(func.sum(Transaction.final_payout), 0).label("wages"),
+        func.coalesce(
+            func.sum(case((Transaction.final_payout > 0, Transaction.final_payout), else_=0)),
+            0,
+        ).label("gross"),
+        func.coalesce(
+            func.sum(case((Transaction.final_payout < 0, -Transaction.final_payout), else_=0)),
+            0,
+        ).label("shortfall"),
+    ).outerjoin(
+        Transaction,
+        (User.id == Transaction.washer_id) & labor_filter,
+    ).filter(
+        User.role == UserRole.EMPLOYEE
+    ).group_by(User.id, User.full_name, User.abbreviation).order_by(User.full_name).all()
+    labor_breakdown = [
+        {
+            "name": e.full_name,
+            "abbreviation": e.abbreviation,
+            "wages": money(e.wages),
+            "gross": money(e.gross),
+            "shortfall": money(e.shortfall),
+        }
+        for e in emp_labor
+    ]
 
     # Counts by category
     categories = query.with_entities(Transaction.category, func.count(Transaction.id)).group_by(Transaction.category).all()
@@ -162,16 +189,22 @@ def get_summary(
         "week_id": week_id,
         "day": day,
         "day_of_week": _weekday(day) if day else None,
-        "total_cash_received": total_cash,
-        "total_expenses": expenses,
-        "balance": total_cash - expenses,
-        "total_labor_expense": labor,
-        "total_revenue": revenue,
-        "misc_total": misc_total,
+        "total_cash_received": money(total_cash),
+        "total_mpesa_received": money(total_mpesa),
+        "total_paid_received": money(total_paid),
+        "total_expenses": money(expenses),
+        "balance": money(total_paid - expenses),
+        "total_labor_expense": money(labor),
+        "total_labor_gross": money(labor_gross),
+        "total_shortfall_withheld": money(labor_withheld),
+        "net_labor_wages": money(labor),
+        "total_revenue": money(revenue),
+        "misc_total": money(misc_total),
         "misc_items": misc_items,
         "labor_breakdown": labor_breakdown,
         "category_counts": category_counts,
-        "total_debts": db.query(func.sum(User.debt_balance)).scalar() or 0.0
+        "total_debts": money(db.query(func.sum(User.debt_balance)).scalar()),
+        "total_client_debts": 0
     }
 
 @router.get("/employees", dependencies=[Depends(check_role([UserRole.ADMIN, UserRole.MANAGER]))])

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool, queryOne } from '../db';
-import { HttpError, wrap } from '../utils';
-import { asOptStr, asBool, asOptFloat } from '../finance';
+import { HttpError, isoWeekRange, validateDay, wrap } from '../utils';
+import { asOptStr, asBool, asOptFloat, money } from '../finance';
 import { requireRole, getCurrentUser } from '../auth';
 import { ROLES } from '../types';
 import type { AuthRequest } from '../auth';
@@ -154,6 +154,64 @@ router.get(
       released: Number(d.released || 0),
     }));
 
+    // Day-specific movement: how many arrived, went out, and were still in the
+    // shop at the end of the selected day.
+    validateDay((req.query.day as string) ?? null);
+    const day = req.query.day as string | undefined;
+    let dayStats: Record<string, unknown> | null = null;
+    if (day) {
+      const d = (
+        await pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE date(created_at) = $1::date) AS received,
+             COUNT(*) FILTER (WHERE date(released_at) = $1::date) AS released,
+             COUNT(*) FILTER (
+               WHERE date(created_at) <= $1::date
+                 AND (released_at IS NULL OR date(released_at) > $1::date)
+             ) AS remaining
+           FROM carpets`,
+          [day],
+        )
+      ).rows[0];
+      dayStats = {
+        date: day,
+        received: Number(d.received || 0),
+        released: Number(d.released || 0),
+        remaining: Number(d.remaining || 0),
+      };
+    }
+
+    // Week-specific movement for the selected ISO week, so past weeks still
+    // report how many carpets arrived and left during that week.
+    const week_id = req.query.week_id as string | undefined;
+    let weekStats: Record<string, unknown> | null = null;
+    if (week_id) {
+      const { start, end } = isoWeekRange(week_id);
+      const startDay = start.slice(0, 10);
+      const endDay = end.slice(0, 10);
+      const w = (
+        await pool.query(
+          `SELECT
+             COUNT(*) FILTER (WHERE date(created_at) BETWEEN $1::date AND $2::date) AS received,
+             COUNT(*) FILTER (WHERE date(released_at) BETWEEN $1::date AND $2::date) AS released,
+             COUNT(*) FILTER (
+               WHERE date(created_at) <= $2::date
+                 AND (released_at IS NULL OR date(released_at) > $2::date)
+             ) AS remaining
+           FROM carpets`,
+          [startDay, endDay],
+        )
+      ).rows[0];
+      weekStats = {
+        week_id,
+        start: startDay,
+        end: endDay,
+        received: Number(w.received || 0),
+        released: Number(w.released || 0),
+        remaining: Number(w.remaining || 0),
+      };
+    }
+
     res.json({
       total,
       received,
@@ -162,6 +220,9 @@ router.get(
       ready,
       released,
       unwashed,
+      in_shop: Math.max(0, total - released),
+      day: dayStats,
+      week: weekStats,
       employees,
       daily: dailyStats,
     });
@@ -192,9 +253,9 @@ function parseCarpetCreate(body: Record<string, unknown>): Partial<CarpetRow> {
     receiver_id = Number(body.receiver_id);
     if (!Number.isInteger(receiver_id)) throw new HttpError(422, 'receiver_id must be an integer');
   }
-  const expected_price = asOptFloat(body.expected_price, 'expected_price') ?? 0;
-  const cash_paid = asOptFloat(body.cash_paid, 'cash_paid') ?? 0;
-  const mpesa_paid = asOptFloat(body.mpesa_paid, 'mpesa_paid') ?? 0;
+  const expected_price = money(asOptFloat(body.expected_price, 'expected_price') ?? 0);
+  const cash_paid = money(asOptFloat(body.cash_paid, 'cash_paid') ?? 0);
+  const mpesa_paid = money(asOptFloat(body.mpesa_paid, 'mpesa_paid') ?? 0);
   for (const [k, v] of [
     ['expected_price', expected_price],
     ['cash_paid', cash_paid],
@@ -351,18 +412,18 @@ router.patch(
     if (body.characteristics !== undefined) put('characteristics', asOptStr(body.characteristics));
     if (body.client_name !== undefined) put('client_name', asOptStr(body.client_name));
     if (body.expected_price !== undefined) {
-      const v = asOptFloat(body.expected_price, 'expected_price');
-      if (v !== undefined && v < 0) throw new HttpError(422, 'expected_price must be >= 0');
+      const v = money(asOptFloat(body.expected_price, 'expected_price'));
+      if (v < 0) throw new HttpError(422, 'expected_price must be >= 0');
       put('expected_price', v);
     }
     if (body.cash_paid !== undefined) {
-      const v = asOptFloat(body.cash_paid, 'cash_paid');
-      if (v !== undefined && v < 0) throw new HttpError(422, 'cash_paid must be >= 0');
+      const v = money(asOptFloat(body.cash_paid, 'cash_paid'));
+      if (v < 0) throw new HttpError(422, 'cash_paid must be >= 0');
       put('cash_paid', v);
     }
     if (body.mpesa_paid !== undefined) {
-      const v = asOptFloat(body.mpesa_paid, 'mpesa_paid');
-      if (v !== undefined && v < 0) throw new HttpError(422, 'mpesa_paid must be >= 0');
+      const v = money(asOptFloat(body.mpesa_paid, 'mpesa_paid'));
+      if (v < 0) throw new HttpError(422, 'mpesa_paid must be >= 0');
       put('mpesa_paid', v);
     }
     if (body.customer_phone !== undefined) put('customer_phone', asOptStr(body.customer_phone));
@@ -404,14 +465,14 @@ router.post(
 
     const body = req.body || {};
     if (body.cash_paid !== undefined) {
-      const v = asOptFloat(body.cash_paid, 'cash_paid');
-      if (v !== undefined && v < 0) throw new HttpError(422, 'cash_paid must be >= 0');
-      if (v !== undefined) carpet.cash_paid = v;
+      const v = money(asOptFloat(body.cash_paid, 'cash_paid'));
+      if (v < 0) throw new HttpError(422, 'cash_paid must be >= 0');
+      carpet.cash_paid = v;
     }
     if (body.mpesa_paid !== undefined) {
-      const v = asOptFloat(body.mpesa_paid, 'mpesa_paid');
-      if (v !== undefined && v < 0) throw new HttpError(422, 'mpesa_paid must be >= 0');
-      if (v !== undefined) carpet.mpesa_paid = v;
+      const v = money(asOptFloat(body.mpesa_paid, 'mpesa_paid'));
+      if (v < 0) throw new HttpError(422, 'mpesa_paid must be >= 0');
+      carpet.mpesa_paid = v;
     }
     if (body.customer_phone !== undefined) carpet.customer_phone = asOptStr(body.customer_phone);
     if (body.client_name !== undefined) carpet.client_name = asOptStr(body.client_name);

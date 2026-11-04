@@ -6,6 +6,7 @@ import { ROLES } from '../types';
 import type { AuthRequest } from '../auth';
 import type { UserRow } from '../types';
 import { iso } from '../serialize';
+import { money } from '../finance';
 
 const router = Router();
 const M = ROLES.slice(0, 2); // ADMIN, MANAGER
@@ -44,7 +45,7 @@ async function collectEmployeeStats(emp: UserRow, scope: StatsScope): Promise<Re
   const wageBreakdown = daily.rows.map((d) => ({
     day: toUtcTimestamp(d.day).slice(0, 10),
     day_of_week: weekdayNameFromDate(d.day),
-    wages: Number(d.wages),
+    wages: money(d.wages),
   }));
 
   const debtSources = debtSrc.rows.map((t) => ({
@@ -52,15 +53,15 @@ async function collectEmployeeStats(emp: UserRow, scope: StatsScope): Promise<Re
     timestamp: iso(new Date(t.timestamp)),
     category: String(t.category).toLowerCase(),
     custom_category: t.custom_category,
-    expected_price: t.expected_price,
-    shortfall: t.shortfall,
+    expected_price: money(t.expected_price),
+    shortfall: money(t.shortfall),
     plate_number: t.plate_number,
   }));
 
   const miscItemsOut = miscItems.rows.map((t) => ({
     id: t.id,
     timestamp: iso(new Date(t.timestamp)),
-    amount: t.amount,
+    amount: money(t.amount),
     description: t.description,
     category: String(t.category).toLowerCase(),
     custom_category: t.custom_category,
@@ -72,15 +73,15 @@ async function collectEmployeeStats(emp: UserRow, scope: StatsScope): Promise<Re
     name: emp.full_name,
     abbreviation: emp.abbreviation,
     jobs_count: Number(jobs.rows[0].v),
-    revenue_generated: Number(rev.rows[0].v),
-    wages_earned: Number(wages.rows[0].v),
-    shortfall_total: Number(shortfall.rows[0].v),
+    revenue_generated: money(rev.rows[0].v),
+    wages_earned: money(wages.rows[0].v),
+    shortfall_total: money(shortfall.rows[0].v),
     wage_breakdown: wageBreakdown,
-    current_debt: emp.debt_balance,
-    payable_balance: emp.payable_balance,
+    current_debt: money(emp.debt_balance),
+    payable_balance: money(emp.payable_balance),
     service_counts: empCounts,
     debt_sources: debtSources,
-    misc_earned: Number(misc.rows[0].v),
+    misc_earned: money(misc.rows[0].v),
     misc_items: miscItemsOut,
     carpets_received: Number(received.rows[0].c),
     carpets_released: Number(released.rows[0].c),
@@ -136,12 +137,15 @@ router.get(
       pool.query(`SELECT COALESCE(SUM(amount - paid),0) AS v FROM client_debts`),
       pool.query(
         `SELECT users.full_name, users.abbreviation,
-                SUM(transactions.final_payout) AS wages,
-                SUM(GREATEST(transactions.final_payout,0)) AS gross,
-                SUM(ABS(LEAST(transactions.final_payout,0))) AS shortfall
-         FROM users JOIN transactions ON users.id = transactions.washer_id
-         WHERE ${day ? 'date(transactions.timestamp) = $1::date' : 'transactions.week_id = $1'}
-         GROUP BY users.id`,
+                COALESCE(SUM(transactions.final_payout),0) AS wages,
+                COALESCE(SUM(GREATEST(transactions.final_payout,0)),0) AS gross,
+                COALESCE(SUM(ABS(LEAST(transactions.final_payout,0))),0) AS shortfall
+         FROM users
+         LEFT JOIN transactions ON users.id = transactions.washer_id
+           AND ${day ? 'date(transactions.timestamp) = $1::date' : 'transactions.week_id = $1'}
+         WHERE users.role = 'EMPLOYEE'
+         GROUP BY users.id, users.full_name, users.abbreviation
+         ORDER BY users.full_name`,
         day ? [day] : [week_id],
       ),
     ]);
@@ -162,7 +166,7 @@ router.get(
     const miscItems = miscRows.rows.map((t: any) => ({
       id: t.id,
       timestamp: iso(new Date(t.timestamp)),
-      amount: t.amount,
+      amount: money(t.amount),
       description: t.description,
       category: String(t.category).toLowerCase(),
       custom_category: t.custom_category,
@@ -170,12 +174,12 @@ router.get(
       washer: t.washer_id ? nameOf[t.washer_id] ?? null : null,
     }));
 
-    const totalCashV = Number(totalCash.rows[0].v);
-    const totalMpesaV = Number(totalMpesa.rows[0].v);
-    const expensesV = Number(expenses.rows[0].v);
-    const laborV = Number(labor.rows[0].v);
-    const laborGross = Number(labor.rows[0].gross);
-    const laborWithheld = Number(labor.rows[0].withheld);
+    const totalCashV = money(totalCash.rows[0].v);
+    const totalMpesaV = money(totalMpesa.rows[0].v);
+    const expensesV = money(expenses.rows[0].v);
+    const laborV = money(labor.rows[0].v);
+    const laborGross = money(labor.rows[0].gross);
+    const laborWithheld = money(labor.rows[0].withheld);
     res.json({
       week_id,
       day: day ?? null,
@@ -189,19 +193,19 @@ router.get(
       total_labor_gross: laborGross,
       total_shortfall_withheld: laborWithheld,
       net_labor_wages: laborV,
-      total_revenue: Number(revenue.rows[0].v),
-      misc_total: Number(miscTotal.rows[0].v),
+      total_revenue: money(revenue.rows[0].v),
+      misc_total: money(miscTotal.rows[0].v),
       misc_items: miscItems,
       labor_breakdown: empLabor.rows.map((e: any) => ({
         name: e.full_name,
         abbreviation: e.abbreviation,
-        wages: Number(e.wages),
-        gross: Number(e.gross),
-        shortfall: Number(e.shortfall),
+        wages: money(e.wages),
+        gross: money(e.gross),
+        shortfall: money(e.shortfall),
       })),
       category_counts: categoryCounts,
-      total_debts: Number(totalDebt.rows[0].v),
-      total_client_debts: Number(clientDebt.rows[0].v),
+      total_debts: money(totalDebt.rows[0].v),
+      total_client_debts: money(clientDebt.rows[0].v),
     });
   }),
 );

@@ -38,6 +38,7 @@ export default function CarpetsPanel() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [weekOffset, setWeekOffset] = useState(0);
+  const [boardTab, setBoardTab] = useState<'board' | 'released'>('board');
   const [selectedDayIdx, setSelectedDayIdx] = useState(() => {
     const today = new Date();
     const start = startOfWeek(today, { weekStartsOn: 1 });
@@ -65,7 +66,7 @@ export default function CarpetsPanel() {
   const [releaseBusy, setReleaseBusy] = useState(false);
 
   // edit carpet fields
-  const [editModal, setEditModal] = useState<{ carpet: any; receiver_id: string; characteristics: string; client_name: string; customer_phone: string; expected_price: string; image: string; thumb: string } | null>(null);
+  const [editModal, setEditModal] = useState<{ carpet: any; receiver_id: string; characteristics: string; client_name: string; customer_phone: string; expected_price: string; status: string; image: string; thumb: string } | null>(null);
   const [editBusy, setEditBusy] = useState(false);
   const [editCompressing, setEditCompressing] = useState(false);
 
@@ -185,13 +186,25 @@ export default function CarpetsPanel() {
     if (!editModal) return;
     setEditBusy(true);
     try {
-      const { carpet, receiver_id, characteristics, client_name, customer_phone, expected_price, image, thumb } = editModal;
+      const { carpet, receiver_id, characteristics, client_name, customer_phone, expected_price, status, image, thumb } = editModal;
+      // Releasing needs the payment flow, so hand off to the release modal.
+      if (status === 'released' && carpet.status !== 'released') {
+        setEditModal(null);
+        setReleaseModal({
+          carpet,
+          cash: String(carpet.expected_price || ''),
+          mpesa: '',
+          washer: carpet.receiver_id ? String(carpet.receiver_id) : '',
+        });
+        return;
+      }
       const payload: any = {
         receiver_id: receiver_id || null,
         characteristics: characteristics || null,
         client_name: client_name || null,
         customer_phone: customer_phone || null,
         expected_price: toNum(expected_price),
+        status,
       };
       if (image) {
         payload.image_data = image;
@@ -237,6 +250,20 @@ export default function CarpetsPanel() {
     return d >= weekStart && d < weekEnd;
   };
   const tappedOn = (ts: string | null | undefined, key: string) => !!ts && keyOf(new Date(ts)) === key;
+
+  // Carpets handed over during the selected week, newest first.
+  const releasedThisWeek = carpets
+    .filter((c) => c.status === 'released' && inWeek(c.released_at))
+    .sort((a, b) => new Date(b.released_at).getTime() - new Date(a.released_at).getTime());
+  const releasedTotals = releasedThisWeek.reduce(
+    (acc, c) => {
+      acc.cash += Number(c.cash_paid || 0);
+      acc.mpesa += Number(c.mpesa_paid || 0);
+      acc.paid += Number(c.cash_paid || 0) + Number(c.mpesa_paid || 0);
+      return acc;
+    },
+    { cash: 0, mpesa: 0, paid: 0 },
+  );
 
   // Managers/admins get the full staff list; an employee only sees their own row.
   const statEmployees = (employees.length > 0
@@ -301,55 +328,27 @@ export default function CarpetsPanel() {
     { received: 0, washed: 0, dried: 0, ready: 0, released: 0, holding: 0, total: 0 },
   );
 
-  const nextStatusFor = (s: string): 'washed' | 'dried' | 'ready' | null =>
-    s === 'received' ? 'washed' : s === 'washed' ? 'dried' : s === 'dried' ? 'ready' : null;
-
-  const timeline = (c: any) => {
-    const cells: Array<[string, string | null]> = [
-      ['Received', c.created_at],
-      ['Washed', c.washed_at],
-      ['Dried', c.dried_at],
-      ['Ready', c.ready_at],
-      ['Released', c.released_at],
-    ];
-    return (
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-slate-500 dark:text-slate-400">
-        {cells.map(([label, ts]) => (
-          <span key={label}>
-            <span className="font-bold text-slate-400 dark:text-slate-500">{label}</span>{' '}
-            {ts ? format(new Date(ts), 'dd/MM HH:mm') : '—'}
-          </span>
-        ))}
-      </div>
-    );
-  };
-
-  const thumbs = (c: any) => (
-    <div className="flex gap-1">
-      {[c.image_thumb, c.image_washed_thumb, c.image_ready_thumb].map((src, i) => (
-        <div key={i} className="relative h-12 w-12 overflow-hidden rounded-lg border border-slate-200 bg-slate-100 dark:border-white/10 dark:bg-white/5">
-          {src ? (
-            <img
-              src={src}
-              alt=""
-              onClick={() => openPhoto(c)}
-              className="h-full w-full cursor-pointer object-cover"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-            />
-          ) : (
-            <span className="flex h-full w-full items-center justify-center text-slate-300 dark:text-slate-600"><ImageIcon size={14} /></span>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-
   if (loading) return <PageLoading label="Loading carpets..." />;
   if (error && carpets.length === 0) return <PageError message={error} onRetry={fetchCarpets} />;
 
   return (
     <div className="space-y-5">
       {error && <InlineError message={error} />}
+
+      {/* At-a-glance KPIs */}
+      <div className="stat-grid xl:grid-cols-4">
+        {[
+          { label: 'In the shop', value: carpets.filter((c) => c.status !== 'released').length, cls: 'text-brand-600 dark:text-brand-300' },
+          { label: 'Ready', value: readyCarpets.length, cls: 'text-emerald-600 dark:text-emerald-400' },
+          { label: 'Released', value: countFor('released'), cls: 'text-violet-600 dark:text-violet-300' },
+          { label: 'All records', value: carpets.length, cls: 'text-slate-900 dark:text-white' },
+        ].map((s) => (
+          <div key={s.label} className="stat-tile">
+            <p className="stat-label">{s.label}</p>
+            <p className={`stat-value ${s.cls}`}>{s.value}</p>
+          </div>
+        ))}
+      </div>
 
       {/* Carpet stats: Mon–Fri daily buttons + weekly breakdown */}
       <div className="card overflow-hidden">
@@ -506,41 +505,112 @@ export default function CarpetsPanel() {
         </div>
       </div>
 
-      {/* Ready for pickup banner */}
+      {/* Ready for pickup — plain table, no inline photos */}
       {readyCarpets.length > 0 && (
-        <div className="card-pad rounded-2xl border-l-4 border-emerald-500">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="section-title text-emerald-600 dark:text-emerald-400">Ready for pickup ({readyCarpets.length})</h2>
-              <p className="muted text-sm">Dry and ready — call the owners to come collect.</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {readyCarpets.slice(0, 5).map((c) => (
-                <div key={c.id} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-1.5 dark:border-white/10 dark:bg-white/5">
-                  {c.image_thumb && (
-                    <img
-                      src={c.image_thumb}
-                      alt=""
-                      className="h-8 w-8 rounded-lg object-cover"
-                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                    />
-                  )}
-                  <div className="text-xs">
-                    <p className="font-bold">{c.client_name || 'Client'}</p>
-                    <p className="text-slate-500">{c.characteristics || 'Carpet'}</p>
-                  </div>
-                  {c.customer_phone && (
-                    <a href={`tel:${c.customer_phone}`} className="ml-1 inline-flex items-center gap-1 rounded-lg bg-emerald-600 px-2 py-1 text-xs font-bold text-white hover:bg-emerald-700">
-                      <Phone size={12} /> Call
-                    </a>
-                  )}
-                  <button onClick={() => openPhoto(c)} className="ml-1 inline-flex items-center gap-1 rounded-lg bg-violet-600 px-2 py-1 text-xs font-bold text-white hover:bg-violet-700">
-                    View
-                  </button>
-                </div>
-              ))}
-              {readyCarpets.length > 5 && <span className="self-center text-xs text-slate-500">+{readyCarpets.length - 5} more</span>}
-            </div>
+        <div className="card overflow-hidden border-l-4 border-emerald-500">
+          <div className="border-b border-slate-200/80 px-5 py-3 dark:border-white/10">
+            <h2 className="section-title text-emerald-600 dark:text-emerald-400">Ready for pickup ({readyCarpets.length})</h2>
+            <p className="muted text-xs">Dry and ready — call the owners to come collect.</p>
+          </div>
+          <div className="table-wrap">
+            <table className="table-clean">
+              <thead>
+                <tr>
+                  <th>Carpet</th>
+                  <th>Client</th>
+                  <th>Phone</th>
+                  <th>Receiver</th>
+                  <th className="text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {readyCarpets.map((c) => (
+                  <tr key={c.id}>
+                    <td>
+                      <p className="font-bold">{c.characteristics || 'Carpet'}</p>
+                      <p className="text-[11px] font-mono text-slate-400">#{c.id}</p>
+                    </td>
+                    <td>{c.client_name || 'Client'}</td>
+                    <td>
+                      {c.customer_phone ? (
+                        <a href={`tel:${c.customer_phone}`} className="font-semibold text-brand-600 hover:underline dark:text-brand-300">{c.customer_phone}</a>
+                      ) : <span className="text-slate-400">—</span>}
+                    </td>
+                    <td className="text-xs">{empName(c.receiver_id) || 'Unassigned'}</td>
+                    <td>
+                      <div className="flex flex-wrap justify-end gap-1.5">
+                        {c.customer_phone && (
+                          <a href={`tel:${c.customer_phone}`} className="btn btn-sm bg-emerald-600 text-white hover:bg-emerald-700">
+                            <Phone size={12} /> Call
+                          </a>
+                        )}
+                        <button onClick={() => openPhoto(c)} className="btn-secondary btn-sm">View</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Released this week tab */}
+      <div className="flex items-center gap-2 mb-2">
+        <button
+          onClick={() => setBoardTab('board')}
+          className={`flex h-10 items-center justify-center rounded-xl border px-3 text-xs font-bold transition ${boardTab === 'board' ? 'border-brand-500 bg-brand-50 text-brand-700 dark:border-brand-500 dark:bg-brand-500/15 dark:text-brand-200' : 'border-slate-200 bg-white text-slate-600 hover:border-brand-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-300'}`}
+        >
+          Board
+        </button>
+        <button
+          onClick={() => setBoardTab('released')}
+          className={`flex h-10 items-center justify-center rounded-xl border px-3 text-xs font-bold transition ${boardTab === 'released' ? 'border-violet-500 bg-violet-50 text-violet-700 dark:border-violet-500 dark:bg-violet-500/15 dark:text-violet-200' : 'border-slate-200 bg-white text-slate-600 hover:border-violet-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-300'}`}
+        >
+          Released this week ({releasedThisWeek.length}) · Ksh {releasedTotals.paid} paid
+        </button>
+      </div>
+
+      {boardTab === 'released' && (
+        <div className="card overflow-hidden border-l-4 border-violet-500">
+          <div className="border-b border-slate-200/80 px-5 py-3 dark:border-white/10">
+            <h2 className="section-title text-violet-600 dark:text-violet-400">Released carpets — week of {format(weekStart, 'dd MMM yyyy')}</h2>
+            <p className="muted text-xs">Carps handed over to clients, when they left, who washed them, and what was paid.</p>
+          </div>
+          <div className="table-wrap">
+            <table className="table-clean">
+              <thead>
+                <tr>
+                  <th>Carpet</th>
+                  <th>Client</th>
+                  <th>Released</th>
+                  <th>Washer</th>
+                  <th className="text-right">Cash</th>
+                  <th className="text-right">M-Pesa</th>
+                  <th className="text-right">Paid</th>
+                </tr>
+              </thead>
+              <tbody>
+                {releasedThisWeek.length === 0 ? (
+                  <tr><td colSpan={7} className="py-6 text-center text-xs text-slate-400">No carpets released this week.</td></tr>
+                ) : (
+                  releasedThisWeek.map((c) => (
+                    <tr key={c.id}>
+                      <td>
+                        <p className="font-bold">{c.characteristics || 'Carpet'}</p>
+                        <p className="text-[11px] font-mono text-slate-400">#{c.id}</p>
+                      </td>
+                      <td>{c.client_name || 'Client'}</td>
+                      <td className="whitespace-nowrap text-xs">{c.released_at ? format(new Date(c.released_at), 'dd MMM HH:mm') : '—'}</td>
+                      <td className="text-xs">{c.washer_id ? (empName(c.washer_id) || `Staff #${c.washer_id}`) : '—'}</td>
+                      <td className="text-right font-mono">Ksh {Number(c.cash_paid || 0)}</td>
+                      <td className="text-right font-mono">Ksh {Number(c.mpesa_paid || 0)}</td>
+                      <td className="text-right font-mono text-bold">Ksh {Number(c.cash_paid || 0) + Number(c.mpesa_paid || 0)}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -552,11 +622,7 @@ export default function CarpetsPanel() {
             <button
               key={s}
               onClick={() => setFilter(s)}
-              className={`rounded-full px-3 py-1.5 text-xs font-bold capitalize transition ${
-                filter === s
-                  ? 'bg-brand-600 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
-              }`}
+              className={`chip capitalize ${filter === s ? 'chip-active' : ''}`}
             >
               {s === 'all' ? 'All' : STATUS_META[s].label}
               <span className={`ml-1.5 rounded-full px-1.5 text-[10px] ${filter === s ? 'bg-white/25' : 'bg-slate-200 text-slate-500 dark:bg-white/10 dark:text-slate-400'}`}>
@@ -568,11 +634,7 @@ export default function CarpetsPanel() {
             <button
               key={e.id}
               onClick={() => setEmployeeFilter(employeeFilter === e.id ? null : e.id)}
-              className={`rounded-full px-3 py-1.5 text-xs font-bold capitalize transition ${
-                employeeFilter === e.id
-                  ? 'bg-violet-600 text-white'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'
-              }`}
+              className={`chip capitalize ${employeeFilter === e.id ? 'chip-active' : ''}`}
             >
               {e.abbreviation || e.name.charAt(0).toUpperCase()}
               <span className={`ml-1.5 rounded-full px-1.5 text-[10px] ${employeeFilter === e.id ? 'bg-white/25' : 'bg-slate-200 text-slate-500 dark:bg-white/10 dark:text-slate-400'}`}>
@@ -586,101 +648,102 @@ export default function CarpetsPanel() {
         </button>
       </div>
 
-      {/* Table */}
-      <div className="card-pad overflow-x-auto rounded-2xl">
+      {/* Carpet list — plain table; photos open in the viewer */}
+      <div className="card overflow-hidden">
         {filtered.length === 0 ? (
-          <p className="py-10 text-center text-sm text-slate-400">No carpets{filter !== 'all' ? ` ${STATUS_META[filter].label.toLowerCase()}` : ''} right now.</p>
+          <p className="px-4 py-10 text-center text-sm text-slate-400">
+            No carpets{filter !== 'all' ? ` ${STATUS_META[filter].label.toLowerCase()}` : ''} right now.
+          </p>
         ) : (
-          <table className="w-full text-left text-sm">
-            <thead>
-              <tr className="border-b border-slate-200/80 text-xs uppercase tracking-wider text-slate-400 dark:border-white/10">
-                <th className="py-2 pr-3">Photos</th>
-                <th className="py-2 pr-3">Carpet</th>
-                <th className="py-2 pr-3">Client</th>
-                <th className="py-2 pr-3">Status</th>
-                <th className="py-2 pr-3">Timeline</th>
-                <th className="py-2 pr-3 text-right">Price</th>
-                <th className="py-2 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((c) => (
-                <tr key={c.id} className="border-b border-slate-200/70 dark:border-white/10">
-                  <td className="py-3 pr-3">{thumbs(c)}</td>
-                  <td className="py-3 pr-3">
-                    <p className="font-semibold">{c.characteristics || 'Carpet'}</p>
-                    <p className="text-xs text-slate-400">#{c.id} · receiver {empName(c.receiver_id) || '—'}</p>
-                  </td>
-                  <td className="py-3 pr-3">
-                    {c.client_name ? <p className="font-medium">{c.client_name}</p> : <p className="text-slate-400">—</p>}
-                    {c.customer_phone ? (
-                      <a href={`tel:${c.customer_phone}`} className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline dark:text-brand-300">
-                        <Phone size={11} /> {c.customer_phone}
-                      </a>
-                    ) : null}
-                  </td>
-                  <td className="py-3 pr-3">
-                    <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-bold ${STATUS_META[c.status as Status]?.cls || ''}`}>
-                      {STATUS_META[c.status as Status]?.label || c.status}
-                    </span>
-                  </td>
-                  <td className="py-3 pr-3">{timeline(c)}</td>
-                  <td className="py-3 pr-3 text-right font-mono">
-                    <div>Ksh {c.expected_price}</div>
-                    <div className="text-xs text-slate-400">paid {c.cash_paid + c.mpesa_paid}</div>
-                  </td>
-                  <td className="py-3 text-right">
-                    <div className="flex flex-wrap justify-end gap-1">
-                      {canManage && (
-                        <>
-                          {c.status === 'received' && (
-                            <button onClick={() => setStatusModal({ carpet: c, status: 'washed', image: '', thumb: '' })}
-                              className="rounded-lg bg-amber-600 px-2 py-1 text-xs font-bold text-white hover:bg-amber-700">Wash</button>
-                          )}
-                          {c.status === 'washed' && (
-                            <button onClick={() => setStatusModal({ carpet: c, status: 'dried', image: '', thumb: '' })}
-                              className="rounded-lg bg-cyan-600 px-2 py-1 text-xs font-bold text-white hover:bg-cyan-700">Dry</button>
-                          )}
-                          {c.status === 'dried' && (
-                            <button onClick={() => setStatusModal({ carpet: c, status: 'ready', image: '', thumb: '' })}
-                              className="rounded-lg bg-emerald-600 px-2 py-1 text-xs font-bold text-white hover:bg-emerald-700">Ready</button>
-                          )}
-                          {c.status !== 'released' && (
-                            <>
-                              <button onClick={() => setReleaseModal({ carpet: c, cash: String(c.expected_price || ''), mpesa: '', washer: '' })}
-                                className="rounded-lg bg-blue-600 px-2 py-1 text-xs font-bold text-white hover:bg-blue-700">Release</button>
-                              {nextStatusFor(c.status) && (
-                                <button onClick={() => setStatusModal({ carpet: c, status: nextStatusFor(c.status)!, image: '', thumb: '' })}
-                                  className="rounded-lg bg-slate-200 px-2 py-1 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-white/10 dark:text-slate-200">Status</button>
-                              )}
-                            </>
-                          )}
-                        </>
-                      )}
-                      <button onClick={() => openPhoto(c)}
-                        className="rounded-lg bg-violet-600 px-2 py-1 text-xs font-bold text-white hover:bg-violet-700">View</button>
-                      {canManage && (
-                        <>
-                          <button onClick={() => setEditModal({
-                            carpet: c,
-                            receiver_id: String(c.receiver_id || ''),
-                            characteristics: c.characteristics || '',
-                            client_name: c.client_name || '',
-                            customer_phone: c.customer_phone || '',
-                            expected_price: String(c.expected_price || ''),
-                            image: c.image_data || '',
-                            thumb: c.image_thumb || '',
-                          })}
-                            className="rounded-lg bg-indigo-600 px-2 py-1 text-xs font-bold text-white hover:bg-indigo-700">Edit</button>
-                          <button onClick={() => deleteCarpet(c)} className="rounded-lg bg-red-600 px-2 py-1 text-xs font-bold text-white hover:bg-red-700"><Trash2 size={12} /></button>
-                        </>
-                      )}
-                    </div>
-                  </td>
+          <div className="table-wrap">
+            <table className="table-clean">
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Carpet</th>
+                  <th>Client</th>
+                  <th>Receiver</th>
+                  <th>Status</th>
+                  <th className="text-right">Expected</th>
+                  <th className="text-right">Paid</th>
+                  <th>Received</th>
+                  <th className="text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {filtered.map((c) => (
+                  <tr key={c.id}>
+                    <td className="font-mono text-xs text-slate-400">#{c.id}</td>
+                    <td>
+                      <p className="font-bold">{c.characteristics || 'Carpet'}</p>
+                      <p className="text-[11px] text-slate-400">{c.is_washed ? 'Washed' : 'Not washed'}</p>
+                    </td>
+                    <td>
+                      <p className="font-medium">{c.client_name || '—'}</p>
+                      {c.customer_phone && (
+                        <a href={`tel:${c.customer_phone}`} className="inline-flex items-center gap-1 text-[11px] font-semibold text-brand-600 hover:underline dark:text-brand-300">
+                          <Phone size={10} /> {c.customer_phone}
+                        </a>
+                      )}
+                    </td>
+                    <td className="text-xs">{empName(c.receiver_id) || 'Unassigned'}</td>
+                    <td>
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold ${STATUS_META[c.status as Status]?.cls || ''}`}>
+                        {STATUS_META[c.status as Status]?.label || c.status}
+                      </span>
+                    </td>
+                    <td className="text-right font-mono">Ksh {Number(c.expected_price || 0)}</td>
+                    <td className="text-right font-mono">Ksh {Number(c.cash_paid || 0) + Number(c.mpesa_paid || 0)}</td>
+                    <td className="whitespace-nowrap text-xs">{format(new Date(c.created_at), 'dd MMM HH:mm')}</td>
+                    <td>
+                      <div className="flex flex-wrap justify-end gap-1.5">
+                        {canManage && (
+                          <>
+                            {c.status === 'received' && (
+                              <button onClick={() => setStatusModal({ carpet: c, status: 'washed', image: '', thumb: '' })}
+                                className="btn btn-sm bg-amber-600 text-white hover:bg-amber-700">Wash</button>
+                            )}
+                            {c.status === 'washed' && (
+                              <button onClick={() => setStatusModal({ carpet: c, status: 'dried', image: '', thumb: '' })}
+                                className="btn btn-sm bg-cyan-600 text-white hover:bg-cyan-700">Dry</button>
+                            )}
+                            {c.status === 'dried' && (
+                              <button onClick={() => setStatusModal({ carpet: c, status: 'ready', image: '', thumb: '' })}
+                                className="btn btn-sm bg-emerald-600 text-white hover:bg-emerald-700">Ready</button>
+                            )}
+                            {c.status !== 'released' && (
+                              <button onClick={() => setReleaseModal({ carpet: c, cash: String(c.expected_price || ''), mpesa: '', washer: '' })}
+                                className="btn btn-sm bg-blue-600 text-white hover:bg-blue-700">Release</button>
+                            )}
+                          </>
+                        )}
+                        <button onClick={() => openPhoto(c)} className="btn-secondary btn-sm">View</button>
+                        {canManage && (
+                          <>
+                            <button onClick={() => setEditModal({
+                              carpet: c,
+                              receiver_id: String(c.receiver_id || ''),
+                              characteristics: c.characteristics || '',
+                              client_name: c.client_name || '',
+                              customer_phone: c.customer_phone || '',
+                              expected_price: String(c.expected_price || ''),
+                              status: c.status || 'received',
+                              image: c.image_data || '',
+                              thumb: c.image_thumb || '',
+                            })} className="btn-ghost btn-sm">Edit</button>
+                            <button onClick={() => deleteCarpet(c)} aria-label="Delete carpet"
+                              className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-300">
+                              <Trash2 size={14} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
 
@@ -844,7 +907,8 @@ export default function CarpetsPanel() {
                 <select className="input-base" value={releaseModal.washer}
                   onChange={(e) => setReleaseModal({ ...releaseModal, washer: e.target.value })}>
                   <option value="">{releaseModal.carpet.receiver_id ? empName(releaseModal.carpet.receiver_id) || 'Receiver' : 'Pick a washer...'}</option>
-                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                  {employees.length === 0 && <option value="" disabled>No staff loaded</option>}
+                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name || e.full_name}</option>)}
                 </select>
               </label>
             </div>
@@ -868,8 +932,22 @@ export default function CarpetsPanel() {
             </div>
             <div className="rounded-xl bg-slate-50 p-3 text-sm dark:bg-white/5">
               <p className="font-semibold">{editModal.carpet.characteristics || 'Carpet'} #{editModal.carpet.id}</p>
-              <p className="text-xs text-slate-500">Status: {STATUS_META[editModal.carpet.status as Status]?.label}</p>
+              <p className="text-xs text-slate-500">Current status: {STATUS_META[editModal.carpet.status as Status]?.label}</p>
             </div>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold">Status</span>
+              <select className="input-base" value={editModal.status}
+                onChange={(e) => setEditModal({ ...editModal, status: e.target.value })}>
+                {STATUS_FLOW.map((s) => (
+                  <option key={s} value={s}>{STATUS_META[s].label}</option>
+                ))}
+              </select>
+              {editModal.status === 'released' && editModal.carpet.status !== 'released' && (
+                <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                  Choosing Released opens the release form so you can record the payment and washer.
+                </p>
+              )}
+            </label>
             <label className="block">
               <span className="mb-1 block text-sm font-semibold">Carpet photo</span>
               <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Take a new photo or choose one from your gallery / files.</p>
@@ -900,7 +978,8 @@ export default function CarpetsPanel() {
               <select className="input-base" value={editModal.receiver_id}
                 onChange={(e) => setEditModal({ ...editModal, receiver_id: e.target.value })}>
                 <option value="">Unassigned</option>
-                {employees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                {employees.length === 0 && <option value="" disabled>No staff loaded</option>}
+                {employees.map((e) => <option key={e.id} value={e.id}>{e.name || e.full_name}</option>)}
               </select>
             </label>
             <label className="block">

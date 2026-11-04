@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { pool, queryOne } from '../db';
 import { HttpError, getCurrentWeekId, isoWeekRange, WEEK_ID_RE, wrap } from '../utils';
 import { requireRole } from '../auth';
+import { money } from '../finance';
 import { ROLES } from '../types';
 import type { AuthRequest } from '../auth';
 import type { WeeklyLogRow, UserRow, DebtRow } from '../types';
@@ -69,13 +70,13 @@ router.post(
           'SELECT COALESCE(SUM(final_payout), 0) AS v FROM transactions WHERE week_id = $1 AND washer_id = $2',
           [weekId, emp.id],
         );
-        const wages = Number(wagesRes.rows[0].v);
+        const wages = money(wagesRes.rows[0].v);
         const tipsRes = await client.query(
           "SELECT COALESCE(SUM(amount), 0) AS v FROM tips WHERE week_id = $1 AND employee_id = $2 AND method = 'WAGES'",
           [weekId, emp.id],
         );
-        const tipsWages = Number(tipsRes.rows[0].v);
-        const wagesTotal = wages + tipsWages;
+        const tipsWages = money(tipsRes.rows[0].v);
+        const wagesTotal = money(wages + tipsWages);
         laborFromTxs += wages;
 
         const openRes = await client.query(
@@ -83,14 +84,14 @@ router.post(
           [emp.id],
         );
         const open = openRes.rows as Pick<DebtRow, 'id' | 'amount' | 'paid'>[];
-        const owed = open.reduce((s, d) => s + (d.amount - d.paid), 0);
+        const owed = money(open.reduce((s, d) => s + (d.amount - d.paid), 0));
 
         let covered = 0;
         if (wagesTotal > 0) {
           covered = Math.min(wagesTotal, owed);
         }
         // Negative wages become new debt; any unpaid debt carries forward.
-        const carry = owed - covered + Math.max(0, -wagesTotal);
+        const carry = money(owed - covered + Math.max(0, -wagesTotal));
         const cashPay = wagesTotal; // negative means the employee owes the company
 
         if (covered > 0) {
@@ -142,9 +143,9 @@ router.post(
         'SELECT COALESCE(SUM(amount), 0) AS v FROM expenses WHERE week_id = $1',
         [weekId],
       );
-      const revenue = Number(rev.rows[0].v);
-      const expenses = Number(exp.rows[0].v);
-      const totalProfit = revenue - expenses - laborFromTxs;
+      const revenue = money(rev.rows[0].v);
+      const expenses = money(exp.rows[0].v);
+      const totalProfit = money(revenue - expenses - laborFromTxs);
 
       const dataJson = JSON.stringify({
         employees: perEmployee,

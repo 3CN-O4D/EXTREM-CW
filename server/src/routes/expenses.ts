@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool, queryOne } from '../db';
 import { HttpError, getCurrentWeekId, validateDay, wrap } from '../utils';
-import { asFloat, asOptStr } from '../finance';
+import { asFloat, asOptStr, money } from '../finance';
 import { requireRole } from '../auth';
 import { ROLES } from '../types';
 import type { AuthRequest } from '../auth';
@@ -19,7 +19,7 @@ router.post(
     const body = req.body || {};
     const description = asOptStr(body.description);
     if (description === null) throw new HttpError(422, 'description is required');
-    const amount = asFloat(body.amount, 'amount');
+    const amount = money(asFloat(body.amount, 'amount'));
     if (amount < 0) throw new HttpError(422, 'amount must be >= 0');
     const category = asOptStr(body.category) ?? 'Other';
 
@@ -93,7 +93,7 @@ router.put(
       sets.push(`description = $${params.length}`);
     }
     if (body.amount !== undefined) {
-      const a = asFloat(body.amount, 'amount');
+      const a = money(asFloat(body.amount, 'amount'));
       if (a < 0) throw new HttpError(422, 'amount must be >= 0');
       params.push(a);
       sets.push(`amount = $${params.length}`);

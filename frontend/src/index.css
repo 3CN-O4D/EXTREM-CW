@@ -7,7 +7,7 @@
 @layer base {
   :root {
     color-scheme: light;
-    --background: #ffffff;
+    --background: #f6f8fb;
     --foreground: #0f172a;
   }
 
@@ -20,6 +20,7 @@
   html {
     scroll-behavior: smooth;
     -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
   }
 
   body {
@@ -27,10 +28,25 @@
     background-color: var(--background);
     color: var(--foreground);
     font-family: 'Manrope', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    text-rendering: optimizeLegibility;
   }
 
   ::selection {
     @apply bg-brand-400/30 text-inherit;
+  }
+
+  /* iOS zooms any focused field under 16px — keep fields readable and zoom-free. */
+  @media (max-width: 640px) {
+    input,
+    select,
+    textarea {
+      font-size: 16px !important;
+    }
+  }
+
+  :focus-visible {
+    outline: 2px solid theme('colors.brand.500');
+    outline-offset: 2px;
   }
 
   /* Slim, unobtrusive scrollbars */
@@ -39,8 +55,8 @@
     scrollbar-color: rgb(148 163 184 / 0.4) transparent;
   }
   *::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 6px;
+    height: 6px;
   }
   *::-webkit-scrollbar-thumb {
     @apply rounded-full bg-slate-400/40;
@@ -51,36 +67,177 @@
 }
 
 @layer components {
+  /* ---------- Surfaces ---------- */
   .card {
-    @apply rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900/60;
+    @apply rounded-2xl border border-slate-200/80 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900/70;
   }
 
   .card-pad {
-    @apply rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm dark:border-white/10 dark:bg-slate-900/60 sm:p-6;
+    @apply rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900/70 sm:p-5;
   }
 
-  .input-base {
-    @apply w-full rounded-xl border border-slate-300 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-white/10 dark:bg-slate-800/70 dark:text-white dark:placeholder:text-slate-500;
+  .row-card {
+    @apply rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm transition dark:border-white/10 dark:bg-slate-900/70 sm:p-4;
   }
 
-  .btn-primary {
-    @apply inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-brand-500 to-cyan-500 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-brand-500/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60;
+  .section-head {
+    @apply flex flex-wrap items-end justify-between gap-3;
   }
 
-  .btn-secondary {
-    @apply inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10;
+  .eyebrow {
+    @apply text-[10px] font-extrabold uppercase tracking-[0.2em] text-brand-600 dark:text-brand-300;
   }
 
   .section-title {
-    @apply text-xl font-black tracking-tight text-slate-900 dark:text-white sm:text-2xl;
+    @apply text-lg font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-xl;
   }
 
   .muted {
     @apply text-slate-500 dark:text-slate-400;
   }
+
+  /* ---------- Buttons: 44px touch target on mobile ---------- */
+  .btn {
+    @apply inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl px-4 text-sm font-bold transition-all duration-150 active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50 sm:min-h-[40px];
+  }
+
+  .btn-primary {
+    @apply btn bg-brand-600 text-white shadow-sm shadow-brand-600/20 hover:bg-brand-700;
+  }
+
+  .btn-secondary {
+    @apply btn border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-white/10 dark:bg-white/5 dark:text-slate-200 dark:hover:bg-white/10;
+  }
+
+  .btn-ghost {
+    @apply btn text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-white/10;
+  }
+
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-700;
+  }
+
+  .btn-success {
+    @apply btn bg-emerald-600 text-white hover:bg-emerald-700;
+  }
+
+  .btn-sm {
+    @apply min-h-[36px] px-3 text-xs sm:min-h-[34px];
+  }
+
+  .btn-icon {
+    @apply inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 active:scale-95 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10;
+  }
+
+  /* Compact translucent button for use on photos/gradients */
+  .btn-on-dark {
+    @apply inline-flex items-center gap-2 rounded-full border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-bold text-white backdrop-blur transition hover:bg-white/20;
+  }
+
+  /* ---------- Inputs ---------- */
+  .input-base {
+    @apply w-full min-h-[44px] rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 dark:border-white/10 dark:bg-slate-800/70 dark:text-white dark:placeholder:text-slate-500 sm:min-h-[40px];
+  }
+
+  .input-sm {
+    @apply min-h-[38px] rounded-lg px-2.5 py-2 text-xs sm:min-h-[34px];
+  }
+
+  .label {
+    @apply mb-1.5 block text-xs font-bold text-slate-600 dark:text-slate-300;
+  }
+
+  /* ---------- Chips / segmented controls ---------- */
+  .chip {
+    @apply inline-flex min-h-[36px] shrink-0 items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-brand-300 hover:text-brand-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:text-white;
+  }
+
+  .chip-active {
+    @apply border-brand-600 bg-brand-600 text-white hover:border-brand-600 hover:text-white dark:border-brand-500 dark:bg-brand-600 dark:text-white;
+  }
+
+  .chip-soft {
+    @apply border-transparent bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-300;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hscroll {
+    @apply flex snap-x snap-mandatory gap-1.5 overflow-x-auto pb-1 no-scrollbar;
+  }
+
+  /* ---------- Stats ---------- */
+  .stat-grid {
+    @apply grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-4;
+  }
+
+  .stat-tile {
+    @apply rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-slate-900/70;
+  }
+
+  .stat-label {
+    @apply truncate text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-400 dark:text-slate-500;
+  }
+
+  .stat-value {
+    @apply mt-0.5 truncate text-base font-extrabold tracking-tight text-slate-900 dark:text-white sm:text-lg;
+  }
+
+  /* ---------- Tables ---------- */
+  .table-wrap {
+    @apply -mx-4 overflow-x-auto px-4 sm:mx-0 sm:px-0;
+  }
+
+  .table-clean {
+    @apply w-full min-w-[720px] border-collapse text-left text-sm;
+  }
+
+  .table-clean thead th {
+    @apply whitespace-nowrap border-b border-slate-200/80 bg-slate-50/80 px-3 py-2 text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-slate-400;
+  }
+
+  .table-clean tbody td {
+    @apply border-b border-slate-100 px-3 py-2.5 align-middle dark:border-white/5;
+  }
+
+  .table-clean tbody tr:hover {
+    @apply bg-slate-50/70 dark:bg-white/[0.03];
+  }
+
+  /* ---------- Bottom navigation (mobile) ---------- */
+  .bottom-nav {
+    padding-bottom: env(safe-area-inset-bottom);
+    @apply fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/80 bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/90 lg:hidden;
+  }
+
+  .bottom-nav-item {
+    @apply flex min-h-[56px] flex-1 flex-col items-center justify-center gap-0.5 px-1 text-[10px] font-bold text-slate-500 transition dark:text-slate-400;
+  }
+
+  .bottom-nav-item-active {
+    @apply text-brand-600 dark:text-brand-300;
+  }
+
+  .bottom-nav-pill {
+    @apply flex h-7 w-12 items-center justify-center rounded-full transition;
+  }
+
+  .bottom-nav-item-active .bottom-nav-pill {
+    @apply bg-brand-50 dark:bg-brand-500/15;
+  }
 }
 
 @layer utilities {
+  .pb-safe {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 0.5rem);
+  }
+
   .bg-grid {
     background-image:
       linear-gradient(to right, rgb(255 255 255 / 0.04) 1px, transparent 1px),
@@ -115,6 +272,7 @@
   }
   aside,
   header,
+  .bottom-nav,
   .print\:hidden {
     display: none !important;
   }

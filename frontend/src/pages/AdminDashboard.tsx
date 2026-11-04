@@ -167,22 +167,37 @@ export default function AdminDashboard() {
     ? `${format(selectedDay, 'EEEE, dd MMM yyyy')}`
     : `Week of ${format(weekStart, 'dd MMM')} — ${format(addDays(weekStart, 6), 'dd MMM yyyy')} (${weekId})`;
 
-  const statCards = [
-    { title: 'Cash received', value: `Ksh ${summary.total_cash_received}`, icon: <Wallet size={15} />, cls: 'from-sky-500 to-blue-600' },
-    { title: 'M-Pesa received', value: `Ksh ${mpesaTotal}`, icon: <Banknote size={15} />, cls: 'from-brand-500 to-cyan-600' },
-    { title: 'Total revenue', value: `Ksh ${summary.total_revenue}`, icon: <TrendingUp size={15} />, cls: 'from-emerald-500 to-teal-600' },
-    { title: 'Expenses', value: `Ksh ${summary.total_expenses}`, icon: <ReceiptText size={15} />, cls: 'from-red-500 to-rose-600' },
-    { title: 'Net Cash', value: `Ksh ${summary.total_cash_received - summary.total_expenses}`, icon: <Wallet size={15} />, cls: (summary.total_cash_received - summary.total_expenses) >= 0 ? 'from-green-500 to-emerald-600' : 'from-red-500 to-rose-600' },
-    { title: 'Balance', value: `Ksh ${summary.balance}`, icon: <Coins size={15} />, cls: (summary.balance ?? 0) >= 0 ? 'from-green-500 to-emerald-600' : 'from-red-500 to-rose-600' },
-    { title: 'Jobs', value: totalJobs, icon: <Car size={15} />, cls: 'from-cyan-500 to-sky-600' },
-    { title: 'Labor (gross)', value: `Ksh ${summary.total_labor_gross ?? summary.total_labor_expense}`, icon: <PiggyBank size={15} />, cls: 'from-violet-500 to-purple-600' },
-    { title: 'Shortfall withheld', value: `Ksh ${summary.total_shortfall_withheld ?? 0}`, icon: <PiggyBank size={15} />, cls: 'from-red-500 to-rose-600' },
-    { title: 'Net wages', value: `Ksh ${summary.net_labor_wages ?? summary.total_labor_expense}`, icon: <PiggyBank size={15} />, cls: 'from-violet-500 to-purple-600' },
-    { title: 'Employee debts', value: `Ksh ${summary.total_debts}`, icon: <PiggyBank size={15} />, cls: 'from-orange-500 to-amber-600' },
-    { title: 'Client debts', value: `Ksh ${summary.total_client_debts ?? 0}`, icon: <PiggyBank size={15} />, cls: 'from-rose-500 to-pink-600' },
-    { title: 'Debtors', value: debtors.length, icon: <Users size={15} />, cls: 'from-fuchsia-500 to-pink-600' },
-    { title: 'Repayments', value: `Ksh ${repayments.reduce((s, r) => s + r.amount, 0)}`, icon: <Coins size={15} />, cls: 'from-teal-500 to-emerald-600' },
-    { title: 'Misc income', value: `Ksh ${summary.misc_total ?? 0}`, icon: <Sparkles size={15} />, cls: 'from-indigo-500 to-blue-600' },
+  const statGroups = [
+    {
+      label: 'Money in',
+      items: [
+        { title: 'Cash received', value: `Ksh ${summary.total_cash_received}`, icon: <Wallet size={14} />, cls: 'text-sky-600 dark:text-sky-400' },
+        { title: 'M-Pesa received', value: `Ksh ${mpesaTotal}`, icon: <Banknote size={14} />, cls: 'text-brand-600 dark:text-brand-300' },
+        { title: 'Total revenue', value: `Ksh ${summary.total_revenue}`, icon: <TrendingUp size={14} />, cls: 'text-emerald-600 dark:text-emerald-400' },
+        { title: 'Misc income', value: `Ksh ${summary.misc_total ?? 0}`, icon: <Sparkles size={14} />, cls: 'text-indigo-600 dark:text-indigo-300' },
+      ],
+    },
+    {
+      label: 'Money out & profit',
+      items: [
+        { title: 'Expenses', value: `Ksh ${summary.total_expenses}`, icon: <ReceiptText size={14} />, cls: 'text-red-600 dark:text-red-400' },
+        { title: 'Labor (gross)', value: `Ksh ${summary.total_labor_gross ?? summary.total_labor_expense}`, icon: <PiggyBank size={14} />, cls: 'text-violet-600 dark:text-violet-300' },
+        { title: 'Shortfall withheld', value: `Ksh ${summary.total_shortfall_withheld ?? 0}`, icon: <PiggyBank size={14} />, cls: 'text-red-600 dark:text-red-400' },
+        { title: 'Net wages', value: `Ksh ${summary.net_labor_wages ?? summary.total_labor_expense}`, icon: <PiggyBank size={14} />, cls: 'text-violet-600 dark:text-violet-300' },
+        { title: 'Net cash', value: `Ksh ${summary.total_cash_received - summary.total_expenses}`, icon: <Wallet size={14} />, cls: (summary.total_cash_received - summary.total_expenses) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' },
+        { title: 'Balance', value: `Ksh ${summary.balance}`, icon: <Coins size={14} />, cls: (summary.balance ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400' },
+      ],
+    },
+    {
+      label: 'Operations',
+      items: [
+        { title: 'Jobs', value: totalJobs, icon: <Car size={14} />, cls: 'text-slate-900 dark:text-white' },
+        { title: 'Employee debts', value: `Ksh ${summary.total_debts}`, icon: <PiggyBank size={14} />, cls: 'text-orange-600 dark:text-orange-400' },
+        { title: 'Client debts', value: `Ksh ${summary.total_client_debts ?? 0}`, icon: <PiggyBank size={14} />, cls: 'text-rose-600 dark:text-rose-400' },
+        { title: 'Debtors', value: debtors.length, icon: <Users size={14} />, cls: 'text-fuchsia-600 dark:text-fuchsia-400' },
+        { title: 'Repayments', value: `Ksh ${repayments.reduce((s, r) => s + r.amount, 0)}`, icon: <Coins size={14} />, cls: 'text-teal-600 dark:text-teal-400' },
+      ],
+    },
   ];
 
   return (
@@ -268,12 +283,22 @@ export default function AdminDashboard() {
         ))}
       </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-        {statCards.map(s => (
-          <StatCard key={s.title} title={s.title} value={s.value} icon={s.icon} cls={s.cls} />
+      {/* Stats, grouped so the numbers read in a sensible order */}
+      <section className="card-pad space-y-4">
+        {statGroups.map(group => (
+          <div key={group.label}>
+            <div className="mb-2 flex items-center gap-2">
+              <h2 className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-slate-400">{group.label}</h2>
+              <span className="h-px flex-1 bg-slate-100 dark:bg-white/10" />
+            </div>
+            <div className="stat-grid xl:grid-cols-4">
+              {group.items.map(s => (
+                <StatCard key={s.title} title={s.title} value={s.value} icon={s.icon} cls={s.cls} />
+              ))}
+            </div>
+          </div>
         ))}
-      </div>
+      </section>
 
       {/* Quick actions */}
       <div className="flex flex-wrap gap-2 print:hidden">
@@ -734,13 +759,12 @@ export default function AdminDashboard() {
 
 function StatCard({ title, value, icon, cls }: any) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-br ${cls} p-4 text-white shadow-lg`}>
-      <div className="absolute -right-4 -top-6 h-20 w-20 rounded-full bg-white/10" />
-      <div className="relative flex items-center justify-between gap-2">
-        <span className="truncate text-[10px] font-bold uppercase tracking-[0.18em] text-white/70">{title}</span>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white/15">{icon}</span>
+    <div className="stat-tile">
+      <div className="flex items-center gap-1.5">
+        <span className="shrink-0 text-slate-400 dark:text-slate-500">{icon}</span>
+        <span className="stat-label">{title}</span>
       </div>
-      <div className="relative mt-2 truncate text-xl font-black tracking-tight sm:text-2xl">{value}</div>
+      <p className={`mt-1 truncate text-base font-extrabold tracking-tight sm:text-lg ${cls}`}>{value}</p>
     </div>
   );
 }

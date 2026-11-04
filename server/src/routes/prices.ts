@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool, queryOne } from '../db';
 import { HttpError, wrap } from '../utils';
-import { asFloat, asOptFloat, asOptStr, asBool } from '../finance';
+import { asFloat, asOptFloat, asOptStr, asBool, money } from '../finance';
 import { requireRole, getCurrentUser } from '../auth';
 import { ROLES } from '../types';
 import type { AuthRequest } from '../auth';
@@ -38,8 +38,10 @@ router.put(
       throw new HttpError(404, 'Unknown category');
     }
     const body = req.body || {};
-    const min_price = asOptFloat(body.min_price, 'min_price');
-    const max_price = asOptFloat(body.max_price, 'max_price');
+    const min_price_raw = asOptFloat(body.min_price, 'min_price');
+    const max_price_raw = asOptFloat(body.max_price, 'max_price');
+    const min_price = min_price_raw === undefined ? undefined : money(min_price_raw);
+    const max_price = max_price_raw === undefined ? undefined : money(max_price_raw);
     const commission_percent = asOptFloat(body.commission_percent, 'commission_percent');
     const is_active = asBool(body.is_active, 'is_active');
 

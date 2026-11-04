@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool, queryOne } from '../db';
 import { HttpError, getCurrentWeekId, validateDay, wrap } from '../utils';
-import { asFloat, asInt } from '../finance';
+import { asFloat, asInt, money } from '../finance';
 import { requireRole, getCurrentUser } from '../auth';
 import { ROLES } from '../types';
 import type { AuthRequest } from '../auth';
@@ -56,7 +56,7 @@ router.post(
     await requireRole(req, M);
     const body = req.body || {};
     const employee_id = asInt(body.employee_id, 'employee_id');
-    const amount = asFloat(body.amount, 'amount');
+    const amount = money(asFloat(body.amount, 'amount'));
     if (amount < 0) throw new HttpError(422, 'amount must be >= 0');
 
     const employee = await queryOne<UserRow>('SELECT * FROM users WHERE id = $1', [employee_id]);

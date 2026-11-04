@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool, queryOne } from '../db';
 import { HttpError, wrap } from '../utils';
-import { asFloat, asOptStr, asOptFloat } from '../finance';
+import { asFloat, asOptStr, asOptFloat, money } from '../finance';
 import { requireRole, getCurrentUser } from '../auth';
 import { ROLES } from '../types';
 import type { AuthRequest } from '../auth';
@@ -57,9 +57,9 @@ router.post(
     if (employee_id === null && (!other_name || !other_name.trim())) {
       throw new HttpError(422, 'choose an employee or enter a debtor name');
     }
-    const amount = asFloat(body.amount, 'amount');
+    const amount = money(asFloat(body.amount, 'amount'));
     if (amount < 0) throw new HttpError(422, 'amount must be >= 0');
-    const paid = asOptFloat(body.paid, 'paid') ?? 0;
+    const paid = money(asOptFloat(body.paid, 'paid') ?? 0);
     if (paid < 0) throw new HttpError(422, 'paid must be >= 0');
     const service = asOptStr(body.service);
     const notes = asOptStr(body.notes);
@@ -121,9 +121,9 @@ router.put(
     }
 
     const body = req.body || {};
-    const amount = body.amount !== undefined ? asFloat(body.amount, 'amount') : debt.amount;
+    const amount = body.amount !== undefined ? money(asFloat(body.amount, 'amount')) : money(debt.amount);
     if (amount < 0) throw new HttpError(422, 'amount must be >= 0');
-    const paid = asOptFloat(body.paid, 'paid') ?? debt.paid;
+    const paid = body.paid !== undefined ? money(asOptFloat(body.paid, 'paid')) : money(debt.paid);
     if (paid < 0) throw new HttpError(422, 'paid must be >= 0');
     if (paid > amount) throw new HttpError(422, 'paid cannot exceed amount');
     const service = asOptStr(body.service) ?? debt.service;

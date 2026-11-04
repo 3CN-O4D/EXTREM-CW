@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { pool, queryOne } from '../db';
 import { HttpError, toUtcTimestamp, wrap } from '../utils';
-import { asOptFloat, asOptStr } from '../finance';
+import { asOptFloat, asOptStr, money } from '../finance';
 import { requireRole } from '../auth';
 import { ROLES } from '../types';
 import type { AuthRequest } from '../auth';
@@ -41,11 +41,11 @@ router.post(
     const body = req.body || {};
     const client_name = asOptStr(body.client_name);
     if (!client_name) throw new HttpError(422, 'client_name is required');
-    const amount = asOptFloat(body.amount, 'amount');
+    const amount = money(asOptFloat(body.amount, 'amount'));
     if (amount === undefined || amount < 0) {
       throw new HttpError(422, amount === undefined ? 'amount must be a number' : 'amount must be >= 0');
     }
-    const paid = asOptFloat(body.paid, 'paid') ?? 0;
+    const paid = money(asOptFloat(body.paid, 'paid') ?? 0);
     if (paid < 0) throw new HttpError(422, 'paid must be >= 0');
 
     const now = toUtcTimestamp(new Date());
@@ -84,7 +84,7 @@ router.put(
     const paid = asOptFloat(body.paid, 'paid');
     const paidDateStr = asOptStr(body.paid_date);
 
-    const newPaid = paid ?? debt.paid;
+    const newPaid = paid !== undefined ? money(paid) : money(debt.paid);
     if (newPaid < 0) throw new HttpError(422, 'paid must be >= 0');
 
     let paidDate: string | null | undefined = undefined;

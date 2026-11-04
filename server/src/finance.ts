@@ -48,50 +48,60 @@ export interface PriceConfig {
   commission_percent: number;
 }
 
+// All money is whole shillings. Rounding here — rather than only in the UI —
+// keeps stored wages, shortfalls and totals free of float artefacts.
+export function money(n: number | null | undefined): number {
+  const v = Number(n);
+  return Number.isFinite(v) ? Math.round(v) : 0;
+}
+
 export function calculateTransaction(data: FinanceInput, prices?: Record<string, PriceConfig>): FinanceResult {
-  let expected_price = data.expected_price;
+  let expected_price = money(data.expected_price);
   const priceCfg = prices?.[data.category];
+  const cash_paid = money(data.cash_paid);
+  const mpesa_paid = money(data.mpesa_paid);
+  const manual_tip = money(data.manual_tip);
 
   // 1. Vacuum & Engine Wash Floor Rules (Full Package)
   if (data.has_car_wash && data.has_vacuum && data.has_engine_wash) {
-    const pkgMax = priceCfg?.max_price ?? 800;
+    const pkgMax = money(priceCfg?.max_price ?? 800);
     if (expected_price < pkgMax) expected_price = pkgMax;
   }
 
   // 2. Commission Calculation — uses commission_percent from the prices table.
   // Motorcycle has a tiered commission: below min_price -> 0 commission + shortfall.
   // paid 50 -> 0, paid 60 -> 10, paid 70 -> 30 (each Ksh above 60 earns 2 Ksh commission).
-  let commission = 0.0;
-  const cp = Number(priceCfg?.commission_percent ?? 30);
-  const minP = Number(priceCfg?.min_price ?? 0);
-  const maxP = Number(priceCfg?.max_price ?? 0);
-  const total_paid = data.cash_paid + data.mpesa_paid;
+  let commission = 0;
+  const cp = money(priceCfg?.commission_percent ?? 30);
+  const minP = money(priceCfg?.min_price ?? 0);
+  const maxP = money(priceCfg?.max_price ?? 0);
+  const total_paid = cash_paid + mpesa_paid;
 
   if (data.category === 'motorcycle' && minP > 0) {
     if (total_paid < minP) {
-      commission = 0.0;
+      commission = 0;
     } else if (total_paid <= minP + 10) {
       commission = total_paid - minP;
     } else {
-      commission = 10.0 + 2.0 * (total_paid - (minP + 10));
+      commission = 10 + 2 * (total_paid - (minP + 10));
     }
   } else if (data.category === 'car' && (data.has_vacuum || data.has_engine_wash)) {
     // Any car combo (car+vacuum, car+engine, car+both) earns flat 30% commission.
-    commission = expected_price * 30.0 / 100.0;
+    commission = money(expected_price * 30 / 100);
   } else if (expected_price >= minP && minP > 0) {
-    commission = expected_price * cp / 100.0;
+    commission = money(expected_price * cp / 100);
   } else if (minP === 0) {
-    commission = expected_price * cp / 100.0;
+    commission = money(expected_price * cp / 100);
   }
 
   // 3. Tip Isolation
-  const misc_amount = data.misc_amount || 0.0;
-  let isolated_tip = 0.0;
+  const misc_amount = money(data.misc_amount);
+  let isolated_tip = 0;
 
   if (total_paid > expected_price) {
-    isolated_tip = Math.max(0.0, total_paid - expected_price - misc_amount);
+    isolated_tip = Math.max(0, total_paid - expected_price - misc_amount);
   }
-  isolated_tip += data.manual_tip;
+  isolated_tip += manual_tip;
 
   const net_business_remittance = total_paid - isolated_tip;
 
@@ -103,18 +113,18 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
   //   Combo min/max = sum of individual component min/max prices.
   // - Standalone vacuum/engine: allowance = min_price.
   let effectivePriceForShortfall = expected_price;
-  let makes_allowance = 0.0;
+  let makes_allowance = 0;
 
   if (data.category === 'motorcycle' && minP > 0) {
     if (total_paid < minP) {
       effectivePriceForShortfall = minP;
-      makes_allowance = 0.0;
-      commission = 0.0; // no commission if paid below min
+      makes_allowance = 0;
+      commission = 0; // no commission if paid below min
     } else {
       makes_allowance = maxP - minP; // covers gap between min and max -> no shortfall
     }
   } else if ((data.category === 'vacuum' || data.category === 'engine') && !(data.has_car_wash)) {
-    makes_allowance = Number(priceCfg?.min_price ?? 200.0);
+    makes_allowance = money(priceCfg?.min_price ?? 200);
   } else if (data.category === 'car' && (data.has_vacuum || data.has_engine_wash)) {
     const vacuumCfg = prices?.vacuum;
     const engineCfg = prices?.engine;
@@ -122,21 +132,21 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
 
     if (hasBoth) {
       // 3-component combo: keep comboMin/comboMax logic
-      const comboMin = minP + Number(data.has_vacuum ? vacuumCfg?.min_price ?? 0 : 0) + Number(data.has_engine_wash ? engineCfg?.min_price ?? 0 : 0);
-      const comboMax = maxP + Number(data.has_vacuum ? vacuumCfg?.max_price ?? 0 : 0) + Number(data.has_engine_wash ? engineCfg?.max_price ?? 0 : 0);
+      const comboMin = minP + money(data.has_vacuum ? vacuumCfg?.min_price ?? 0 : 0) + money(data.has_engine_wash ? engineCfg?.min_price ?? 0 : 0);
+      const comboMax = maxP + money(data.has_vacuum ? vacuumCfg?.max_price ?? 0 : 0) + money(data.has_engine_wash ? engineCfg?.max_price ?? 0 : 0);
       if (total_paid < comboMin) {
         effectivePriceForShortfall = comboMin;
-        makes_allowance = 0.0;
-        commission = total_paid * 30.0 / 100.0;
+        makes_allowance = 0;
+        commission = money(total_paid * 30 / 100);
       } else {
         makes_allowance = comboMax - comboMin;
-        commission = Math.min(total_paid, comboMax) * 30.0 / 100.0;
+        commission = money(Math.min(total_paid, comboMax) * 30 / 100);
       }
     } else {
       // 2-component combo: per-component shortfall using min prices
       // Payment allocates: car first, then vacuum/engine up to their max
       const carMax = maxP; // 200
-      const addonMax = Number(data.has_vacuum
+      const addonMax = money(data.has_vacuum
         ? (vacuumCfg?.max_price ?? 300)
         : (engineCfg?.max_price ?? 300));
 
@@ -144,18 +154,18 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
       const addonPaid = Math.max(0, Math.min(total_paid - carMax, addonMax));
 
       const carMin = minP; // 200
-      const addonMin = Number(data.has_vacuum ? (vacuumCfg?.min_price ?? 200) : (engineCfg?.min_price ?? 200));
+      const addonMin = money(data.has_vacuum ? (vacuumCfg?.min_price ?? 200) : (engineCfg?.min_price ?? 200));
 
       effectivePriceForShortfall = carMin + addonMin;
-      makes_allowance = 0.0;
-      commission = (carPaid + addonPaid) * 30.0 / 100.0;
+      makes_allowance = 0;
+      commission = money((carPaid + addonPaid) * 30 / 100);
     }
   }
-  const gross_shortfall = Math.max(0.0, effectivePriceForShortfall - net_business_remittance);
-  const shortfall = Math.max(0.0, gross_shortfall - makes_allowance);
+  const gross_shortfall = Math.max(0, effectivePriceForShortfall - net_business_remittance);
+  const shortfall = money(Math.max(0, gross_shortfall - makes_allowance));
 
   // 4. Shortfall & Zero-Remittance Penalties
-  let net_wage_before_tip = 0.0;
+  let net_wage_before_tip = 0;
   if (net_business_remittance === 0) {
     net_wage_before_tip = -expected_price;
   } else {
@@ -169,8 +179,8 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
   }
 
   // Ledger Routing
-  const credit_employee_wages = Math.max(0.0, final_payout);
-  const debit_employee_debt = Math.abs(Math.min(0.0, final_payout));
+  const credit_employee_wages = money(Math.max(0, final_payout));
+  const debit_employee_debt = money(Math.abs(Math.min(0, final_payout)));
 
   return {
     transaction_summary: {

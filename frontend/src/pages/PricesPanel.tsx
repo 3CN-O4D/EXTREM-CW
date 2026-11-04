@@ -84,15 +84,31 @@ export default function PricesPanel() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-black tracking-tight">Service Prices</h2>
-          <p className="muted text-sm">
-            Admin can edit min price, max (expected) price and commission % for each service.
-            Changes apply to new Day Sheet rows and commission calculations.
-          </p>
+          <p className="eyebrow">Configuration</p>
+          <h1 className="section-title mt-0.5">Service prices</h1>
+          <p className="muted text-xs">Edit min, expected and commission — applies to new day-sheet rows.</p>
         </div>
-        <button onClick={fetchPrices} className="btn-secondary inline-flex items-center gap-2">
+        <button onClick={fetchPrices} className="btn-secondary btn-sm">
           <Save size={15} /> Refresh
         </button>
+      </div>
+
+      <div className="stat-grid xl:grid-cols-4">
+        {[
+          { label: 'Services', value: prices.length, cls: 'text-slate-900 dark:text-white' },
+          { label: 'Active', value: prices.filter((p) => p.is_active).length, cls: 'text-emerald-600 dark:text-emerald-400' },
+          { label: 'Inactive', value: prices.filter((p) => !p.is_active).length, cls: 'text-red-600 dark:text-red-400' },
+          {
+            label: 'Avg commission',
+            value: `${prices.length ? Math.round(prices.reduce((s, p) => s + p.commission_percent, 0) / prices.length) : 0}%`,
+            cls: 'text-violet-600 dark:text-violet-300',
+          },
+        ].map((s) => (
+          <div key={s.label} className="stat-tile">
+            <p className="stat-label">{s.label}</p>
+            <p className={`stat-value ${s.cls}`}>{s.value}</p>
+          </div>
+        ))}
       </div>
 
       {!isAdmin && (
@@ -103,71 +119,73 @@ export default function PricesPanel() {
         </div>
       )}
 
-      <div className="card-pad overflow-x-auto rounded-2xl">
-        <table className="w-full text-left text-sm border-collapse">
-          <thead>
-            <tr className="border-b border-slate-200/80 text-xs uppercase tracking-wider text-slate-400 dark:border-white/10">
-              <th className="py-2 pr-3">Service</th>
-              <th className="py-2 pr-3 text-right">Min Price (Ksh)</th>
-              <th className="py-2 pr-3 text-right">Max / Expected (Ksh)</th>
-              <th className="py-2 pr-3 text-right">Commission %</th>
-              <th className="py-2 pr-3 text-center">Active</th>
-              <th className="py-2 text-right" />
-            </tr>
-          </thead>
-          <tbody>
-            {prices.length === 0 && (
-              <tr><td colSpan={6} className="py-8 text-center text-slate-400">No price config.</td></tr>
-            )}
-            {prices.map((p) => (
-              <tr key={p.id} className={`border-b border-slate-200/70 dark:border-white/10 ${!p.is_active ? 'bg-red-50/20 dark:bg-red-900/10' : ''}`}>
-                <td className="py-3 pr-3 font-medium">{CATEGORY_LABELS[p.category] || p.category}</td>
-                <td className="py-3 pr-3 text-right font-mono">
+      <div className="card overflow-hidden">
+        <div className="divide-y divide-slate-100 dark:divide-white/5">
+          {prices.length === 0 && (
+            <p className="px-4 py-8 text-center text-sm text-slate-400">No price config.</p>
+          )}
+          {prices.map((p) => (
+            <div key={p.id} className={`px-3 py-3 sm:px-4 ${!p.is_active ? 'bg-red-50/40 dark:bg-red-500/5' : ''}`}>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold">{CATEGORY_LABELS[p.category] || p.category}</p>
+                  <p className="muted text-[11px]">
+                    Min {p.min_price} · Max {p.max_price} · {p.commission_percent}% commission
+                  </p>
+                </div>
+                <button
+                  onClick={() => toggleActive(p.id)}
+                  disabled={saving.has(p.id) || !isAdmin}
+                  className={`chip ${!isAdmin
+                    ? 'cursor-not-allowed opacity-60'
+                    : p.is_active
+                      ? 'border-emerald-600 bg-emerald-600 text-white'
+                      : ''
+                  }`}
+                >
+                  {p.is_active ? 'Active' : 'Inactive'}
+                </button>
+              </div>
+
+              <div className="mt-2 grid grid-cols-3 gap-2">
+                <label className="block">
+                  <span className="label">Min price</span>
                   <input
                     type="number" min="0"
                     value={p.min_price}
                     onChange={(e) => savePrice(p.id, 'min_price', toNum(e.target.value))}
                     disabled={saving.has(p.id) || !isAdmin}
-                    className={`input-base w-20 text-right px-2 py-1 text-xs ${!isAdmin ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
+                    className={`input-base input-sm text-right font-mono ${!isAdmin ? 'cursor-not-allowed bg-slate-100 text-slate-400' : ''}`}
                   />
-                </td>
-                <td className="py-3 pr-3 text-right font-mono">
+                </label>
+                <label className="block">
+                  <span className="label">Max / expected</span>
                   <input
                     type="number" min="0"
                     value={p.max_price}
                     onChange={(e) => savePrice(p.id, 'max_price', toNum(e.target.value))}
                     disabled={saving.has(p.id) || !isAdmin}
-                    className={`input-base w-20 text-right px-2 py-1 text-xs ${!isAdmin ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
+                    className={`input-base input-sm text-right font-mono ${!isAdmin ? 'cursor-not-allowed bg-slate-100 text-slate-400' : ''}`}
                   />
-                </td>
-                <td className="py-3 pr-3 text-right font-mono">
+                </label>
+                <label className="block">
+                  <span className="label">Commission %</span>
                   <input
                     type="number" min="0" max="100"
                     value={p.commission_percent}
                     onChange={(e) => savePrice(p.id, 'commission_percent', toNum(e.target.value))}
                     disabled={saving.has(p.id) || !isAdmin}
-                    className={`input-base w-20 text-right px-2 py-1 text-xs ${!isAdmin ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : ''}`}
+                    className={`input-base input-sm text-right font-mono ${!isAdmin ? 'cursor-not-allowed bg-slate-100 text-slate-400' : ''}`}
                   />
-                </td>
-                <td className="py-3 pr-3 text-center">
-                  <button
-                    onClick={() => toggleActive(p.id)}
-                    disabled={saving.has(p.id) || !isAdmin}
-                    className={`rounded-full px-2.5 py-1 text-xs font-bold transition ${!isAdmin ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : p.is_active
-                      ? 'bg-emerald-600 text-white'
-                      : 'bg-slate-200 text-slate-700 dark:bg-white/10 dark:text-slate-200'
-                    }`}
-                  >
-                    {p.is_active ? 'Active' : 'Inactive'}
-                  </button>
-                </td>
-                <td className="py-3 text-right">
-                  {saving.has(p.id) && <span className="text-xs text-brand-600 animate-pulse">Saving…</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </label>
+              </div>
+
+              {saving.has(p.id) && (
+                <p className="mt-1 text-[11px] font-semibold text-brand-600 dark:text-brand-300">Saving…</p>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="card-pad rounded-2xl border border-slate-200/80">

@@ -12,13 +12,14 @@ import type {
   CarpetRow,
   UserRow,
 } from './types';
+import { money } from './finance';
 
 export function iso(d: Date | null | undefined): string | null {
   if (!d) return null;
   return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
-const f = (n: number | null | undefined) => (n === null || n === undefined ? 0 : n);
+const f = (n: number | null | undefined) => money(n);
 
 export function serializeTx(t: TxRow): Record<string, unknown> {
   return {
@@ -26,14 +27,14 @@ export function serializeTx(t: TxRow): Record<string, unknown> {
     timestamp: iso(t.timestamp),
     washer_id: t.washer_id,
     category: t.category.toLowerCase(),
-    expected_price: t.expected_price,
-    cash_paid: t.cash_paid,
-    mpesa_paid: t.mpesa_paid,
+    expected_price: money(t.expected_price),
+    cash_paid: money(t.cash_paid),
+    mpesa_paid: money(t.mpesa_paid),
     mpesa_transaction_id: t.mpesa_transaction_id,
     mpesa_sender_name: t.mpesa_sender_name,
-    manual_tip: t.manual_tip,
+    manual_tip: money(t.manual_tip),
     tip_method: t.tip_method.toLowerCase(),
-    misc_amount: t.misc_amount,
+    misc_amount: money(t.misc_amount),
     misc_description: t.misc_description,
     has_car_wash: t.has_car_wash,
     has_vacuum: t.has_vacuum,
@@ -43,13 +44,13 @@ export function serializeTx(t: TxRow): Record<string, unknown> {
     custom_category: t.custom_category,
     carpet_characteristics: t.carpet_characteristics,
     receiver_id: t.receiver_id,
-    total_paid: t.total_paid,
-    isolated_tip: t.isolated_tip,
-    net_business_remittance: t.net_business_remittance,
-    shortfall: t.shortfall,
-    calculated_commission: t.calculated_commission,
-    net_wage_before_tip: t.net_wage_before_tip,
-    final_payout: t.final_payout,
+    total_paid: money(t.total_paid),
+    isolated_tip: money(t.isolated_tip),
+    net_business_remittance: money(t.net_business_remittance),
+    shortfall: money(t.shortfall),
+    calculated_commission: money(t.calculated_commission),
+    net_wage_before_tip: money(t.net_wage_before_tip),
+    final_payout: money(t.final_payout),
     week_id: t.week_id,
   };
 }
@@ -73,7 +74,7 @@ export function serializeExpense(e: ExpenseRow): Record<string, unknown> {
     id: e.id,
     timestamp: iso(e.timestamp),
     description: e.description,
-    amount: e.amount,
+    amount: money(e.amount),
     category: e.category,
     week_id: e.week_id,
     transaction_id: e.transaction_id,
@@ -85,7 +86,7 @@ export function serializeRepayment(r: RepaymentRow & { employee_name?: string; a
     id: r.id,
     timestamp: iso(r.timestamp),
     employee_id: r.employee_id,
-    amount: r.amount,
+    amount: money(r.amount),
     week_id: r.week_id,
     employee_name: r.employee_name ?? null,
     abbreviation: r.abbreviation ?? null,
@@ -98,14 +99,14 @@ export function serializeDebt(d: DebtRow): Record<string, unknown> {
     id: d.id,
     employee_id: d.employee_id,
     other_name: d.other_name ?? null,
-    amount: d.amount,
+    amount: money(d.amount),
     service: d.service,
     date: iso(d.date),
-    paid: d.paid,
+    paid: money(d.paid),
     paid_date: iso(d.paid_date),
     notes: d.notes,
     transaction_id: d.transaction_id ?? null,
-    balance: d.amount - d.paid,
+    balance: money(d.amount - d.paid),
   };
 }
 
@@ -114,7 +115,7 @@ export function serializeTip(t: TipRow): Record<string, unknown> {
     id: t.id,
     timestamp: iso(t.timestamp),
     employee_id: t.employee_id,
-    amount: t.amount,
+    amount: money(t.amount),
     method: t.method.toLowerCase(),
     week_id: t.week_id,
     notes: t.notes,
@@ -127,9 +128,9 @@ export function serializeClientDebt(c: ClientDebtRow): Record<string, unknown> {
     client_name: c.client_name,
     customer_phone: c.customer_phone,
     description: c.description,
-    amount: c.amount,
-    paid: c.paid,
-    balance: c.amount - c.paid,
+    amount: money(c.amount),
+    paid: money(c.paid),
+    balance: money(c.amount - c.paid),
     date: iso(c.date),
     paid_date: iso(c.paid_date),
     notes: c.notes,
@@ -143,10 +144,10 @@ export function serializeWeeklyLog(w: WeeklyLogRow): Record<string, unknown> {
     week_id: w.week_id,
     start_date: iso(w.start_date),
     end_date: iso(w.end_date),
-    total_revenue: w.total_revenue,
-    total_expenses: w.total_expenses,
-    total_labor_expense: w.total_labor_expense,
-    total_profit: w.total_profit,
+    total_revenue: money(w.total_revenue),
+    total_expenses: money(w.total_expenses),
+    total_labor_expense: money(w.total_labor_expense),
+    total_profit: money(w.total_profit),
     data: w.data_json ? JSON.parse(w.data_json) : null,
   };
 }
@@ -155,9 +156,9 @@ export function serializePrice(p: PriceRow): Record<string, unknown> {
   return {
     id: p.id,
     category: p.category,
-    min_price: p.min_price,
-    max_price: p.max_price,
-    commission_percent: p.commission_percent,
+    min_price: money(p.min_price),
+    max_price: money(p.max_price),
+    commission_percent: Number(p.commission_percent),
     is_active: p.is_active,
     created_at: iso(p.created_at),
     updated_at: iso(p.updated_at),
@@ -176,9 +177,9 @@ function carpetJson(c: CarpetRow, includeImage: boolean): Record<string, unknown
     image_thumb: c.image_thumb,
     image_washed_thumb: c.image_washed_thumb,
     image_ready_thumb: c.image_ready_thumb,
-    expected_price: c.expected_price,
-    cash_paid: c.cash_paid,
-    mpesa_paid: c.mpesa_paid,
+    expected_price: money(c.expected_price),
+    cash_paid: money(c.cash_paid),
+    mpesa_paid: money(c.mpesa_paid),
     is_washed: c.is_washed,
     status: c.status,
     washed_at: iso(c.washed_at),

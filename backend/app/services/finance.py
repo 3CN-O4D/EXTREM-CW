@@ -2,8 +2,17 @@ from app.models.models import ServiceCategory, TipMethod
 from app.schemas.schemas import TransactionCreate, TransactionSummary, EmployeeFinancials, LedgerRouting
 from types import SimpleNamespace
 
+
+def money(n) -> int:
+    """All money is whole shillings; round at the finance boundary."""
+    try:
+        return int(round(float(n or 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
 def calculate_transaction(data: TransactionCreate) -> SimpleNamespace:
-    expected_price = data.expected_price
+    expected_price = money(data.expected_price)
 
     # 1. Vacuum & Engine Wash Floor Rules (Full Package)
     if data.has_car_wash and data.has_vacuum and data.has_engine_wash:
@@ -11,35 +20,35 @@ def calculate_transaction(data: TransactionCreate) -> SimpleNamespace:
             expected_price = 600
 
     # 2. Commission Calculation
-    commission = 0.0
+    commission = 0
     if expected_price < 70:
-        commission = 0.0
+        commission = 0
     elif data.category == ServiceCategory.TAXI and expected_price == 100:
-        commission = 0.0
+        commission = 0
     elif data.category == ServiceCategory.MOTORCYCLE and expected_price == 70:
-        commission = 30.0
+        commission = 30
     elif data.category == ServiceCategory.CAR and expected_price == 200 and not (data.has_vacuum or data.has_engine_wash):
-        commission = 70.0
+        commission = 70
     else:
         # Standard Tier (30%)
-        commission = expected_price * 0.30
+        commission = money(expected_price * 30 / 100)
 
     # 3. Tip Isolation
-    total_paid = data.cash_paid + data.mpesa_paid
-    misc_amount = data.misc_amount or 0.0
-    isolated_tip = 0.0
+    total_paid = money(data.cash_paid) + money(data.mpesa_paid)
+    misc_amount = money(data.misc_amount)
+    isolated_tip = 0
 
     # Auto-tip: overpayment on any category, minus any classified as miscellaneous
     if total_paid > expected_price:
-        isolated_tip = max(0.0, total_paid - expected_price - misc_amount)
+        isolated_tip = max(0, total_paid - expected_price - misc_amount)
     # Manual tip always adds on top (e.g. customer paid exact but gave extra cash)
-    isolated_tip += data.manual_tip
+    isolated_tip += money(data.manual_tip)
 
     net_remitted = total_paid - isolated_tip
-    shortfall = max(0.0, expected_price - net_remitted)
+    shortfall = money(max(0, expected_price - net_remitted))
 
     # 4. Shortfall & Zero-Remittance Penalties
-    net_wage_before_tip = 0.0
+    net_wage_before_tip = 0
     if net_remitted == 0:
         # Zero Remittance (Theft Protection)
         net_wage_before_tip = -expected_price
@@ -53,8 +62,8 @@ def calculate_transaction(data: TransactionCreate) -> SimpleNamespace:
         final_payout += isolated_tip
 
     # Ledger Routing
-    credit_wages = max(0.0, final_payout)
-    debit_debt = abs(min(0.0, final_payout))
+    credit_wages = money(max(0, final_payout))
+    debit_debt = money(abs(min(0, final_payout)))
 
     return SimpleNamespace(
         transaction_summary=TransactionSummary(

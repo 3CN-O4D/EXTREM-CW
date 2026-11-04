@@ -87,6 +87,20 @@ export default function EmployeeManagement() {
 
       {error && <InlineError message={error} onRetry={fetchUsers} />}
 
+      <div className="stat-grid xl:grid-cols-4">
+        {[
+          { label: 'Accounts', value: users.length, cls: 'text-slate-900 dark:text-white' },
+          { label: 'Admins', value: users.filter((u) => u.role === 'admin').length, cls: 'text-red-600 dark:text-red-400' },
+          { label: 'Managers', value: users.filter((u) => u.role === 'manager').length, cls: 'text-brand-600 dark:text-brand-300' },
+          { label: 'Employees', value: users.filter((u) => u.role === 'employee').length, cls: 'text-emerald-600 dark:text-emerald-400' },
+        ].map((s) => (
+          <div key={s.label} className="stat-tile">
+            <p className="stat-label">{s.label}</p>
+            <p className={`stat-value ${s.cls}`}>{s.value}</p>
+          </div>
+        ))}
+      </div>
+
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         {/* Form */}
         <div className="card-pad h-fit">
