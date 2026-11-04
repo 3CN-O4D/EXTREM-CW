@@ -118,7 +118,6 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
   // drafts & popovers
   const [smsOpen, setSmsOpen] = useState<string | null>(null);
   const [smsText, setSmsText] = useState('');
-  const [addonOpen, setAddonOpen] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState<SheetRow | null>(null);
   const [editForm, setEditForm] = useState<any>({});
 
@@ -167,8 +166,6 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
     computeDuplicates(rows);
   }, [rows]);
 
-  const toggleAddon = (key: string) => setAddonOpen(addonOpen === key ? null : key);
-
   // Apply an add-on change locally and, when the row already exists on the
   // server, persist it right away so add-ons always stick.
   const applyAddon = (key: string, patch: Partial<SheetRow>) => {
@@ -177,41 +174,21 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
     if (existing?.id != null) flushSave(key, patch);
   };
 
-  const selectAddon = (key: string, type: 'vacuum' | 'engine' | 'engine+vacuum') => {
+  // Flip one add-on on/off while keeping the other, then re-price the row from
+  // its category + new flags.
+  const toggleAddonFlag = (key: string, type: 'vacuum' | 'engine') => {
     const row = rows.find((r) => r._key === key);
     if (!row) return;
-    const isVac = type === 'vacuum' || type === 'engine+vacuum';
-    const isEng = type === 'engine' || type === 'engine+vacuum';
-    // Recompute expected from category + new add-on flags
-    let expected = 0;
+    const hasVac = type === 'vacuum' ? !row.has_vacuum : !!row.has_vacuum;
+    const hasEng = type === 'engine' ? !row.has_engine_wash : !!row.has_engine_wash;
+    let expected = row.expected || 0;
     if (row.category === 'car') {
-      expected = 200 + (isVac ? 300 : 0) + (isEng ? 300 : 0);
-      if (isVac && isEng) expected = 800; // full package
+      expected = 200 + (hasVac ? 300 : 0) + (hasEng ? 300 : 0);
+      if (hasVac && hasEng) expected = 800; // full package
     } else if (PLATE_CATS.includes(row.category)) {
-      expected = STANDARD[row.category] + (isVac ? 300 : 0) + (isEng ? 300 : 0);
-    } else {
-      expected = row.expected || 0;
+      expected = STANDARD[row.category] + (hasVac ? 300 : 0) + (hasEng ? 300 : 0);
     }
-    setAddonOpen(null);
-    applyAddon(key, { has_vacuum: isVac, has_engine_wash: isEng, expected });
-  };
-
-  const removeAddon = (key: string, type: 'vacuum' | 'engine') => {
-    const row = rows.find((r) => r._key === key);
-    if (!row) return;
-    const newVac = type === 'vacuum' ? false : row.has_vacuum;
-    const newEng = type === 'engine' ? false : row.has_engine_wash;
-    let expected = 0;
-    if (row.category === 'car') {
-      expected = 200 + (newVac ? 300 : 0) + (newEng ? 300 : 0);
-      if (newVac && newEng) expected = 800;
-    } else if (PLATE_CATS.includes(row.category)) {
-      expected = STANDARD[row.category] + (newVac ? 300 : 0) + (newEng ? 300 : 0);
-    } else {
-      expected = row.expected || 0;
-    }
-    setAddonOpen(null);
-    applyAddon(key, { has_vacuum: newVac, has_engine_wash: newEng, expected });
+    applyAddon(key, { has_vacuum: hasVac, has_engine_wash: hasEng, expected });
   };
 
   const openEdit = (row: SheetRow) => {
@@ -725,40 +702,57 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
           </div>
         </div>
 
-        <div className="divide-y divide-slate-100 dark:divide-white/5">
-          {rows.length === 0 && (
-            <div className="px-4 py-10 text-center">
-              <p className="text-sm font-bold text-slate-500 dark:text-slate-400">No rows yet</p>
-              <p className="muted mt-1 text-xs">Use the add-row chips below to start logging the day.</p>
-            </div>
-          )}
-          {rows.map((row, idx) => (
-            <RowCard
-              key={row._key}
-              row={row}
-              rowNumber={idx + 1}
-              employees={employees}
-              isPlate={PLATE_CATS.includes(row.category)}
-              isOther={row.category === 'other'}
-              saving={!!row.saving}
-              error={row.error}
-              smsOpen={smsOpen === row._key}
-              smsText={smsText}
-              onSmsText={setSmsText}
-              onOpenSms={() => { setSmsOpen(smsOpen === row._key ? null : row._key); setSmsText(''); }}
-              onFillSms={() => fillSms(row._key)}
-              onPatch={(patch) => patchRow(row._key, patch)}
-              onSaveDraft={() => saveDraftNow(row._key)}
-              onDelete={() => deleteRow(row)}
-              addonOpen={addonOpen === row._key}
-              onToggleAddon={() => toggleAddon(row._key)}
-              onSelectAddon={(type: 'vacuum' | 'engine' | 'engine+vacuum') => selectAddon(row._key, type)}
-              onRemoveAddon={(type: 'vacuum' | 'engine') => removeAddon(row._key, type)}
-              onEdit={() => openEdit(row)}
-              isDuplicate={duplicates.has(row._key)}
-            />
-          ))}
-        </div>
+        {rows.length === 0 ? (
+          <div className="px-4 py-10 text-center">
+            <p className="text-sm font-bold text-slate-500 dark:text-slate-400">No rows yet</p>
+            <p className="muted mt-1 text-xs">Use the add-row chips below to start logging the day.</p>
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
+              <thead>
+                <tr className="border-b border-slate-200/80 bg-slate-50/80 text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-400 whitespace-nowrap dark:border-white/10 dark:bg-white/5">
+                  <th className="w-8 px-2 py-2 text-center">#</th>
+                  <th className="w-14 px-2 py-2">Time</th>
+                  <th className="min-w-[170px] px-2 py-2">Item / plate</th>
+                  <th className="w-24 px-2 py-2">Type</th>
+                  <th className="w-36 px-2 py-2">Washer</th>
+                  <th className="w-24 px-2 py-2 text-right">Cash</th>
+                  <th className="w-32 px-2 py-2 text-right">M-Pesa</th>
+                  <th className="w-36 px-2 py-2">Payer</th>
+                  <th className="w-24 px-2 py-2 text-right">Paid</th>
+                  <th className="w-24 px-2 py-2">Add-ons</th>
+                  <th className="w-28 px-2 py-2 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, idx) => (
+                  <RowLine
+                    key={row._key}
+                    row={row}
+                    rowNumber={idx + 1}
+                    employees={employees}
+                    isPlate={PLATE_CATS.includes(row.category)}
+                    isOther={row.category === 'other'}
+                    saving={!!row.saving}
+                    error={row.error}
+                    smsOpen={smsOpen === row._key}
+                    smsText={smsText}
+                    onSmsText={setSmsText}
+                    onOpenSms={() => { setSmsOpen(smsOpen === row._key ? null : row._key); setSmsText(''); }}
+                    onFillSms={() => fillSms(row._key)}
+                    onPatch={(patch) => patchRow(row._key, patch)}
+                    onSaveDraft={() => saveDraftNow(row._key)}
+                    onDelete={() => deleteRow(row)}
+                    onToggleAddonFlag={(type: 'vacuum' | 'engine') => toggleAddonFlag(row._key, type)}
+                    onEdit={() => openEdit(row)}
+                    isDuplicate={duplicates.has(row._key)}
+                  />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {rows.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200/80 bg-slate-50/80 px-4 py-3 dark:border-white/10 dark:bg-white/5">
@@ -1048,10 +1042,10 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
 
 
 
-function RowCard({
+function RowLine({
   row, rowNumber, employees, isPlate, isOther, saving, error,
   smsOpen, smsText, onSmsText, onOpenSms, onFillSms, onPatch, onSaveDraft, onDelete,
-  addonOpen, onToggleAddon, onSelectAddon, onRemoveAddon,
+  onToggleAddonFlag,
   onEdit, isDuplicate,
 }: {
   row: SheetRow;
@@ -1069,227 +1063,209 @@ function RowCard({
   onPatch: (patch: Partial<SheetRow>) => void;
   onSaveDraft: () => void;
   onDelete: () => void;
-  addonOpen: boolean;
-  onToggleAddon: () => void;
-  onSelectAddon: (type: 'vacuum' | 'engine' | 'engine+vacuum') => void;
-  onRemoveAddon: (type: 'vacuum' | 'engine') => void;
+  onToggleAddonFlag: (type: 'vacuum' | 'engine') => void;
   onEdit: () => void;
   isDuplicate: boolean;
 }) {
   const dirty = row.draft;
+  const cell = 'border-b border-slate-100 px-2 py-1.5 align-middle dark:border-white/5';
   return (
-    <div
-      className={`px-3 py-3 transition sm:px-4 ${
-        isDuplicate ? 'bg-red-100 dark:bg-red-900/30' : dirty ? 'bg-amber-50/60 dark:bg-amber-400/5' : ''
-      } ${error ? 'bg-red-50 dark:bg-red-500/5' : ''}`}
-    >
-      <div className="flex items-start gap-2">
-        <span className="mt-2.5 w-5 shrink-0 text-center text-[11px] font-black text-slate-400">{rowNumber}</span>
-
-        <div className="min-w-0 flex-1">
-          {/* Item + category */}
-          <div className="flex flex-wrap items-center gap-1.5">
+    <>
+      <tr
+        className={
+          isDuplicate
+            ? 'bg-red-100 dark:bg-red-900/30'
+            : error
+              ? 'bg-red-50 dark:bg-red-500/5'
+              : dirty
+                ? 'bg-amber-50/60 dark:bg-amber-400/5'
+                : ''
+        }
+      >
+        <td className={`${cell} text-center text-[11px] font-black text-slate-400`}>{rowNumber}</td>
+        <td className={`${cell} whitespace-nowrap font-mono text-[11px] text-slate-400`}>{row.time}</td>
+        <td className={cell}>
+          <div className="flex items-center gap-1.5">
             <input
               value={row.item}
               placeholder={isOther ? 'What was it?' : isPlate ? 'Plate e.g. KCA182M' : 'Details'}
-              className={`input-base input-sm min-w-0 flex-1 font-mono uppercase sm:max-w-[220px] ${
+              className={`input-base input-sm w-full min-w-[140px] font-mono uppercase ${
                 row.category === 'carpet' ? 'text-violet-600 dark:text-violet-300' : ''
               }`}
               onBlur={() => onPatch({ item: row.item.toUpperCase() })}
               onChange={(e) => onPatch({ item: e.target.value.toUpperCase() })}
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
             />
-            <span className="chip chip-soft pointer-events-none">
-              {CATEGORY_LABELS[row.category] || row.category}
-            </span>
-            {row.has_vacuum && (
-              <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700 dark:bg-blue-500/15 dark:text-blue-300">Vacuum</span>
-            )}
-            {row.has_engine_wash && (
-              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-500/15 dark:text-amber-300">Engine</span>
-            )}
             {isDuplicate && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-red-600 px-2 py-0.5 text-[10px] font-bold text-white">
-                <AlertTriangle size={11} /> Duplicate?
+              <span
+                title="Possible duplicate"
+                className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-600 px-1.5 py-0.5 text-[10px] font-bold text-white"
+              >
+                <AlertTriangle size={10} /> Dup
               </span>
             )}
-            {saving && <Loader2 size={14} className="animate-spin text-brand-500" />}
+            {saving && <Loader2 size={13} className="shrink-0 animate-spin text-brand-500" />}
           </div>
-
-          {/* Money + washer grid */}
-          <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <label className="block">
-              <span className="label">Washer</span>
-              <select
-                value={row.washer_id}
-                onChange={(e) => onPatch({ washer_id: e.target.value })}
-                className="input-base input-sm"
+        </td>
+        <td className={`${cell} whitespace-nowrap`}>
+          <span className="chip chip-soft pointer-events-none">
+            {CATEGORY_LABELS[row.category] || row.category}
+          </span>
+        </td>
+        <td className={cell}>
+          <select
+            value={row.washer_id}
+            onChange={(e) => onPatch({ washer_id: e.target.value })}
+            className="input-base input-sm w-full min-w-[120px]"
+          >
+            <option value="">—</option>
+            {employees.length === 0 && <option value="" disabled>No staff loaded</option>}
+            {employees.map((e) => (
+              <option key={e.id} value={e.id}>{e.name || e.full_name} ({e.abbreviation})</option>
+            ))}
+          </select>
+        </td>
+        <td className={cell}>
+          <input
+            type="number" min="0" value={row.cash}
+            className="input-base input-sm w-full min-w-[70px] text-right font-mono"
+            onBlur={(e) => onPatch({ cash: toNum(e.target.value) })}
+            onChange={(e) => onPatch({ cash: toNum(e.target.value) })}
+          />
+        </td>
+        <td className={cell}>
+          <div className="flex items-center justify-end gap-1">
+            <input
+              type="number" min="0" value={row.mpesa}
+              className="input-base input-sm w-full min-w-[80px] text-right font-mono"
+              onBlur={(e) => onPatch({ mpesa: toNum(e.target.value) })}
+              onChange={(e) => onPatch({ mpesa: toNum(e.target.value) })}
+            />
+            <button
+              onClick={onOpenSms}
+              title="Paste M-Pesa message to fill amount & name"
+              aria-label="Paste M-Pesa message"
+              className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border transition ${
+                smsOpen
+                  ? 'border-brand-500 bg-brand-50 text-brand-700 dark:border-brand-400/40 dark:bg-brand-500/20 dark:text-brand-300'
+                  : 'border-slate-200 bg-white text-slate-400 hover:border-brand-300 hover:text-brand-600 dark:border-white/10 dark:bg-white/5 dark:hover:text-brand-300'
+              }`}
+            >
+              <MessageSquareText size={15} />
+            </button>
+          </div>
+        </td>
+        <td className={cell}>
+          <input
+            value={row.sender}
+            placeholder={row.mpesa > 0 ? 'Payer name' : '—'}
+            className="input-base input-sm w-full min-w-[110px]"
+            onBlur={() => onPatch({ sender: row.sender })}
+            onChange={(e) => onPatch({ sender: e.target.value })}
+          />
+        </td>
+        <td className={`${cell} whitespace-nowrap text-right font-mono text-xs font-bold`}>
+          {row.total_paid !== undefined ? (
+            <span className={row.shortfall ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-white'}>
+              {row.total_paid}
+              {row.shortfall ? <span className="ml-1 text-[10px] font-bold">short {row.shortfall}</span> : null}
+            </span>
+          ) : saving ? (
+            <Loader2 size={13} className="inline animate-spin text-brand-500" />
+          ) : (
+            <span className="text-slate-300 dark:text-slate-600">—</span>
+          )}
+        </td>
+        <td className={`${cell} whitespace-nowrap`}>
+          {isPlate ? (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => onToggleAddonFlag('vacuum')}
+                title="Toggle vacuum (+300)"
+                className={`rounded-lg border px-2 py-1 text-[10px] font-bold transition ${
+                  row.has_vacuum
+                    ? 'border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-400/30 dark:bg-blue-500/15 dark:text-blue-300'
+                    : 'border-slate-200 bg-white text-slate-400 hover:border-blue-300 hover:text-blue-600 dark:border-white/10 dark:bg-white/5 dark:hover:text-blue-300'
+                }`}
               >
-                <option value="">—</option>
-                {employees.length === 0 && <option value="" disabled>No staff loaded</option>}
-                {employees.map((e) => (
-                  <option key={e.id} value={e.id}>{e.name || e.full_name} ({e.abbreviation})</option>
-                ))}
-              </select>
-            </label>
-
-            <label className="block">
-              <span className="label">Cash</span>
-              <input
-                type="number" min="0" value={row.cash}
-                className="input-base input-sm text-right font-mono"
-                onBlur={(e) => onPatch({ cash: toNum(e.target.value) })}
-                onChange={(e) => onPatch({ cash: toNum(e.target.value) })}
-              />
-            </label>
-
-            <label className="block">
-              <span className="label">M-Pesa</span>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number" min="0" value={row.mpesa}
-                  className="input-base input-sm min-w-0 flex-1 text-right font-mono"
-                  onBlur={(e) => onPatch({ mpesa: toNum(e.target.value) })}
-                  onChange={(e) => onPatch({ mpesa: toNum(e.target.value) })}
-                />
-                <button
-                  onClick={onOpenSms}
-                  title="Paste M-Pesa message to fill amount & name"
-                  aria-label="Paste M-Pesa message"
-                  className={`flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-lg border transition sm:h-[34px] sm:w-[34px] ${
-                    smsOpen
-                      ? 'border-brand-500 bg-brand-50 text-brand-700 dark:border-brand-400/40 dark:bg-brand-500/20 dark:text-brand-300'
-                      : 'border-slate-200 bg-white text-slate-400 hover:border-brand-300 hover:text-brand-600 dark:border-white/10 dark:bg-white/5 dark:hover:text-brand-300'
-                  }`}
-                >
-                  <MessageSquareText size={15} />
-                </button>
-              </div>
-            </label>
-
-            <div className="block">
-              <span className="label">Paid</span>
-              <div className="flex min-h-[38px] items-center rounded-lg border border-slate-100 bg-slate-50 px-2.5 font-mono text-sm font-bold dark:border-white/5 dark:bg-white/5 sm:min-h-[34px]">
-                {row.total_paid !== undefined ? (
-                  <span className={row.shortfall ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-white'}>
-                    {`Ksh ${row.total_paid}`}
-                    {row.shortfall ? (
-                      <span className="ml-1 text-[10px] font-bold">short {row.shortfall}</span>
-                    ) : null}
-                  </span>
-                ) : saving ? (
-                  <Loader2 size={14} className="animate-spin text-brand-500" />
-                ) : (
-                  <span className="text-slate-300 dark:text-slate-600">—</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Payer + add-ons + row actions */}
-          <div className="mt-2 flex flex-wrap items-end gap-2">
-            <label className="block min-w-0 flex-1 sm:max-w-[260px]">
-              <span className="label">Payer name</span>
-              <input
-                value={row.sender}
-                placeholder={row.mpesa > 0 ? 'Payer name' : '—'}
-                className="input-base input-sm"
-                onBlur={() => onPatch({ sender: row.sender })}
-                onChange={(e) => onPatch({ sender: e.target.value })}
-              />
-            </label>
-
-            {isPlate && (
-              <div className="relative flex items-center gap-1">
-                <button onClick={onToggleAddon} className="btn-secondary btn-sm">
-                  <Plus size={13} /> Add-on
-                </button>
-                {addonOpen && (
-                  <div className="absolute bottom-full right-0 z-30 mb-1 w-48 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl dark:border-white/10 dark:bg-slate-800">
-                    <button
-                      onClick={() => onSelectAddon('vacuum')}
-                      className="w-full border-b border-slate-100 px-3 py-2.5 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-white/5 dark:text-slate-300 dark:hover:bg-white/10"
-                    >
-                      Vacuum <span className="text-slate-400">+300</span>
-                    </button>
-                    <button
-                      onClick={() => onSelectAddon('engine')}
-                      className="w-full border-b border-slate-100 px-3 py-2.5 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:border-white/5 dark:text-slate-300 dark:hover:bg-white/10"
-                    >
-                      Engine wash <span className="text-slate-400">+300</span>
-                    </button>
-                    <button
-                      onClick={() => onSelectAddon('engine+vacuum')}
-                      className="w-full px-3 py-2.5 text-left text-xs font-semibold text-slate-600 hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-white/10"
-                    >
-                      Engine + Vacuum <span className="text-slate-400">+600</span>
-                    </button>
-                  </div>
-                )}
-                {row.has_vacuum && (
-                  <button
-                    onClick={() => onRemoveAddon('vacuum')}
-                    className="rounded-full bg-blue-50 px-2 py-1 text-[10px] font-bold text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400"
-                  >
-                    ✕ Vacuum
-                  </button>
-                )}
-                {row.has_engine_wash && (
-                  <button
-                    onClick={() => onRemoveAddon('engine')}
-                    className="rounded-full bg-amber-50 px-2 py-1 text-[10px] font-bold text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400"
-                  >
-                    ✕ Engine
-                  </button>
-                )}
-              </div>
-            )}
-
-            <div className="ml-auto flex items-center gap-1">
-              <button onClick={onSaveDraft} disabled={saving} title="Save this row" className={`btn-sm ${dirty ? 'btn-primary' : 'btn-secondary'}`}>
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save
-              </button>
-              <button onClick={onEdit} title="Edit this row" className="btn-secondary btn-sm">
-                <Pencil size={14} /> Edit
+                Vac
               </button>
               <button
-                onClick={onDelete}
-                title="Delete row"
-                aria-label="Delete row"
-                className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+                type="button"
+                onClick={() => onToggleAddonFlag('engine')}
+                title="Toggle engine wash (+300)"
+                className={`rounded-lg border px-2 py-1 text-[10px] font-bold transition ${
+                  row.has_engine_wash
+                    ? 'border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/15 dark:text-amber-300'
+                    : 'border-slate-200 bg-white text-slate-400 hover:border-amber-300 hover:text-amber-600 dark:border-white/10 dark:bg-white/5 dark:hover:text-amber-300'
+                }`}
               >
-                <Trash2 size={15} />
+                Eng
               </button>
             </div>
+          ) : (
+            <span className="text-slate-300 dark:text-slate-600">—</span>
+          )}
+        </td>
+        <td className={cell}>
+          <div className="flex items-center justify-end gap-1">
+            <button
+              onClick={onSaveDraft}
+              disabled={saving}
+              title="Save this row"
+              className={`btn-sm ${dirty ? 'btn-primary' : 'btn-secondary'}`}
+            >
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+            </button>
+            <button onClick={onEdit} title="Edit this row" className="btn-secondary btn-sm">
+              <Pencil size={14} />
+            </button>
+            <button
+              onClick={onDelete}
+              title="Delete row"
+              aria-label="Delete row"
+              className="flex h-9 w-9 items-center justify-center rounded-xl text-slate-400 transition hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-500/10 dark:hover:text-red-300"
+            >
+              <Trash2 size={15} />
+            </button>
           </div>
-        </div>
-      </div>
+        </td>
+      </tr>
 
       {smsOpen && (
-        <div className="mt-2 flex flex-col gap-2 rounded-xl border border-brand-200 bg-brand-50/60 p-2 dark:border-brand-400/20 dark:bg-brand-500/5 sm:flex-row sm:items-center">
-          <textarea
-            rows={2}
-            autoFocus
-            placeholder="Paste the M-Pesa/bank payment message here — amount and payer name fill in automatically…"
-            className="input-base input-sm flex-1 resize-none font-mono"
-            value={smsText}
-            onChange={(e) => onSmsText(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onFillSms(); } }}
-          />
-          <div className="flex gap-1.5">
-            <button onClick={onFillSms} className="btn-primary btn-sm flex-1">
-              <Check size={14} /> Fill
-            </button>
-            <button onClick={onOpenSms} className="btn-secondary btn-sm flex-1">Close</button>
-          </div>
-        </div>
+        <tr>
+          <td colSpan={11} className="border-b border-slate-100 bg-brand-50/60 px-3 py-2 dark:border-white/5 dark:bg-brand-500/5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <textarea
+                rows={2}
+                autoFocus
+                placeholder="Paste the M-Pesa/bank payment message here — amount and payer name fill in automatically…"
+                className="input-base input-sm flex-1 resize-none font-mono"
+                value={smsText}
+                onChange={(e) => onSmsText(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onFillSms(); } }}
+              />
+              <div className="flex gap-1.5">
+                <button onClick={onFillSms} className="btn-primary btn-sm flex-1">
+                  <Check size={14} /> Fill
+                </button>
+                <button onClick={onOpenSms} className="btn-secondary btn-sm flex-1">Close</button>
+              </div>
+            </div>
+          </td>
+        </tr>
       )}
 
       {error && (
-        <p className="mt-2 inline-flex items-center gap-1.5 pl-7 text-xs font-semibold text-red-600 dark:text-red-400">
-          <AlertTriangle size={13} /> {error}
-        </p>
+        <tr>
+          <td colSpan={11} className="border-b border-slate-100 bg-red-50 px-3 py-1.5 dark:border-white/5 dark:bg-red-500/5">
+            <p className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-600 dark:text-red-400">
+              <AlertTriangle size={13} /> {error}
+            </p>
+          </td>
+        </tr>
       )}
-    </div>
+    </>
   );
 }

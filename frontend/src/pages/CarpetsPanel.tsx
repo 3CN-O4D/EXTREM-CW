@@ -19,6 +19,10 @@ const STATUS_META: Record<Status, { label: string; cls: string }> = {
 
 const toNum = (v: any) => { const n = parseInt(v); return isNaN(n) ? 0 : Math.max(0, n); };
 
+// The list endpoint only ships small thumbnails; the "View" button fetches the
+// full-resolution photo on demand. Show the most recent stage photo available.
+const carpetThumb = (c: any): string => c?.image_ready_thumb || c?.image_washed_thumb || c?.image_thumb || '';
+
 const EMPTY_RECEIVE = {
   image: '', thumb: '', characteristics: '', client_name: '', customer_phone: '',
   receiver_id: '', expected_price: 300,
@@ -527,8 +531,26 @@ export default function CarpetsPanel() {
                 {readyCarpets.map((c) => (
                   <tr key={c.id}>
                     <td>
-                      <p className="font-bold">{c.characteristics || 'Carpet'}</p>
-                      <p className="text-[11px] font-mono text-slate-400">#{c.id}</p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openPhoto(c)}
+                          title="View photo"
+                          className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-white/5"
+                        >
+                          {carpetThumb(c) ? (
+                            <img src={carpetThumb(c)} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <span className="flex h-full w-full items-center justify-center text-slate-400">
+                              <ImageIcon size={18} />
+                            </span>
+                          )}
+                        </button>
+                        <div className="min-w-0">
+                          <p className="font-bold">{c.characteristics || 'Carpet'}</p>
+                          <p className="text-[11px] font-mono text-slate-400">#{c.id}</p>
+                        </div>
+                      </div>
                     </td>
                     <td>{c.client_name || 'Client'}</td>
                     <td>
@@ -675,8 +697,26 @@ export default function CarpetsPanel() {
                   <tr key={c.id}>
                     <td className="font-mono text-xs text-slate-400">#{c.id}</td>
                     <td>
-                      <p className="font-bold">{c.characteristics || 'Carpet'}</p>
-                      <p className="text-[11px] text-slate-400">{c.is_washed ? 'Washed' : 'Not washed'}</p>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => openPhoto(c)}
+                          title="View photo"
+                          className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-slate-100 dark:bg-white/5"
+                        >
+                          {carpetThumb(c) ? (
+                            <img src={carpetThumb(c)} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <span className="flex h-full w-full items-center justify-center text-slate-400">
+                              <ImageIcon size={18} />
+                            </span>
+                          )}
+                        </button>
+                        <div className="min-w-0">
+                          <p className="font-bold">{c.characteristics || 'Carpet'}</p>
+                          <p className="text-[11px] text-slate-400">{c.is_washed ? 'Washed' : 'Not washed'}</p>
+                        </div>
+                      </div>
                     </td>
                     <td>
                       <p className="font-medium">{c.client_name || '—'}</p>
