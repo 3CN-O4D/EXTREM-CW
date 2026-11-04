@@ -158,8 +158,10 @@ export default function DayStats({ summary, carpets, selectedDay, weekStart, mod
         <div>
           <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-3">
             <div>
-              <h3 className="text-sm font-black tracking-tight">Employee earnings</h3>
-              <p className="muted text-xs">Gross wages {grossWages} · withheld {withheld} · net {netWages}</p>
+              <h3 className="text-sm font-black tracking-tight">Staff earnings</h3>
+              <p className="muted text-xs">
+                Net pay = Gross − Shortfall (a day with no money remitted counts as a full expected-price deduction)
+              </p>
             </div>
           </div>
           {labor.length === 0 ? (
@@ -169,24 +171,26 @@ export default function DayStats({ summary, carpets, selectedDay, weekStart, mod
               <table className="table-clean min-w-0">
                 <thead>
                   <tr>
-                    <th>Employee</th>
+                    <th>Staff</th>
                     <th className="text-right">Gross</th>
                     <th className="text-right">Shortfall</th>
-                    <th className="text-right">Net</th>
+                    <th className="text-right">Net pay</th>
                   </tr>
                 </thead>
                 <tbody>
                   {labor.map((e) => {
-                    const net = n(e.wages);
+                    const gross = n(e.gross);
+                    const shortfall = n(e.shortfall);
+                    const net = gross - shortfall;
                     return (
                       <tr key={`${e.name}-${e.abbreviation}`}>
                         <td>
                           <p className="font-medium">{e.name}</p>
                           {e.abbreviation ? <p className="text-[11px] text-slate-400">{e.abbreviation}</p> : null}
                         </td>
-                        <td className="text-right font-mono">{n(e.gross)}</td>
-                        <td className={`text-right font-mono ${n(e.shortfall) > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}`}>
-                          {n(e.shortfall)}
+                        <td className="text-right font-mono">{gross}</td>
+                        <td className={`text-right font-mono ${shortfall > 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-400'}`}>
+                          {shortfall}
                         </td>
                         <td className={`text-right font-mono font-bold ${net < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
                           {net}
@@ -198,7 +202,9 @@ export default function DayStats({ summary, carpets, selectedDay, weekStart, mod
                     <td>Total</td>
                     <td className="text-right font-mono">{grossWages}</td>
                     <td className="text-right font-mono text-red-600 dark:text-red-400">{withheld}</td>
-                    <td className="text-right font-mono">{netWages}</td>
+                    <td className={`text-right font-mono font-bold ${netWages < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                      {netWages}
+                    </td>
                   </tr>
                 </tbody>
               </table>

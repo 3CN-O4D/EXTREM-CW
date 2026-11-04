@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { parsePaymentSms } from '../utils/smsParser';
 import { InlineError } from './States';
@@ -651,6 +652,9 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
                 <Plus size={12} /> {label}
               </button>
             ))}
+            <Link to="/carpets" className="ml-2 inline-flex items-center gap-1.5 rounded-xl border border-brand-200 bg-white px-3 py-1.5 text-xs font-bold text-brand-700 transition hover:border-brand-300 hover:text-brand-900 dark:border-white/10 dark:bg-white/5 dark:text-brand-300 dark:hover:text-brand-200">
+              <Calendar size={12} /> Carpets board
+            </Link>
           </div>
         </div>
       </div>
