@@ -1005,6 +1005,9 @@ export default function ManagerPanel() {
                           <option value="car">Car</option>
                           <option value="midrange">Midrange</option>
                           <option value="lorry">Lorry</option>
+                          <option value="carpet">Carpet</option>
+                          <option value="vacuum">Vacuum</option>
+                          <option value="engine">Engine wash</option>
                           <option value="other">Other</option>
                         </select>
                       </td>
