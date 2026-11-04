@@ -182,25 +182,26 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
   const credit_employee_wages = money(Math.max(0, final_payout));
   const debit_employee_debt = money(Math.abs(Math.min(0, final_payout)));
 
+  const round = (n: number) => Math.round(n);
   return {
     transaction_summary: {
-      expected_price,
-      total_customer_paid: total_paid,
-      isolated_tip,
-      misc_amount,
-      net_business_remittance,
-      shortfall_detected: shortfall,
+      expected_price: round(expected_price),
+      total_customer_paid: round(total_paid),
+      isolated_tip: round(isolated_tip),
+      misc_amount: round(misc_amount),
+      net_business_remittance: round(net_business_remittance),
+      shortfall_detected: round(shortfall),
     },
     employee_financials: {
-      calculated_commission: commission,
-      net_wage_before_tip,
-      final_payout_output: final_payout,
+      calculated_commission: round(commission),
+      net_wage_before_tip: round(net_wage_before_tip),
+      final_payout_output: round(final_payout),
     },
     ledger_routing: {
-      credit_employee_wages,
-      debit_employee_debt,
-      business_gross_revenue: net_business_remittance,
-      business_labor_expense: credit_employee_wages,
+      credit_employee_wages: round(credit_employee_wages),
+      debit_employee_debt: round(debit_employee_debt),
+      business_gross_revenue: round(net_business_remittance),
+      business_labor_expense: round(credit_employee_wages),
     },
   };
 }

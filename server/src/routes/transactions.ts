@@ -18,7 +18,7 @@ export interface CarpetMetadataIn {
 }
 
 export interface CreateData {
-  washer_id: number;
+  washer_id: number | null;
   category: string;
   expected_price: number;
   cash_paid: number;
@@ -53,7 +53,7 @@ function parseMetadata(v: unknown): CarpetMetadataIn | null {
 
 export function parseCreate(body: Record<string, unknown>): CreateData {
   const data: CreateData = {
-    washer_id: asInt(body.washer_id, 'washer_id'),
+    washer_id: asOptInt(body.washer_id, 'washer_id') ?? null,
     category: requireEnum(asOptStr(body.category) ?? '', SERVICE_CATEGORIES, 'category'),
     expected_price: money(asFloat(body.expected_price, 'expected_price')),
     cash_paid: money(asFloat(body.cash_paid, 'cash_paid')),
@@ -136,8 +136,10 @@ export async function createTransactionCore(
   const netWage = noWage ? 0 : result.employee_financials.net_wage_before_tip;
   const payout = noWage ? 0 : result.employee_financials.final_payout_output;
 
-  const washer = await queryOne<UserRow>('SELECT * FROM users WHERE id = $1', [data.washer_id]);
-  if (!washer) throw new HttpError(404, 'Washer not found');
+  const washer = data.washer_id == null
+    ? null
+    : await queryOne<UserRow>('SELECT * FROM users WHERE id = $1', [data.washer_id]);
+  if (data.washer_id != null && !washer) throw new HttpError(404, 'Washer not found');
 
   const md = data.carpet_metadata;
   const week_id = getCurrentWeekId();
@@ -193,7 +195,7 @@ export async function createTransactionCore(
     );
     const tx = insert.rows[0] as TxRow;
 
-    if (!noWage) {
+    if (!noWage && washer) {
       const credit = employeeBearsShortfall
         ? result.ledger_routing.credit_employee_wages
         : result.employee_financials.calculated_commission;
@@ -478,7 +480,7 @@ router.delete(
 function mergeUpdate(tx: TxRow, u: Record<string, any>): CreateData {
   const present = <T>(k: string, or: T): T => (u[k] !== undefined ? (u[k] as T) : or);
   const data: CreateData = {
-    washer_id: asOptInt(present('washer_id', tx.washer_id), 'washer_id')!,
+    washer_id: asOptInt(present('washer_id', tx.washer_id), 'washer_id') ?? null,
     category: requireEnum(
       present('category', tx.category.toLowerCase()),
       SERVICE_CATEGORIES,

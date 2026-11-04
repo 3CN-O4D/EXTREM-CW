@@ -98,7 +98,6 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
   const [loadError, setLoadError] = useState('');
   const [savingAll, setSavingAll] = useState(false);
   const [prices, setPrices] = useState<Record<string, any>>({});
-
   // drafts & popovers
   const [smsOpen, setSmsOpen] = useState<string | null>(null);
   const [smsText, setSmsText] = useState('');
@@ -332,8 +331,9 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
       const merged = { ...(existing || { _key: key, kind: 'tx' as const, draft: true, cash: 0, mpesa: 0, sender: '', ref: '', time: nowHHmm(), expected: 0, category: 'car' }), ...patch };
       const cat = merged.category || 'car';
       const expected = merged.expected || STANDARD[cat] || (merged.cash || 0) + (merged.mpesa || 0);
+      const washerId = merged.washer_id == null || merged.washer_id === '' ? null : Number(merged.washer_id);
       const payload: any = {
-        ...(merged.washer_id && { washer_id: Number(merged.washer_id) }),
+        ...(washerId != null && Number.isFinite(washerId) && { washer_id: washerId }),
         category: cat,
         expected_price: expected,
         cash_paid: merged.cash || 0,
