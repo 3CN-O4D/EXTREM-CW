@@ -87,6 +87,16 @@ router.get(
     const released = Number(aggregate.released || 0);
     const unwashed = received + (total - received - washed - dried - ready - released);
 
+    // Carpets logged as "Other" with the item CARPET are untracked: they never
+    // get a carpets row, but they still count in the carpet stats.
+    const untrackedTotalRow = (
+      await pool.query(
+        `SELECT COUNT(*) AS c FROM transactions
+         WHERE category = 'CARPET' AND custom_category IS NOT NULL AND carpet_characteristics IS NULL`,
+      )
+    ).rows[0];
+    const untracked = Number(untrackedTotalRow.c || 0);
+
     const perEmp = (
       await pool.query(
         `SELECT u.id, u.full_name, u.abbreviation,
@@ -103,6 +113,17 @@ router.get(
         ORDER BY u.full_name`,
       )
     ).rows;
+
+    const untrackedPerEmp = (
+      await pool.query(
+        `SELECT washer_id, COUNT(*) AS c FROM transactions
+         WHERE category = 'CARPET' AND custom_category IS NOT NULL AND carpet_characteristics IS NULL AND washer_id IS NOT NULL
+         GROUP BY washer_id`,
+      )
+    ).rows;
+    const untrackedByEmp = new Map<number, number>(
+      untrackedPerEmp.map((r: any) => [Number(r.washer_id), Number(r.c)]),
+    );
 
     const employees = perEmp.map((e: any) => {
       const t = Number(e.total || 0);
@@ -123,6 +144,7 @@ router.get(
         ready: rd,
         released: rel,
         unwashed: un,
+        untracked: untrackedByEmp.get(Number(e.id)) ?? 0,
       };
     });
 
@@ -144,6 +166,18 @@ router.get(
       )
     ).rows;
 
+    const untrackedDaily = (
+      await pool.query(
+        `SELECT date(timestamp) as day, COUNT(*) as c FROM transactions
+         WHERE category = 'CARPET' AND custom_category IS NOT NULL AND carpet_characteristics IS NULL
+           AND timestamp >= NOW() - INTERVAL '7 days'
+         GROUP BY date(timestamp)`,
+      )
+    ).rows;
+    const untrackedByDay = new Map<string, number>(
+      untrackedDaily.map((r: any) => [String(r.day).slice(0, 10), Number(r.c)]),
+    );
+
     const dailyStats = daily.map((d: any) => ({
       date: d.day,
       total: Number(d.total || 0),
@@ -152,7 +186,23 @@ router.get(
       dried: Number(d.dried || 0),
       ready: Number(d.ready || 0),
       released: Number(d.released || 0),
+      untracked: untrackedByDay.get(String(d.day).slice(0, 10)) ?? 0,
     }));
+    const trackedDays = new Set(dailyStats.map((s) => String(s.date).slice(0, 10)));
+    for (const [dayKey, count] of untrackedByDay) {
+      if (trackedDays.has(dayKey)) continue;
+      dailyStats.push({
+        date: dayKey,
+        total: 0,
+        received: 0,
+        washed: 0,
+        dried: 0,
+        ready: 0,
+        released: 0,
+        untracked: count,
+      });
+    }
+    dailyStats.sort((a, b) => String(b.date).localeCompare(String(a.date)));
 
     // Day-specific movement: how many arrived, went out, and were still in the
     // shop at the end of the selected day.
@@ -173,11 +223,19 @@ router.get(
           [day],
         )
       ).rows[0];
+      const du = (
+        await pool.query(
+          `SELECT COUNT(*) AS c FROM transactions
+           WHERE category = 'CARPET' AND custom_category IS NOT NULL AND carpet_characteristics IS NULL AND date(timestamp) = $1::date`,
+          [day],
+        )
+      ).rows[0];
       dayStats = {
         date: day,
         received: Number(d.received || 0),
         released: Number(d.released || 0),
         remaining: Number(d.remaining || 0),
+        untracked: Number(du.c || 0),
       };
     }
 
@@ -202,6 +260,13 @@ router.get(
           [startDay, endDay],
         )
       ).rows[0];
+      const wu = (
+        await pool.query(
+          `SELECT COUNT(*) AS c FROM transactions
+           WHERE category = 'CARPET' AND custom_category IS NOT NULL AND carpet_characteristics IS NULL AND week_id = $1`,
+          [week_id],
+        )
+      ).rows[0];
       weekStats = {
         week_id,
         start: startDay,
@@ -209,6 +274,7 @@ router.get(
         received: Number(w.received || 0),
         released: Number(w.released || 0),
         remaining: Number(w.remaining || 0),
+        untracked: Number(wu.c || 0),
       };
     }
 
@@ -220,6 +286,7 @@ router.get(
       ready,
       released,
       unwashed,
+      untracked,
       in_shop: Math.max(0, total - released),
       day: dayStats,
       week: weekStats,

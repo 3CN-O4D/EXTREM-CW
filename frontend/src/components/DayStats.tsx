@@ -43,6 +43,7 @@ export default function DayStats({ summary, carpets, dailySummaries, selectedDay
   const carpetIn = mode === 'day' ? n(carpets?.day?.received) : n(carpets?.week?.received);
   const carpetOut = mode === 'day' ? n(carpets?.day?.released) : n(carpets?.week?.released);
   const carpetLeft = mode === 'day' ? n(carpets?.day?.remaining) : n(carpets?.week?.remaining);
+  const carpetUntracked = mode === 'day' ? n(carpets?.day?.untracked) : n(carpets?.week?.untracked);
 
   const counts: Array<[string, number]> = Object.entries(summary.category_counts || {})
     .map(([cat, count]) => [cat, n(count)] as [string, number])
@@ -74,6 +75,7 @@ export default function DayStats({ summary, carpets, dailySummaries, selectedDay
     { label: 'Carpets in', value: `${carpetIn}`, cls: 'text-blue-600 dark:text-blue-400' },
     { label: 'Carpets out', value: `${carpetOut}`, cls: 'text-violet-600 dark:text-violet-300' },
     { label: 'Carpets remaining', value: `${carpetLeft}`, cls: 'text-cyan-600 dark:text-cyan-400' },
+    { label: 'Carpets untracked', value: `${carpetUntracked}`, cls: 'text-fuchsia-600 dark:text-fuchsia-400' },
     {
       label: 'Staff debts',
       value: `Ksh ${staffDebts}`,
@@ -139,6 +141,7 @@ export default function DayStats({ summary, carpets, dailySummaries, selectedDay
                   <th className="text-right">Carpets in</th>
                   <th className="text-right">Carpets out</th>
                   <th className="text-right">Remaining</th>
+                  <th className="text-right">Untracked</th>
                 </tr>
               </thead>
               <tbody>
@@ -161,6 +164,7 @@ export default function DayStats({ summary, carpets, dailySummaries, selectedDay
                       <td className="text-right font-mono">{carpetDay ? n(carpetDay.received) : 0}</td>
                       <td className="text-right font-mono">{carpetDay ? n(carpetDay.released) : 0}</td>
                       <td className="text-right font-mono">{carpetDay ? n(carpetDay.total) - n(carpetDay.released) : 0}</td>
+                      <td className="text-right font-mono">{carpetDay ? n(carpetDay.untracked) : 0}</td>
                     </tr>
                   );
                 })}
@@ -175,6 +179,7 @@ export default function DayStats({ summary, carpets, dailySummaries, selectedDay
                   <td className="text-right font-mono">{carpetIn}</td>
                   <td className="text-right font-mono">{carpetOut}</td>
                   <td className="text-right font-mono">{carpetLeft}</td>
+                  <td className="text-right font-mono">{carpetUntracked}</td>
                 </tr>
               </tbody>
             </table>

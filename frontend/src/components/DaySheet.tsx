@@ -60,6 +60,8 @@ type SheetRow = {
   error?: string;
   has_vacuum?: boolean;
   has_engine_wash?: boolean;
+  custom_category?: string | null;
+  carpet_characteristics?: string | null;
 };
 function nowHHmm(): string {
   return format(new Date(), 'HH:mm');
@@ -70,9 +72,17 @@ const toNum = (v: any) => {
   return Number.isFinite(n) && n > 0 ? n : 0;
 };
 
+const isCarpetItem = (v?: string | null) => (v || '').trim().toUpperCase().startsWith('CARPET');
+
+// An "Other" row whose item reads CARPET is an untracked carpet: it is priced
+// and counted as a carpet, but it never enters the tracked carpets board.
+function normalizeCategory(cat: string, item?: string | null): string {
+  return cat === 'other' && isCarpetItem(item) ? 'carpet' : cat;
+}
+
 function txToRow(tx: any): SheetRow {
   const item = tx.category === 'carpet'
-    ? (tx.carpet_characteristics || 'Carpet')
+    ? (tx.carpet_characteristics || tx.custom_category || 'Carpet')
     : tx.category === 'other'
       ? (tx.custom_category || 'Other')
       : (tx.plate_number || '');
@@ -94,6 +104,8 @@ function txToRow(tx: any): SheetRow {
     final_payout: tx.final_payout || 0,
     has_vacuum: tx.has_vacuum || false,
     has_engine_wash: tx.has_engine_wash || false,
+    custom_category: tx.custom_category || null,
+    carpet_characteristics: tx.carpet_characteristics || null,
   };
 }
 
@@ -234,15 +246,18 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
       alert('Please select a valid washer');
       return;
     }
-    const cat = editForm.category || 'car';
+    const rawCat = editForm.category || 'car';
     const item = editForm.item || '';
+    const cat = normalizeCategory(rawCat, item);
+    const untrackedCarpet = cat === 'carpet' && !editOpen.carpet_characteristics;
+    const expected = Number(editForm.expected) || (cat !== rawCat ? STANDARD[cat] || 0 : 0);
     const hasVac = !!(editForm.has_vacuum || cat === 'vacuum');
     const hasEng = !!(editForm.has_engine_wash || cat === 'engine');
     try {
       const payload: any = {
         ...(washerId ? { washer_id: washerId } : {}),
         category: cat,
-        expected_price: editForm.expected,
+        expected_price: expected,
         cash_paid: editForm.cash || 0,
         mpesa_paid: editForm.mpesa || 0,
         mpesa_transaction_id: editForm.ref || null,
@@ -255,10 +270,11 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
         has_vacuum: hasVac,
         has_engine_wash: hasEng,
         plate_number: PLATE_CATS.includes(cat) ? item || null : null,
-        custom_category: cat === 'other' ? item || null : null,
-        carpet_metadata: cat === 'carpet' && washerId
-          ? { characteristics: item || 'Carpet', receiver_id: washerId }
-          : null,
+        custom_category: cat === 'other'
+          ? item || null
+          : untrackedCarpet
+            ? item || editOpen.custom_category || 'CARPET'
+            : null,
       };
       if (editOpen.id) {
         await api.put(`/transactions/${editOpen.id}`, payload);
@@ -349,9 +365,16 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
       // "saved" so edits PUT to the existing row instead of POSTing a duplicate.
       const saved = existing && existing.id != null ? existing : undefined;
       const merged = { ...(existing || { _key: key, kind: 'tx' as const, draft: true, cash: 0, mpesa: 0, sender: '', ref: '', time: nowHHmm(), expected: 0, category: 'car' }), ...patch };
-      const cat = merged.category || 'car';
+      const rawCat = merged.category || 'car';
+      const cat = normalizeCategory(rawCat, merged.item);
+      const untrackedCarpet = cat === 'carpet' && !merged.carpet_characteristics;
       const expected = merged.expected || STANDARD[cat] || (merged.cash || 0) + (merged.mpesa || 0);
       const washerId = merged.washer_id == null || merged.washer_id === '' ? null : Number(merged.washer_id);
+      const customCategory = cat === 'other'
+        ? merged.item || null
+        : untrackedCarpet
+          ? merged.item || merged.custom_category || 'CARPET'
+          : null;
       const payload: any = {
         ...(washerId != null && Number.isFinite(washerId) && { washer_id: washerId }),
         category: cat,
@@ -368,10 +391,7 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
         has_vacuum: merged.has_vacuum ?? cat === 'vacuum',
         has_engine_wash: merged.has_engine_wash ?? cat === 'engine',
         plate_number: PLATE_CATS.includes(cat) ? merged.item || null : null,
-        custom_category: cat === 'other' ? merged.item || null : null,
-        carpet_metadata: cat === 'carpet' && merged.washer_id
-          ? { characteristics: merged.item || 'Carpet', receiver_id: Number(merged.washer_id) }
-          : null,
+        custom_category: customCategory,
       };
       const save = saved
         ? api.put(`/transactions/${saved.id}`, payload)
@@ -383,12 +403,20 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
           // POSTing a brand-new transaction.
           const newId = response.data?.id;
           setRows((prev) =>
-            prev.map((r) => (r._key === key ? { ...r, id: newId, draft: false, saving: false } : r)),
+            prev.map((r) =>
+              r._key === key
+                ? { ...r, id: newId, draft: false, saving: false, category: cat, custom_category: customCategory }
+                : r,
+            ),
           );
         } else {
           // Existing row was updated via PUT. Mark as saved.
           setRows((prev) =>
-            prev.map((r) => (r._key === key ? { ...r, draft: false, saving: false } : r)),
+            prev.map((r) =>
+              r._key === key
+                ? { ...r, draft: false, saving: false, category: cat, custom_category: customCategory }
+                : r,
+            ),
           );
         }
       });
@@ -420,6 +448,14 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
       r.map((x) => {
         if (x._key !== key) return x;
         const updated = { ...x, ...patch };
+        // Typing CARPET in an "Other" row turns it into an untracked carpet.
+        if (updated.category === 'other' && isCarpetItem(updated.item)) {
+          updated.category = 'carpet';
+          updated.custom_category = updated.item;
+          if (!updated.expected) {
+            updated.expected = Number(prices.carpet?.max_price ?? STANDARD.carpet ?? 300);
+          }
+        }
         // Mark saved rows as draft when edited so they get synced
         if (!x.draft && x.id !== null) {
           updated.draft = true;

@@ -77,6 +77,14 @@ export function parseCreate(body: Record<string, unknown>): CreateData {
   return data;
 }
 
+// Typing CARPET as the free-text item of an "Other" service means an untracked
+// carpet: price and count it as a carpet, but don't create a tracked carpet row.
+function normalizeCarpetCategory(data: CreateData): void {
+  if (data.category === 'other' && (data.custom_category || '').trim().toUpperCase().startsWith('CARPET')) {
+    data.category = 'carpet';
+  }
+}
+
 export function validateMisc(data: CreateData): void {
   const extra = Math.max(0.0, data.cash_paid + data.mpesa_paid - data.expected_price);
   const wanted = data.misc_amount;
@@ -119,6 +127,7 @@ export async function createTransactionCore(
   const prices: Record<string, PriceConfig> = {};
   for (const r of priceRows) prices[r.category] = r;
 
+  normalizeCarpetCategory(data);
   const result = calculateTransaction(data, prices);
   validateMisc(data);
 
@@ -361,6 +370,7 @@ router.put(
     if (!tx) throw new HttpError(404, 'Transaction not found');
 
     const merged = mergeUpdate(tx, updates);
+    normalizeCarpetCategory(merged);
     if (updates.carpet_metadata !== undefined) {
       merged.carpet_metadata = parseMetadata(updates.carpet_metadata);
     }

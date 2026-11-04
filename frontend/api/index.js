@@ -34661,6 +34661,11 @@ function parseCreate(body) {
   }
   return data;
 }
+function normalizeCarpetCategory(data) {
+  if (data.category === "other" && (data.custom_category || "").trim().toUpperCase().startsWith("CARPET")) {
+    data.category = "carpet";
+  }
+}
 function validateMisc(data) {
   const extra = Math.max(0, data.cash_paid + data.mpesa_paid - data.expected_price);
   const wanted = data.misc_amount;
@@ -34679,6 +34684,7 @@ async function createTransactionCore(data, actor, opts = {}) {
   const priceRows = (await pool.query("SELECT category, min_price, max_price, commission_percent FROM prices WHERE is_active = true")).rows;
   const prices = {};
   for (const r of priceRows) prices[r.category] = r;
+  normalizeCarpetCategory(data);
   const result = calculateTransaction(data, prices);
   validateMisc(data);
   const noWage = opts.noWage === true;
@@ -34882,6 +34888,7 @@ router2.put(
     const tx = await queryOne(`SELECT ${TX_FIELDS} FROM transactions WHERE id = $1`, [txId]);
     if (!tx) throw new HttpError(404, "Transaction not found");
     const merged = mergeUpdate(tx, updates);
+    normalizeCarpetCategory(merged);
     if (updates.carpet_metadata !== void 0) {
       merged.carpet_metadata = parseMetadata(updates.carpet_metadata);
     }
@@ -35732,6 +35739,11 @@ router8.get(
     const ready = Number(aggregate.ready || 0);
     const released = Number(aggregate.released || 0);
     const unwashed = received + (total - received - washed - dried - ready - released);
+    const untrackedTotalRow = (await pool.query(
+      `SELECT COUNT(*) AS c FROM transactions
+         WHERE category = 'CARPET' AND custom_category IS NOT NULL AND carpet_characteristics IS NULL`
+    )).rows[0];
+    const untracked = Number(untrackedTotalRow.c || 0);
     const perEmp = (await pool.query(
       `SELECT u.id, u.full_name, u.abbreviation,
           COUNT(c.id) as total,
@@ -35746,6 +35758,14 @@ router8.get(
         GROUP BY u.id, u.full_name, u.abbreviation
         ORDER BY u.full_name`
     )).rows;
+    const untrackedPerEmp = (await pool.query(
+      `SELECT washer_id, COUNT(*) AS c FROM transactions
+         WHERE category = 'CARPET' AND custom_category IS NOT NULL AND carpet_characteristics IS NULL AND washer_id IS NOT NULL
+         GROUP BY washer_id`
+    )).rows;
+    const untrackedByEmp = new Map(
+      untrackedPerEmp.map((r) => [Number(r.washer_id), Number(r.c)])
+    );
     const employees = perEmp.map((e) => {
       const t = Number(e.total || 0);
       const r = Number(e.received || 0);
@@ -35764,7 +35784,8 @@ router8.get(
         dried: d,
         ready: rd,
         released: rel,
-        unwashed: un
+        unwashed: un,
+        untracked: untrackedByEmp.get(Number(e.id)) ?? 0
       };
     });
     const daily = (await pool.query(
@@ -35781,6 +35802,15 @@ router8.get(
         GROUP BY date(created_at)
         ORDER BY date(created_at) DESC`
     )).rows;
+    const untrackedDaily = (await pool.query(
+      `SELECT date(timestamp) as day, COUNT(*) as c FROM transactions
+         WHERE category = 'CARPET' AND custom_category IS NOT NULL AND carpet_characteristics IS NULL
+           AND timestamp >= NOW() - INTERVAL '7 days'
+         GROUP BY date(timestamp)`
+    )).rows;
+    const untrackedByDay = new Map(
+      untrackedDaily.map((r) => [String(r.day).slice(0, 10), Number(r.c)])
+    );
     const dailyStats = daily.map((d) => ({
       date: d.day,
       total: Number(d.total || 0),
@@ -35788,8 +35818,24 @@ router8.get(
       washed: Number(d.washed || 0),
       dried: Number(d.dried || 0),
       ready: Number(d.ready || 0),
-      released: Number(d.released || 0)
+      released: Number(d.released || 0),
+      untracked: untrackedByDay.get(String(d.day).slice(0, 10)) ?? 0
     }));
+    const trackedDays = new Set(dailyStats.map((s) => String(s.date).slice(0, 10)));
+    for (const [dayKey, count] of untrackedByDay) {
+      if (trackedDays.has(dayKey)) continue;
+      dailyStats.push({
+        date: dayKey,
+        total: 0,
+        received: 0,
+        washed: 0,
+        dried: 0,
+        ready: 0,
+        released: 0,
+        untracked: count
+      });
+    }
+    dailyStats.sort((a, b) => String(b.date).localeCompare(String(a.date)));
     validateDay(req.query.day ?? null);
     const day = req.query.day;
     let dayStats = null;
@@ -35805,11 +35851,17 @@ router8.get(
            FROM carpets`,
         [day]
       )).rows[0];
+      const du = (await pool.query(
+        `SELECT COUNT(*) AS c FROM transactions
+           WHERE category = 'CARPET' AND custom_category IS NOT NULL AND carpet_characteristics IS NULL AND date(timestamp) = $1::date`,
+        [day]
+      )).rows[0];
       dayStats = {
         date: day,
         received: Number(d.received || 0),
         released: Number(d.released || 0),
-        remaining: Number(d.remaining || 0)
+        remaining: Number(d.remaining || 0),
+        untracked: Number(du.c || 0)
       };
     }
     const week_id = req.query.week_id;
@@ -35829,13 +35881,19 @@ router8.get(
            FROM carpets`,
         [startDay, endDay]
       )).rows[0];
+      const wu = (await pool.query(
+        `SELECT COUNT(*) AS c FROM transactions
+           WHERE category = 'CARPET' AND custom_category IS NOT NULL AND carpet_characteristics IS NULL AND week_id = $1`,
+        [week_id]
+      )).rows[0];
       weekStats = {
         week_id,
         start: startDay,
         end: endDay,
         received: Number(w.received || 0),
         released: Number(w.released || 0),
-        remaining: Number(w.remaining || 0)
+        remaining: Number(w.remaining || 0),
+        untracked: Number(wu.c || 0)
       };
     }
     res.json({
@@ -35846,6 +35904,7 @@ router8.get(
       ready,
       released,
       unwashed,
+      untracked,
       in_shop: Math.max(0, total - released),
       day: dayStats,
       week: weekStats,
