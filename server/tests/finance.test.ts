@@ -40,6 +40,17 @@ describe('calculateTransaction', () => {
     expect(r.employee_financials.final_payout_output).toBe(30);
   });
 
+  it('motorcycle underpaid owes the full 70, not the 50 minimum', () => {
+    const prices = { motorcycle: { min_price: 50, max_price: 70, commission_percent: 43 } };
+    const r = calculateTransaction(
+      base({ category: 'motorcycle', expected_price: 70, cash_paid: 0 }),
+      prices,
+    );
+    expect(r.transaction_summary.shortfall_detected).toBe(70);
+    expect(r.employee_financials.calculated_commission).toBe(0);
+    expect(r.employee_financials.final_payout_output).toBe(-70);
+  });
+
   it('zero remittance theft protection: net wage = -expected (200)', () => {
     const r = calculateTransaction(base({ expected_price: 200, cash_paid: 0 }));
     expect(r.employee_financials.net_wage_before_tip).toBe(-200);

@@ -84,7 +84,7 @@ export default function ManagerPanel() {
       .catch((err: any) => setLoadError(err?.response?.data?.detail || 'Could not load employees.'));
   }, []);
 
-  const fetchTransactions = async () => {
+  const fetchTransactions = async (fresh = false) => {
     const params: any = {};
     if (viewMode === 'day') {
       params.day = format(selectedDay, 'yyyy-MM-dd');
@@ -93,7 +93,7 @@ export default function ManagerPanel() {
       params.week_id = format(weekStart, 'yyyy-II');
     }
     try {
-      const res = await api.get('/transactions/', { params });
+      const res = await api.get('/transactions/', { params, skipCache: fresh });
       setTransactions(res.data);
       setLoadError('');
     } catch (err: any) {
@@ -106,7 +106,7 @@ export default function ManagerPanel() {
     }
   };
 
-  const fetchSummary = async () => {
+  const fetchSummary = async (fresh = false) => {
     const params: any = {};
     if (viewMode === 'day') {
       params.day = format(selectedDay, 'yyyy-MM-dd');
@@ -115,14 +115,14 @@ export default function ManagerPanel() {
       params.week_id = format(weekStart, 'yyyy-II');
     }
     try {
-      const res = await api.get('/stats/summary', { params });
+      const res = await api.get('/stats/summary', { params, skipCache: fresh });
       setSummary(res.data);
     } catch {}
   };
 
   // Carpets received / released for the selected day (or the live aggregate
   // while in week view).
-  const fetchDayCarpets = async () => {
+  const fetchDayCarpets = async (fresh = false) => {
     const params: any = {};
     if (viewMode === 'day') {
       params.day = format(selectedDay, 'yyyy-MM-dd');
@@ -131,14 +131,14 @@ export default function ManagerPanel() {
       params.week_id = format(weekStart, 'yyyy-II');
     }
     try {
-      const res = await api.get('/carpets/stats', { params });
+      const res = await api.get('/carpets/stats', { params, skipCache: fresh });
       setDayCarpets(res.data);
     } catch {
       setDayCarpets(null);
     }
   };
 
-  const fetchDailySummaries = async () => {
+  const fetchDailySummaries = async (fresh = false) => {
     if (viewMode !== 'week') {
       setDailySummaries([]);
       return;
@@ -149,7 +149,7 @@ export default function ManagerPanel() {
       const results = await Promise.all(
         days.map((d) =>
           api
-            .get('/stats/summary', { params: { day: format(d, 'yyyy-MM-dd') } })
+            .get('/stats/summary', { params: { day: format(d, 'yyyy-MM-dd') }, skipCache: fresh })
             .then((res) => ({ date: format(d, 'yyyy-MM-dd'), data: res.data }))
             .catch(() => ({ date: format(d, 'yyyy-MM-dd'), data: null }))
         )
@@ -161,10 +161,10 @@ export default function ManagerPanel() {
   };
 
   useEffect(() => {
-    fetchTransactions();
-    fetchSummary();
-    fetchDayCarpets();
-    fetchDailySummaries();
+    fetchTransactions(true);
+    fetchSummary(true);
+    fetchDayCarpets(true);
+    fetchDailySummaries(true);
   }, [selectedDay, viewMode, weekOffset]);
 
   const fetchDebts = async () => {
@@ -570,7 +570,9 @@ export default function ManagerPanel() {
       await api.put(`/transactions/${txId}`, payload);
       alert('Transaction updated!');
       setEditingTx(null);
-      await fetchTransactions();
+      await fetchTransactions(true);
+      fetchSummary(true);
+      fetchDayCarpets(true);
     } catch (err: any) {
       alert(err?.response?.data?.detail || 'Error updating transaction');
     }
@@ -1133,7 +1135,19 @@ export default function ManagerPanel() {
 
       {activeTab === 'sheet' ? (
         <div className="space-y-5">
-          <DaySheet employees={employees} selectedDay={selectedDay} onOpenSummary={() => setSummaryOpen(true)} />
+          <DaySheet
+            employees={employees}
+            selectedDay={selectedDay}
+            mode={viewMode}
+            weekId={weekId}
+            onOpenSummary={() => setSummaryOpen(true)}
+            onDataChanged={() => {
+              fetchTransactions();
+              fetchSummary();
+              fetchDayCarpets();
+              fetchDailySummaries();
+            }}
+          />
           <DayStats summary={summary} carpets={dayCarpets} dailySummaries={dailySummaries} selectedDay={selectedDay} weekStart={weekStart} mode={viewMode} />
         </div>
       ) : activeTab === 'expense' ? (
@@ -1699,6 +1713,7 @@ export default function ManagerPanel() {
                           <option value="car">Car</option>
                           <option value="midrange">Midrange</option>
                           <option value="lorry">Lorry</option>
+                          <option value="exterior">Exterior wash</option>
                           <option value="carpet">Carpet</option>
                           <option value="vacuum">Vacuum</option>
                           <option value="engine">Engine wash</option>

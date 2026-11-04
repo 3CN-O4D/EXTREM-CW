@@ -117,7 +117,9 @@ export function calculateTransaction(data: FinanceInput, prices?: Record<string,
 
   if (data.category === 'motorcycle' && minP > 0) {
     if (total_paid < minP) {
-      effectivePriceForShortfall = minP;
+      // Underpaid bike: the rider owes the FULL service price (e.g. 70), not
+      // just the minimum (50). "Not remitted" means the full amount is due.
+      effectivePriceForShortfall = expected_price > 0 ? expected_price : maxP;
       makes_allowance = 0;
       commission = 0; // no commission if paid below min
     } else {

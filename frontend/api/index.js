@@ -34077,18 +34077,25 @@ async function queryOne(text, params = []) {
 }
 
 // server/src/finance.ts
+function money(n) {
+  const v = Number(n);
+  return Number.isFinite(v) ? Math.round(v) : 0;
+}
 function calculateTransaction(data, prices) {
-  let expected_price = data.expected_price;
+  let expected_price = money(data.expected_price);
   const priceCfg = prices?.[data.category];
+  const cash_paid = money(data.cash_paid);
+  const mpesa_paid = money(data.mpesa_paid);
+  const manual_tip = money(data.manual_tip);
   if (data.has_car_wash && data.has_vacuum && data.has_engine_wash) {
-    const pkgMax = priceCfg?.max_price ?? 800;
+    const pkgMax = money(priceCfg?.max_price ?? 800);
     if (expected_price < pkgMax) expected_price = pkgMax;
   }
   let commission = 0;
-  const cp = Number(priceCfg?.commission_percent ?? 30);
-  const minP = Number(priceCfg?.min_price ?? 0);
-  const maxP = Number(priceCfg?.max_price ?? 0);
-  const total_paid = data.cash_paid + data.mpesa_paid;
+  const cp = money(priceCfg?.commission_percent ?? 30);
+  const minP = money(priceCfg?.min_price ?? 0);
+  const maxP = money(priceCfg?.max_price ?? 0);
+  const total_paid = cash_paid + mpesa_paid;
   if (data.category === "motorcycle" && minP > 0) {
     if (total_paid < minP) {
       commission = 0;
@@ -34098,60 +34105,60 @@ function calculateTransaction(data, prices) {
       commission = 10 + 2 * (total_paid - (minP + 10));
     }
   } else if (data.category === "car" && (data.has_vacuum || data.has_engine_wash)) {
-    commission = expected_price * 30 / 100;
+    commission = money(expected_price * 30 / 100);
   } else if (expected_price >= minP && minP > 0) {
-    commission = expected_price * cp / 100;
+    commission = money(expected_price * cp / 100);
   } else if (minP === 0) {
-    commission = expected_price * cp / 100;
+    commission = money(expected_price * cp / 100);
   }
-  const misc_amount = data.misc_amount || 0;
+  const misc_amount = money(data.misc_amount);
   let isolated_tip = 0;
   if (total_paid > expected_price) {
     isolated_tip = Math.max(0, total_paid - expected_price - misc_amount);
   }
-  isolated_tip += data.manual_tip;
+  isolated_tip += manual_tip;
   const net_business_remittance = total_paid - isolated_tip;
   let effectivePriceForShortfall = expected_price;
   let makes_allowance = 0;
   if (data.category === "motorcycle" && minP > 0) {
     if (total_paid < minP) {
-      effectivePriceForShortfall = minP;
+      effectivePriceForShortfall = expected_price > 0 ? expected_price : maxP;
       makes_allowance = 0;
       commission = 0;
     } else {
       makes_allowance = maxP - minP;
     }
   } else if ((data.category === "vacuum" || data.category === "engine") && !data.has_car_wash) {
-    makes_allowance = Number(priceCfg?.min_price ?? 200);
+    makes_allowance = money(priceCfg?.min_price ?? 200);
   } else if (data.category === "car" && (data.has_vacuum || data.has_engine_wash)) {
     const vacuumCfg = prices?.vacuum;
     const engineCfg = prices?.engine;
     const hasBoth = data.has_vacuum && data.has_engine_wash;
     if (hasBoth) {
-      const comboMin = minP + Number(data.has_vacuum ? vacuumCfg?.min_price ?? 0 : 0) + Number(data.has_engine_wash ? engineCfg?.min_price ?? 0 : 0);
-      const comboMax = maxP + Number(data.has_vacuum ? vacuumCfg?.max_price ?? 0 : 0) + Number(data.has_engine_wash ? engineCfg?.max_price ?? 0 : 0);
+      const comboMin = minP + money(data.has_vacuum ? vacuumCfg?.min_price ?? 0 : 0) + money(data.has_engine_wash ? engineCfg?.min_price ?? 0 : 0);
+      const comboMax = maxP + money(data.has_vacuum ? vacuumCfg?.max_price ?? 0 : 0) + money(data.has_engine_wash ? engineCfg?.max_price ?? 0 : 0);
       if (total_paid < comboMin) {
         effectivePriceForShortfall = comboMin;
         makes_allowance = 0;
-        commission = total_paid * 30 / 100;
+        commission = money(total_paid * 30 / 100);
       } else {
         makes_allowance = comboMax - comboMin;
-        commission = Math.min(total_paid, comboMax) * 30 / 100;
+        commission = money(Math.min(total_paid, comboMax) * 30 / 100);
       }
     } else {
       const carMax = maxP;
-      const addonMax = Number(data.has_vacuum ? vacuumCfg?.max_price ?? 300 : engineCfg?.max_price ?? 300);
+      const addonMax = money(data.has_vacuum ? vacuumCfg?.max_price ?? 300 : engineCfg?.max_price ?? 300);
       const carPaid = Math.min(total_paid, carMax);
       const addonPaid = Math.max(0, Math.min(total_paid - carMax, addonMax));
       const carMin = minP;
-      const addonMin = Number(data.has_vacuum ? vacuumCfg?.min_price ?? 200 : engineCfg?.min_price ?? 200);
+      const addonMin = money(data.has_vacuum ? vacuumCfg?.min_price ?? 200 : engineCfg?.min_price ?? 200);
       effectivePriceForShortfall = carMin + addonMin;
       makes_allowance = 0;
-      commission = (carPaid + addonPaid) * 30 / 100;
+      commission = money((carPaid + addonPaid) * 30 / 100);
     }
   }
   const gross_shortfall = Math.max(0, effectivePriceForShortfall - net_business_remittance);
-  const shortfall = Math.max(0, gross_shortfall - makes_allowance);
+  const shortfall = money(Math.max(0, gross_shortfall - makes_allowance));
   let net_wage_before_tip = 0;
   if (net_business_remittance === 0) {
     net_wage_before_tip = -expected_price;
@@ -34162,27 +34169,28 @@ function calculateTransaction(data, prices) {
   if (data.tip_method === "wages") {
     final_payout += isolated_tip;
   }
-  const credit_employee_wages = Math.max(0, final_payout);
-  const debit_employee_debt = Math.abs(Math.min(0, final_payout));
+  const credit_employee_wages = money(Math.max(0, final_payout));
+  const debit_employee_debt = money(Math.abs(Math.min(0, final_payout)));
+  const round = (n) => Math.round(n);
   return {
     transaction_summary: {
-      expected_price,
-      total_customer_paid: total_paid,
-      isolated_tip,
-      misc_amount,
-      net_business_remittance,
-      shortfall_detected: shortfall
+      expected_price: round(expected_price),
+      total_customer_paid: round(total_paid),
+      isolated_tip: round(isolated_tip),
+      misc_amount: round(misc_amount),
+      net_business_remittance: round(net_business_remittance),
+      shortfall_detected: round(shortfall)
     },
     employee_financials: {
-      calculated_commission: commission,
-      net_wage_before_tip,
-      final_payout_output: final_payout
+      calculated_commission: round(commission),
+      net_wage_before_tip: round(net_wage_before_tip),
+      final_payout_output: round(final_payout)
     },
     ledger_routing: {
-      credit_employee_wages,
-      debit_employee_debt,
-      business_gross_revenue: net_business_remittance,
-      business_labor_expense: credit_employee_wages
+      credit_employee_wages: round(credit_employee_wages),
+      debit_employee_debt: round(debit_employee_debt),
+      business_gross_revenue: round(net_business_remittance),
+      business_labor_expense: round(credit_employee_wages)
     }
   };
 }
@@ -34302,21 +34310,21 @@ function iso(d) {
   if (!d) return null;
   return d.toISOString().replace(/\.\d{3}Z$/, "Z");
 }
-var f = (n) => n === null || n === void 0 ? 0 : n;
+var f = (n) => money(n);
 function serializeTx(t) {
   return {
     id: t.id,
     timestamp: iso(t.timestamp),
     washer_id: t.washer_id,
     category: t.category.toLowerCase(),
-    expected_price: t.expected_price,
-    cash_paid: t.cash_paid,
-    mpesa_paid: t.mpesa_paid,
+    expected_price: money(t.expected_price),
+    cash_paid: money(t.cash_paid),
+    mpesa_paid: money(t.mpesa_paid),
     mpesa_transaction_id: t.mpesa_transaction_id,
     mpesa_sender_name: t.mpesa_sender_name,
-    manual_tip: t.manual_tip,
+    manual_tip: money(t.manual_tip),
     tip_method: t.tip_method.toLowerCase(),
-    misc_amount: t.misc_amount,
+    misc_amount: money(t.misc_amount),
     misc_description: t.misc_description,
     has_car_wash: t.has_car_wash,
     has_vacuum: t.has_vacuum,
@@ -34326,13 +34334,13 @@ function serializeTx(t) {
     custom_category: t.custom_category,
     carpet_characteristics: t.carpet_characteristics,
     receiver_id: t.receiver_id,
-    total_paid: t.total_paid,
-    isolated_tip: t.isolated_tip,
-    net_business_remittance: t.net_business_remittance,
-    shortfall: t.shortfall,
-    calculated_commission: t.calculated_commission,
-    net_wage_before_tip: t.net_wage_before_tip,
-    final_payout: t.final_payout,
+    total_paid: money(t.total_paid),
+    isolated_tip: money(t.isolated_tip),
+    net_business_remittance: money(t.net_business_remittance),
+    shortfall: money(t.shortfall),
+    calculated_commission: money(t.calculated_commission),
+    net_wage_before_tip: money(t.net_wage_before_tip),
+    final_payout: money(t.final_payout),
     week_id: t.week_id
   };
 }
@@ -34354,7 +34362,7 @@ function serializeExpense(e) {
     id: e.id,
     timestamp: iso(e.timestamp),
     description: e.description,
-    amount: e.amount,
+    amount: money(e.amount),
     category: e.category,
     week_id: e.week_id,
     transaction_id: e.transaction_id
@@ -34365,7 +34373,7 @@ function serializeRepayment(r) {
     id: r.id,
     timestamp: iso(r.timestamp),
     employee_id: r.employee_id,
-    amount: r.amount,
+    amount: money(r.amount),
     week_id: r.week_id,
     employee_name: r.employee_name ?? null,
     abbreviation: r.abbreviation ?? null
@@ -34377,14 +34385,14 @@ function serializeDebt(d) {
     id: d.id,
     employee_id: d.employee_id,
     other_name: d.other_name ?? null,
-    amount: d.amount,
+    amount: money(d.amount),
     service: d.service,
     date: iso(d.date),
-    paid: d.paid,
+    paid: money(d.paid),
     paid_date: iso(d.paid_date),
     notes: d.notes,
     transaction_id: d.transaction_id ?? null,
-    balance: d.amount - d.paid
+    balance: money(d.amount - d.paid)
   };
 }
 function serializeClientDebt(c) {
@@ -34393,9 +34401,9 @@ function serializeClientDebt(c) {
     client_name: c.client_name,
     customer_phone: c.customer_phone,
     description: c.description,
-    amount: c.amount,
-    paid: c.paid,
-    balance: c.amount - c.paid,
+    amount: money(c.amount),
+    paid: money(c.paid),
+    balance: money(c.amount - c.paid),
     date: iso(c.date),
     paid_date: iso(c.paid_date),
     notes: c.notes,
@@ -34408,10 +34416,10 @@ function serializeWeeklyLog(w) {
     week_id: w.week_id,
     start_date: iso(w.start_date),
     end_date: iso(w.end_date),
-    total_revenue: w.total_revenue,
-    total_expenses: w.total_expenses,
-    total_labor_expense: w.total_labor_expense,
-    total_profit: w.total_profit,
+    total_revenue: money(w.total_revenue),
+    total_expenses: money(w.total_expenses),
+    total_labor_expense: money(w.total_labor_expense),
+    total_profit: money(w.total_profit),
     data: w.data_json ? JSON.parse(w.data_json) : null
   };
 }
@@ -34419,9 +34427,9 @@ function serializePrice(p) {
   return {
     id: p.id,
     category: p.category,
-    min_price: p.min_price,
-    max_price: p.max_price,
-    commission_percent: p.commission_percent,
+    min_price: money(p.min_price),
+    max_price: money(p.max_price),
+    commission_percent: Number(p.commission_percent),
     is_active: p.is_active,
     created_at: iso(p.created_at),
     updated_at: iso(p.updated_at)
@@ -34439,9 +34447,9 @@ function carpetJson(c, includeImage) {
     image_thumb: c.image_thumb,
     image_washed_thumb: c.image_washed_thumb,
     image_ready_thumb: c.image_ready_thumb,
-    expected_price: c.expected_price,
-    cash_paid: c.cash_paid,
-    mpesa_paid: c.mpesa_paid,
+    expected_price: money(c.expected_price),
+    cash_paid: money(c.cash_paid),
+    mpesa_paid: money(c.mpesa_paid),
     is_washed: c.is_washed,
     status: c.status,
     washed_at: iso(c.washed_at),
@@ -34630,16 +34638,16 @@ function parseMetadata(v) {
 }
 function parseCreate(body) {
   const data = {
-    washer_id: asInt(body.washer_id, "washer_id"),
+    washer_id: asOptInt(body.washer_id, "washer_id") ?? null,
     category: requireEnum(asOptStr(body.category) ?? "", SERVICE_CATEGORIES, "category"),
-    expected_price: asFloat(body.expected_price, "expected_price"),
-    cash_paid: asFloat(body.cash_paid, "cash_paid"),
-    mpesa_paid: asFloat(body.mpesa_paid, "mpesa_paid"),
+    expected_price: money(asFloat(body.expected_price, "expected_price")),
+    cash_paid: money(asFloat(body.cash_paid, "cash_paid")),
+    mpesa_paid: money(asFloat(body.mpesa_paid, "mpesa_paid")),
     mpesa_transaction_id: asOptStr(body.mpesa_transaction_id),
     mpesa_sender_name: asOptStr(body.mpesa_sender_name),
-    manual_tip: asOptFloat(body.manual_tip, "manual_tip") ?? 0,
+    manual_tip: money(asOptFloat(body.manual_tip, "manual_tip") ?? 0),
     tip_method: requireEnum(asOptStr(body.tip_method) ?? "", TIP_METHODS, "tip_method"),
-    misc_amount: asOptFloat(body.misc_amount, "misc_amount") ?? 0,
+    misc_amount: money(asOptFloat(body.misc_amount, "misc_amount") ?? 0),
     misc_description: asOptStr(body.misc_description),
     has_car_wash: body.has_car_wash === void 0 ? false : asBool(body.has_car_wash, "has_car_wash"),
     has_vacuum: body.has_vacuum === void 0 ? false : asBool(body.has_vacuum, "has_vacuum"),
@@ -34680,8 +34688,8 @@ async function createTransactionCore(data, actor, opts = {}) {
   const commission = noWage ? 0 : result.employee_financials.calculated_commission;
   const netWage = noWage ? 0 : result.employee_financials.net_wage_before_tip;
   const payout = noWage ? 0 : result.employee_financials.final_payout_output;
-  const washer = await queryOne("SELECT * FROM users WHERE id = $1", [data.washer_id]);
-  if (!washer) throw new HttpError(404, "Washer not found");
+  const washer = data.washer_id == null ? null : await queryOne("SELECT * FROM users WHERE id = $1", [data.washer_id]);
+  if (data.washer_id != null && !washer) throw new HttpError(404, "Washer not found");
   const md = data.carpet_metadata;
   const week_id = getCurrentWeekId();
   const now = /* @__PURE__ */ new Date();
@@ -34730,7 +34738,7 @@ async function createTransactionCore(data, actor, opts = {}) {
       ]
     );
     const tx = insert.rows[0];
-    if (!noWage) {
+    if (!noWage && washer) {
       const credit = employeeBearsShortfall ? result.ledger_routing.credit_employee_wages : result.employee_financials.calculated_commission;
       const debit = employeeBearsShortfall ? result.ledger_routing.debit_employee_debt : 0;
       await client.query(
@@ -34738,7 +34746,7 @@ async function createTransactionCore(data, actor, opts = {}) {
         [credit, debit, data.washer_id]
       );
       if (employeeBearsShortfall) {
-        await syncShortfallDebt(client, tx.id, data.washer_id, debit, tx);
+        await syncShortfallDebt(client, tx.id, washer.id, debit, tx);
       }
       await syncChaiExpense(client, tx, isolatedTip, washer.full_name ?? "");
     }
@@ -34935,7 +34943,7 @@ router2.put(
         [credit, debit, merged.washer_id]
       );
       const refreshed = (await client.query(`SELECT ${TX_FIELDS} FROM transactions WHERE id = $1`, [txId])).rows[0];
-      await syncShortfallDebt(client, txId, merged.washer_id, debit, refreshed);
+      await syncShortfallDebt(client, txId, washer.id, debit, refreshed);
       await syncChaiExpense(client, refreshed, result.transaction_summary.isolated_tip, washer.full_name ?? "");
       await client.query("COMMIT");
       res.json({
@@ -34981,24 +34989,24 @@ router2.delete(
 function mergeUpdate(tx, u) {
   const present = (k, or) => u[k] !== void 0 ? u[k] : or;
   const data = {
-    washer_id: asOptInt(present("washer_id", tx.washer_id), "washer_id"),
+    washer_id: asOptInt(present("washer_id", tx.washer_id), "washer_id") ?? null,
     category: requireEnum(
       present("category", tx.category.toLowerCase()),
       SERVICE_CATEGORIES,
       "category"
     ),
-    expected_price: asOptFloat(present("expected_price", tx.expected_price), "expected_price"),
-    cash_paid: asOptFloat(present("cash_paid", tx.cash_paid), "cash_paid"),
-    mpesa_paid: asOptFloat(present("mpesa_paid", tx.mpesa_paid), "mpesa_paid"),
+    expected_price: money(asOptFloat(present("expected_price", tx.expected_price), "expected_price")),
+    cash_paid: money(asOptFloat(present("cash_paid", tx.cash_paid), "cash_paid")),
+    mpesa_paid: money(asOptFloat(present("mpesa_paid", tx.mpesa_paid), "mpesa_paid")),
     mpesa_transaction_id: present("mpesa_transaction_id", tx.mpesa_transaction_id) ?? null,
     mpesa_sender_name: present("mpesa_sender_name", tx.mpesa_sender_name) ?? null,
-    manual_tip: asOptFloat(present("manual_tip", tx.manual_tip), "manual_tip") ?? 0,
+    manual_tip: money(asOptFloat(present("manual_tip", tx.manual_tip), "manual_tip") ?? 0),
     tip_method: requireEnum(
       present("tip_method", tx.tip_method.toLowerCase()),
       TIP_METHODS,
       "tip_method"
     ),
-    misc_amount: asOptFloat(present("misc_amount", tx.misc_amount ?? 0), "misc_amount") ?? 0,
+    misc_amount: money(asOptFloat(present("misc_amount", tx.misc_amount ?? 0), "misc_amount") ?? 0),
     misc_description: present("misc_description", tx.misc_description) ?? null,
     has_car_wash: asBool(present("has_car_wash", tx.has_car_wash), "has_car_wash"),
     has_vacuum: asBool(present("has_vacuum", tx.has_vacuum), "has_vacuum"),
@@ -35029,7 +35037,7 @@ router3.post(
     const body = req.body || {};
     const description = asOptStr(body.description);
     if (description === null) throw new HttpError(422, "description is required");
-    const amount = asFloat(body.amount, "amount");
+    const amount = money(asFloat(body.amount, "amount"));
     if (amount < 0) throw new HttpError(422, "amount must be >= 0");
     const category = asOptStr(body.category) ?? "Other";
     const week_id = getCurrentWeekId();
@@ -35090,7 +35098,7 @@ router3.put(
       sets.push(`description = $${params.length}`);
     }
     if (body.amount !== void 0) {
-      const a = asFloat(body.amount, "amount");
+      const a = money(asFloat(body.amount, "amount"));
       if (a < 0) throw new HttpError(422, "amount must be >= 0");
       params.push(a);
       sets.push(`amount = $${params.length}`);
@@ -35155,7 +35163,7 @@ router4.post(
     await requireRole(req, M2);
     const body = req.body || {};
     const employee_id = asInt(body.employee_id, "employee_id");
-    const amount = asFloat(body.amount, "amount");
+    const amount = money(asFloat(body.amount, "amount"));
     if (amount < 0) throw new HttpError(422, "amount must be >= 0");
     const employee = await queryOne("SELECT * FROM users WHERE id = $1", [employee_id]);
     if (!employee) throw new HttpError(404, "Employee not found");
@@ -35228,21 +35236,21 @@ async function collectEmployeeStats(emp, scope) {
   const wageBreakdown = daily.rows.map((d) => ({
     day: toUtcTimestamp(d.day).slice(0, 10),
     day_of_week: weekdayNameFromDate(d.day),
-    wages: Number(d.wages)
+    wages: money(d.wages)
   }));
   const debtSources = debtSrc.rows.map((t) => ({
     id: t.id,
     timestamp: iso(new Date(t.timestamp)),
     category: String(t.category).toLowerCase(),
     custom_category: t.custom_category,
-    expected_price: t.expected_price,
-    shortfall: t.shortfall,
+    expected_price: money(t.expected_price),
+    shortfall: money(t.shortfall),
     plate_number: t.plate_number
   }));
   const miscItemsOut = miscItems.rows.map((t) => ({
     id: t.id,
     timestamp: iso(new Date(t.timestamp)),
-    amount: t.amount,
+    amount: money(t.amount),
     description: t.description,
     category: String(t.category).toLowerCase(),
     custom_category: t.custom_category,
@@ -35253,15 +35261,15 @@ async function collectEmployeeStats(emp, scope) {
     name: emp.full_name,
     abbreviation: emp.abbreviation,
     jobs_count: Number(jobs.rows[0].v),
-    revenue_generated: Number(rev.rows[0].v),
-    wages_earned: Number(wages.rows[0].v),
-    shortfall_total: Number(shortfall.rows[0].v),
+    revenue_generated: money(rev.rows[0].v),
+    wages_earned: money(wages.rows[0].v),
+    shortfall_total: money(shortfall.rows[0].v),
     wage_breakdown: wageBreakdown,
-    current_debt: emp.debt_balance,
-    payable_balance: emp.payable_balance,
+    current_debt: money(emp.debt_balance),
+    payable_balance: money(emp.payable_balance),
     service_counts: empCounts,
     debt_sources: debtSources,
-    misc_earned: Number(misc.rows[0].v),
+    misc_earned: money(misc.rows[0].v),
     misc_items: miscItemsOut,
     carpets_received: Number(received.rows[0].c),
     carpets_released: Number(released.rows[0].c)
@@ -35276,19 +35284,26 @@ router5.get(
     let week_id = req.query.week_id;
     const txParams = [];
     const expParams = [];
+    const cdParams = [];
     let txConds = "";
     let expConds = "";
+    let cdConds = "";
     if (day) {
       txParams.push(day);
       txConds = `WHERE date(timestamp) = $${txParams.length}::date`;
       expParams.push(day);
       expConds = `WHERE date(timestamp) = $${expParams.length}::date`;
+      cdParams.push(day);
+      cdConds = `WHERE date(date) = $${cdParams.length}::date`;
     } else {
       if (!week_id) week_id = getCurrentWeekId();
       txParams.push(week_id);
       txConds = `WHERE week_id = $${txParams.length}`;
       expParams.push(week_id);
       expConds = `WHERE week_id = $${expParams.length}`;
+      const { start: wStart, end: wEnd } = isoWeekRange(week_id);
+      cdParams.push(wStart.slice(0, 10), wEnd.slice(0, 10));
+      cdConds = `WHERE date(date) BETWEEN $${cdParams.length - 1}::date AND $${cdParams.length}::date`;
     }
     const [totalCash, totalMpesa, expenses, labor, revenue, miscTotal, miscRows, catRows, totalDebt, clientDebt, empLabor] = await Promise.all([
       pool.query(`SELECT COALESCE(SUM(cash_paid),0) AS v FROM transactions ${txConds}`, txParams),
@@ -35310,15 +35325,18 @@ router5.get(
       ),
       pool.query(`SELECT category, COUNT(id) AS c FROM transactions ${txConds} GROUP BY category`, txParams),
       pool.query(`SELECT COALESCE(SUM(debt_balance),0) AS v FROM users`),
-      pool.query(`SELECT COALESCE(SUM(amount - paid),0) AS v FROM client_debts`),
+      pool.query(`SELECT COALESCE(SUM(amount - paid),0) AS v FROM client_debts ${cdConds}`, cdParams),
       pool.query(
         `SELECT users.full_name, users.abbreviation,
-                SUM(transactions.final_payout) AS wages,
-                SUM(GREATEST(transactions.final_payout,0)) AS gross,
-                SUM(ABS(LEAST(transactions.final_payout,0))) AS shortfall
-         FROM users JOIN transactions ON users.id = transactions.washer_id
-         WHERE ${day ? "date(transactions.timestamp) = $1::date" : "transactions.week_id = $1"}
-         GROUP BY users.id`,
+                COALESCE(SUM(transactions.final_payout),0) AS wages,
+                COALESCE(SUM(GREATEST(transactions.final_payout,0)),0) AS gross,
+                COALESCE(SUM(ABS(LEAST(transactions.final_payout,0))),0) AS shortfall
+         FROM users
+         LEFT JOIN transactions ON users.id = transactions.washer_id
+           AND ${day ? "date(transactions.timestamp) = $1::date" : "transactions.week_id = $1"}
+         WHERE users.role = 'EMPLOYEE'
+         GROUP BY users.id, users.full_name, users.abbreviation
+         ORDER BY users.full_name`,
         day ? [day] : [week_id]
       )
     ]);
@@ -35333,19 +35351,19 @@ router5.get(
     const miscItems = miscRows.rows.map((t) => ({
       id: t.id,
       timestamp: iso(new Date(t.timestamp)),
-      amount: t.amount,
+      amount: money(t.amount),
       description: t.description,
       category: String(t.category).toLowerCase(),
       custom_category: t.custom_category,
       plate_number: t.plate_number,
       washer: t.washer_id ? nameOf[t.washer_id] ?? null : null
     }));
-    const totalCashV = Number(totalCash.rows[0].v);
-    const totalMpesaV = Number(totalMpesa.rows[0].v);
-    const expensesV = Number(expenses.rows[0].v);
-    const laborV = Number(labor.rows[0].v);
-    const laborGross = Number(labor.rows[0].gross);
-    const laborWithheld = Number(labor.rows[0].withheld);
+    const totalCashV = money(totalCash.rows[0].v);
+    const totalMpesaV = money(totalMpesa.rows[0].v);
+    const expensesV = money(expenses.rows[0].v);
+    const laborV = money(labor.rows[0].v);
+    const laborGross = money(labor.rows[0].gross);
+    const laborWithheld = money(labor.rows[0].withheld);
     res.json({
       week_id,
       day: day ?? null,
@@ -35359,19 +35377,19 @@ router5.get(
       total_labor_gross: laborGross,
       total_shortfall_withheld: laborWithheld,
       net_labor_wages: laborV,
-      total_revenue: Number(revenue.rows[0].v),
-      misc_total: Number(miscTotal.rows[0].v),
+      total_revenue: money(revenue.rows[0].v),
+      misc_total: money(miscTotal.rows[0].v),
       misc_items: miscItems,
       labor_breakdown: empLabor.rows.map((e) => ({
         name: e.full_name,
         abbreviation: e.abbreviation,
-        wages: Number(e.wages),
-        gross: Number(e.gross),
-        shortfall: Number(e.shortfall)
+        wages: money(e.wages),
+        gross: money(e.gross),
+        shortfall: money(e.shortfall)
       })),
       category_counts: categoryCounts,
-      total_debts: Number(totalDebt.rows[0].v),
-      total_client_debts: Number(clientDebt.rows[0].v)
+      total_debts: money(totalDebt.rows[0].v),
+      total_client_debts: money(clientDebt.rows[0].v)
     });
   })
 );
@@ -35439,7 +35457,7 @@ router6.post(
     const body = req.body || {};
     const employee_id = Number(body.employee_id);
     if (!Number.isInteger(employee_id)) throw new HttpError(422, "employee_id must be an integer");
-    const amount = asFloat(body.amount, "amount");
+    const amount = money(asFloat(body.amount, "amount"));
     if (amount < 0) throw new HttpError(422, "amount must be >= 0");
     const method = (asOptStr(body.method) ?? "").toLowerCase();
     if (method !== "cash" && method !== "wages") {
@@ -35526,9 +35544,9 @@ router7.post(
     if (employee_id === null && (!other_name || !other_name.trim())) {
       throw new HttpError(422, "choose an employee or enter a debtor name");
     }
-    const amount = asFloat(body.amount, "amount");
+    const amount = money(asFloat(body.amount, "amount"));
     if (amount < 0) throw new HttpError(422, "amount must be >= 0");
-    const paid = asOptFloat(body.paid, "paid") ?? 0;
+    const paid = money(asOptFloat(body.paid, "paid") ?? 0);
     if (paid < 0) throw new HttpError(422, "paid must be >= 0");
     const service = asOptStr(body.service);
     const notes = asOptStr(body.notes);
@@ -35579,9 +35597,9 @@ router7.put(
       throw new HttpError(403, "Not your debt");
     }
     const body = req.body || {};
-    const amount = body.amount !== void 0 ? asFloat(body.amount, "amount") : debt.amount;
+    const amount = body.amount !== void 0 ? money(asFloat(body.amount, "amount")) : money(debt.amount);
     if (amount < 0) throw new HttpError(422, "amount must be >= 0");
-    const paid = asOptFloat(body.paid, "paid") ?? debt.paid;
+    const paid = body.paid !== void 0 ? money(asOptFloat(body.paid, "paid")) : money(debt.paid);
     if (paid < 0) throw new HttpError(422, "paid must be >= 0");
     if (paid > amount) throw new HttpError(422, "paid cannot exceed amount");
     const service = asOptStr(body.service) ?? debt.service;
@@ -35772,6 +35790,54 @@ router8.get(
       ready: Number(d.ready || 0),
       released: Number(d.released || 0)
     }));
+    validateDay(req.query.day ?? null);
+    const day = req.query.day;
+    let dayStats = null;
+    if (day) {
+      const d = (await pool.query(
+        `SELECT
+             COUNT(*) FILTER (WHERE date(created_at) = $1::date) AS received,
+             COUNT(*) FILTER (WHERE date(released_at) = $1::date) AS released,
+             COUNT(*) FILTER (
+               WHERE date(created_at) <= $1::date
+                 AND (released_at IS NULL OR date(released_at) > $1::date)
+             ) AS remaining
+           FROM carpets`,
+        [day]
+      )).rows[0];
+      dayStats = {
+        date: day,
+        received: Number(d.received || 0),
+        released: Number(d.released || 0),
+        remaining: Number(d.remaining || 0)
+      };
+    }
+    const week_id = req.query.week_id;
+    let weekStats = null;
+    if (week_id) {
+      const { start, end } = isoWeekRange(week_id);
+      const startDay = start.slice(0, 10);
+      const endDay = end.slice(0, 10);
+      const w = (await pool.query(
+        `SELECT
+             COUNT(*) FILTER (WHERE date(created_at) BETWEEN $1::date AND $2::date) AS received,
+             COUNT(*) FILTER (WHERE date(released_at) BETWEEN $1::date AND $2::date) AS released,
+             COUNT(*) FILTER (
+               WHERE date(created_at) <= $2::date
+                 AND (released_at IS NULL OR date(released_at) > $2::date)
+             ) AS remaining
+           FROM carpets`,
+        [startDay, endDay]
+      )).rows[0];
+      weekStats = {
+        week_id,
+        start: startDay,
+        end: endDay,
+        received: Number(w.received || 0),
+        released: Number(w.released || 0),
+        remaining: Number(w.remaining || 0)
+      };
+    }
     res.json({
       total,
       received,
@@ -35780,6 +35846,9 @@ router8.get(
       ready,
       released,
       unwashed,
+      in_shop: Math.max(0, total - released),
+      day: dayStats,
+      week: weekStats,
       employees,
       daily: dailyStats
     });
@@ -35807,9 +35876,9 @@ function parseCarpetCreate(body) {
     receiver_id = Number(body.receiver_id);
     if (!Number.isInteger(receiver_id)) throw new HttpError(422, "receiver_id must be an integer");
   }
-  const expected_price = asOptFloat(body.expected_price, "expected_price") ?? 0;
-  const cash_paid = asOptFloat(body.cash_paid, "cash_paid") ?? 0;
-  const mpesa_paid = asOptFloat(body.mpesa_paid, "mpesa_paid") ?? 0;
+  const expected_price = money(asOptFloat(body.expected_price, "expected_price") ?? 0);
+  const cash_paid = money(asOptFloat(body.cash_paid, "cash_paid") ?? 0);
+  const mpesa_paid = money(asOptFloat(body.mpesa_paid, "mpesa_paid") ?? 0);
   for (const [k, v] of [
     ["expected_price", expected_price],
     ["cash_paid", cash_paid],
@@ -35951,18 +36020,18 @@ router8.patch(
     if (body.characteristics !== void 0) put("characteristics", asOptStr(body.characteristics));
     if (body.client_name !== void 0) put("client_name", asOptStr(body.client_name));
     if (body.expected_price !== void 0) {
-      const v = asOptFloat(body.expected_price, "expected_price");
-      if (v !== void 0 && v < 0) throw new HttpError(422, "expected_price must be >= 0");
+      const v = money(asOptFloat(body.expected_price, "expected_price"));
+      if (v < 0) throw new HttpError(422, "expected_price must be >= 0");
       put("expected_price", v);
     }
     if (body.cash_paid !== void 0) {
-      const v = asOptFloat(body.cash_paid, "cash_paid");
-      if (v !== void 0 && v < 0) throw new HttpError(422, "cash_paid must be >= 0");
+      const v = money(asOptFloat(body.cash_paid, "cash_paid"));
+      if (v < 0) throw new HttpError(422, "cash_paid must be >= 0");
       put("cash_paid", v);
     }
     if (body.mpesa_paid !== void 0) {
-      const v = asOptFloat(body.mpesa_paid, "mpesa_paid");
-      if (v !== void 0 && v < 0) throw new HttpError(422, "mpesa_paid must be >= 0");
+      const v = money(asOptFloat(body.mpesa_paid, "mpesa_paid"));
+      if (v < 0) throw new HttpError(422, "mpesa_paid must be >= 0");
       put("mpesa_paid", v);
     }
     if (body.customer_phone !== void 0) put("customer_phone", asOptStr(body.customer_phone));
@@ -35996,14 +36065,14 @@ router8.post(
     if (carpet.status === "released") throw new HttpError(400, "Carpet already released");
     const body = req.body || {};
     if (body.cash_paid !== void 0) {
-      const v = asOptFloat(body.cash_paid, "cash_paid");
-      if (v !== void 0 && v < 0) throw new HttpError(422, "cash_paid must be >= 0");
-      if (v !== void 0) carpet.cash_paid = v;
+      const v = money(asOptFloat(body.cash_paid, "cash_paid"));
+      if (v < 0) throw new HttpError(422, "cash_paid must be >= 0");
+      carpet.cash_paid = v;
     }
     if (body.mpesa_paid !== void 0) {
-      const v = asOptFloat(body.mpesa_paid, "mpesa_paid");
-      if (v !== void 0 && v < 0) throw new HttpError(422, "mpesa_paid must be >= 0");
-      if (v !== void 0) carpet.mpesa_paid = v;
+      const v = money(asOptFloat(body.mpesa_paid, "mpesa_paid"));
+      if (v < 0) throw new HttpError(422, "mpesa_paid must be >= 0");
+      carpet.mpesa_paid = v;
     }
     if (body.customer_phone !== void 0) carpet.customer_phone = asOptStr(body.customer_phone);
     if (body.client_name !== void 0) carpet.client_name = asOptStr(body.client_name);
@@ -36128,11 +36197,11 @@ router9.post(
     const body = req.body || {};
     const client_name = asOptStr(body.client_name);
     if (!client_name) throw new HttpError(422, "client_name is required");
-    const amount = asOptFloat(body.amount, "amount");
+    const amount = money(asOptFloat(body.amount, "amount"));
     if (amount === void 0 || amount < 0) {
       throw new HttpError(422, amount === void 0 ? "amount must be a number" : "amount must be >= 0");
     }
-    const paid = asOptFloat(body.paid, "paid") ?? 0;
+    const paid = money(asOptFloat(body.paid, "paid") ?? 0);
     if (paid < 0) throw new HttpError(422, "paid must be >= 0");
     const now = toUtcTimestamp(/* @__PURE__ */ new Date());
     const row = (await pool.query(
@@ -36164,7 +36233,7 @@ router9.put(
     const body = req.body || {};
     const paid = asOptFloat(body.paid, "paid");
     const paidDateStr = asOptStr(body.paid_date);
-    const newPaid = paid ?? debt.paid;
+    const newPaid = paid !== void 0 ? money(paid) : money(debt.paid);
     if (newPaid < 0) throw new HttpError(422, "paid must be >= 0");
     let paidDate = void 0;
     if (paidDateStr !== null && paidDateStr !== void 0) {
@@ -36243,25 +36312,25 @@ router10.post(
           "SELECT COALESCE(SUM(final_payout), 0) AS v FROM transactions WHERE week_id = $1 AND washer_id = $2",
           [weekId, emp.id]
         );
-        const wages = Number(wagesRes.rows[0].v);
+        const wages = money(wagesRes.rows[0].v);
         const tipsRes = await client.query(
           "SELECT COALESCE(SUM(amount), 0) AS v FROM tips WHERE week_id = $1 AND employee_id = $2 AND method = 'WAGES'",
           [weekId, emp.id]
         );
-        const tipsWages = Number(tipsRes.rows[0].v);
-        const wagesTotal = wages + tipsWages;
+        const tipsWages = money(tipsRes.rows[0].v);
+        const wagesTotal = money(wages + tipsWages);
         laborFromTxs += wages;
         const openRes = await client.query(
           "SELECT id, amount, paid FROM debts WHERE employee_id = $1 ORDER BY date ASC, id ASC",
           [emp.id]
         );
         const open = openRes.rows;
-        const owed = open.reduce((s, d) => s + (d.amount - d.paid), 0);
+        const owed = money(open.reduce((s, d) => s + (d.amount - d.paid), 0));
         let covered = 0;
         if (wagesTotal > 0) {
           covered = Math.min(wagesTotal, owed);
         }
-        const carry = owed - covered + Math.max(0, -wagesTotal);
+        const carry = money(owed - covered + Math.max(0, -wagesTotal));
         const cashPay = wagesTotal;
         if (covered > 0) {
           await client.query(
@@ -36309,9 +36378,9 @@ router10.post(
         "SELECT COALESCE(SUM(amount), 0) AS v FROM expenses WHERE week_id = $1",
         [weekId]
       );
-      const revenue = Number(rev.rows[0].v);
-      const expenses = Number(exp.rows[0].v);
-      const totalProfit = revenue - expenses - laborFromTxs;
+      const revenue = money(rev.rows[0].v);
+      const expenses = money(exp.rows[0].v);
+      const totalProfit = money(revenue - expenses - laborFromTxs);
       const dataJson = JSON.stringify({
         employees: perEmployee,
         cash_paid_total: cashPaidTotal,
@@ -36403,11 +36472,11 @@ function serializeArrival(a) {
     created_at: toUtcTimestamp(a.created_at),
     plate_number: a.plate_number,
     category: a.category.toLowerCase(),
-    expected_price: a.expected_price,
+    expected_price: money(a.expected_price),
     submitter_id: a.submitter_id,
     washer_id: a.washer_id,
-    cash_paid: a.cash_paid,
-    mpesa_paid: a.mpesa_paid,
+    cash_paid: money(a.cash_paid),
+    mpesa_paid: money(a.mpesa_paid),
     status: a.status,
     debt_id: a.debt_id,
     transaction_id: a.transaction_id,
@@ -36454,7 +36523,7 @@ router11.post(
       SERVICE_CATEGORIES.filter((c) => c !== "carpet"),
       "category"
     );
-    const expected_price = asOptFloat(body.expected_price, "expected_price") ?? getStandardPrice(category);
+    const expected_price = money(asOptFloat(body.expected_price, "expected_price") ?? getStandardPrice(category));
     if (expected_price < 0) throw new HttpError(422, "expected_price must be >= 0");
     let washer_id = null;
     if (body.washer_id !== void 0 && body.washer_id !== null && body.washer_id !== "") {
@@ -36500,8 +36569,8 @@ router11.patch(
       );
     }
     if (body.expected_price !== void 0) {
-      const v = asOptFloat(body.expected_price, "expected_price");
-      if (v !== void 0 && v < 0) throw new HttpError(422, "expected_price must be >= 0");
+      const v = money(asOptFloat(body.expected_price, "expected_price"));
+      if (v < 0) throw new HttpError(422, "expected_price must be >= 0");
       put("expected_price", v);
     }
     if (body.washer_id !== void 0 && body.washer_id !== null && body.washer_id !== "") {
@@ -36564,8 +36633,8 @@ router11.post(
       throw new HttpError(403, "Not your arrival");
     }
     const body = req.body || {};
-    const cash_paid = asOptFloat(body.cash_paid, "cash_paid") ?? 0;
-    const mpesa_paid = asOptFloat(body.mpesa_paid, "mpesa_paid") ?? 0;
+    const cash_paid = money(asOptFloat(body.cash_paid, "cash_paid") ?? 0);
+    const mpesa_paid = money(asOptFloat(body.mpesa_paid, "mpesa_paid") ?? 0);
     for (const [k, v] of [["cash_paid", cash_paid], ["mpesa_paid", mpesa_paid]]) {
       if (v < 0) throw new HttpError(422, `${k} must be >= 0`);
     }
@@ -36581,7 +36650,7 @@ router11.post(
     const txData = {
       washer_id: washerId,
       category: a.category.toLowerCase(),
-      expected_price: a.expected_price,
+      expected_price: money(a.expected_price),
       cash_paid,
       mpesa_paid,
       mpesa_transaction_id: null,
@@ -36704,8 +36773,10 @@ router12.put(
       throw new HttpError(404, "Unknown category");
     }
     const body = req.body || {};
-    const min_price = asOptFloat(body.min_price, "min_price");
-    const max_price = asOptFloat(body.max_price, "max_price");
+    const min_price_raw = asOptFloat(body.min_price, "min_price");
+    const max_price_raw = asOptFloat(body.max_price, "max_price");
+    const min_price = min_price_raw === void 0 ? void 0 : money(min_price_raw);
+    const max_price = max_price_raw === void 0 ? void 0 : money(max_price_raw);
     const commission_percent = asOptFloat(body.commission_percent, "commission_percent");
     const is_active = asBool(body.is_active, "is_active");
     if (min_price === void 0 || max_price === void 0 || commission_percent === void 0) {

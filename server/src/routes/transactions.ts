@@ -206,7 +206,7 @@ export async function createTransactionCore(
       );
 
       if (employeeBearsShortfall) {
-        await syncShortfallDebt(client, tx.id, data.washer_id, debit, tx);
+        await syncShortfallDebt(client, tx.id, washer.id, debit, tx);
       }
 
       await syncChaiExpense(client, tx, isolatedTip, washer.full_name ?? '');
@@ -428,7 +428,7 @@ router.put(
       );
 
 const refreshed = (await client.query(`SELECT ${TX_FIELDS} FROM transactions WHERE id = $1`, [txId])).rows[0] as TxRow;
-      await syncShortfallDebt(client, txId, merged.washer_id, debit, refreshed);
+      await syncShortfallDebt(client, txId, washer.id, debit, refreshed);
       await syncChaiExpense(client, refreshed, result.transaction_summary.isolated_tip, washer.full_name ?? '');
       await client.query('COMMIT');
 

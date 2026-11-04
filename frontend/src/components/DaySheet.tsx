@@ -4,6 +4,7 @@ import {
   AlertTriangle,
   Calendar,
   Check,
+  Image as ImageIcon,
   Loader2,
   MessageSquareText,
   Plus,
@@ -17,12 +18,16 @@ import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import api from '../services/api';
 import { parsePaymentSms } from '../utils/smsParser';
+import { compressVariants } from '../utils/image';
 import { InlineError } from './States';
 
 export interface DaySheetProps {
   employees: any[];
   selectedDay: Date;
+  mode?: 'day' | 'week';
+  weekId?: string;
   onOpenSummary?: () => void;
+  onDataChanged?: () => void;
 }
 
 const STANDARD: Record<string, number> = {
@@ -92,7 +97,7 @@ function txToRow(tx: any): SheetRow {
   };
 }
 
-export default function DaySheet({ employees, selectedDay, onOpenSummary }: DaySheetProps) {
+export default function DaySheet({ employees, selectedDay, mode = 'day', weekId, onOpenSummary, onDataChanged }: DaySheetProps) {
   const [rows, setRows] = useState<SheetRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -104,6 +109,22 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
   const [addonOpen, setAddonOpen] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState<SheetRow | null>(null);
   const [editForm, setEditForm] = useState<any>({});
+
+  // Carpet receive / release flows launched from the add-row toolbar.
+  const [releaseOpen, setReleaseOpen] = useState(false);
+  const [carpetList, setCarpetList] = useState<any[]>([]);
+  const [selectedCarpetId, setSelectedCarpetId] = useState('');
+  const [releaseCash, setReleaseCash] = useState('');
+  const [releaseMpesa, setReleaseMpesa] = useState('');
+  const [releaseWasher, setReleaseWasher] = useState('');
+  const [releaseBusy, setReleaseBusy] = useState(false);
+  const [receiveOpen, setReceiveOpen] = useState(false);
+  const [receiveBusy, setReceiveBusy] = useState(false);
+  const [receiveCompressing, setReceiveCompressing] = useState(false);
+  const [receiveError, setReceiveError] = useState('');
+  const [receive, setReceive] = useState({
+    image: '', thumb: '', characteristics: '', client_name: '', customer_phone: '', receiver_id: '', expected_price: '',
+  });
 
   const [duplicates, setDuplicates] = useState<Set<string>>(new Set());
 
@@ -136,59 +157,49 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
 
   const toggleAddon = (key: string) => setAddonOpen(addonOpen === key ? null : key);
 
+  // Apply an add-on change locally and, when the row already exists on the
+  // server, persist it right away so add-ons always stick.
+  const applyAddon = (key: string, patch: Partial<SheetRow>) => {
+    setRows((prev) => prev.map((r) => (r._key === key ? { ...r, ...patch, draft: true } : r)));
+    const existing = rows.find((r) => r._key === key);
+    if (existing?.id != null) flushSave(key, patch);
+  };
+
   const selectAddon = (key: string, type: 'vacuum' | 'engine' | 'engine+vacuum') => {
     const row = rows.find((r) => r._key === key);
     if (!row) return;
     const isVac = type === 'vacuum' || type === 'engine+vacuum';
     const isEng = type === 'engine' || type === 'engine+vacuum';
-    setRows((prev) =>
-      prev.map((r) => {
-        if (r._key !== key) return r;
-        // Recompute expected from category + new add-on flags
-        let expected = 0;
-        if (r.category === 'car') {
-          expected = 200 + (isVac ? 300 : 0) + (isEng ? 300 : 0);
-          if (isVac && isEng) expected = 800; // full package
-        } else if (PLATE_CATS.includes(r.category)) {
-          expected = STANDARD[r.category] + (isVac ? 300 : 0) + (isEng ? 300 : 0);
-        } else {
-          expected = r.expected || 0;
-        }
-        return {
-          ...r,
-          has_vacuum: isVac,
-          has_engine_wash: isEng,
-          expected,
-        };
-      }),
-    );
+    // Recompute expected from category + new add-on flags
+    let expected = 0;
+    if (row.category === 'car') {
+      expected = 200 + (isVac ? 300 : 0) + (isEng ? 300 : 0);
+      if (isVac && isEng) expected = 800; // full package
+    } else if (PLATE_CATS.includes(row.category)) {
+      expected = STANDARD[row.category] + (isVac ? 300 : 0) + (isEng ? 300 : 0);
+    } else {
+      expected = row.expected || 0;
+    }
     setAddonOpen(null);
+    applyAddon(key, { has_vacuum: isVac, has_engine_wash: isEng, expected });
   };
 
   const removeAddon = (key: string, type: 'vacuum' | 'engine') => {
-    setRows((prev) =>
-      prev.map((r) => {
-        if (r._key !== key) return r;
-        const newVac = type === 'vacuum' ? false : r.has_vacuum;
-        const newEng = type === 'engine' ? false : r.has_engine_wash;
-        let expected = 0;
-        if (r.category === 'car') {
-          expected = 200 + (newVac ? 300 : 0) + (newEng ? 300 : 0);
-          if (newVac && newEng) expected = 800;
-        } else if (PLATE_CATS.includes(r.category)) {
-          expected = STANDARD[r.category] + (newVac ? 300 : 0) + (newEng ? 300 : 0);
-        } else {
-          expected = r.expected || 0;
-        }
-        return {
-          ...r,
-          has_vacuum: newVac,
-          has_engine_wash: newEng,
-          expected,
-        };
-      }),
-    );
+    const row = rows.find((r) => r._key === key);
+    if (!row) return;
+    const newVac = type === 'vacuum' ? false : row.has_vacuum;
+    const newEng = type === 'engine' ? false : row.has_engine_wash;
+    let expected = 0;
+    if (row.category === 'car') {
+      expected = 200 + (newVac ? 300 : 0) + (newEng ? 300 : 0);
+      if (newVac && newEng) expected = 800;
+    } else if (PLATE_CATS.includes(row.category)) {
+      expected = STANDARD[row.category] + (newVac ? 300 : 0) + (newEng ? 300 : 0);
+    } else {
+      expected = row.expected || 0;
+    }
     setAddonOpen(null);
+    applyAddon(key, { has_vacuum: newVac, has_engine_wash: newEng, expected });
   };
 
   const openEdit = (row: SheetRow) => {
@@ -201,6 +212,8 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
       sender: row.sender || '',
       ref: row.ref || '',
       expected: row.expected || 0,
+      has_vacuum: !!row.has_vacuum,
+      has_engine_wash: !!row.has_engine_wash,
     });
     setEditOpen(row);
   };
@@ -223,6 +236,8 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
     }
     const cat = editForm.category || 'car';
     const item = editForm.item || '';
+    const hasVac = !!(editForm.has_vacuum || cat === 'vacuum');
+    const hasEng = !!(editForm.has_engine_wash || cat === 'engine');
     try {
       const payload: any = {
         ...(washerId ? { washer_id: washerId } : {}),
@@ -237,8 +252,8 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
         misc_amount: 0,
         misc_description: null,
         has_car_wash: PLATE_CATS.includes(cat),
-        has_vacuum: cat === 'vacuum',
-        has_engine_wash: cat === 'engine',
+        has_vacuum: hasVac,
+        has_engine_wash: hasEng,
         plate_number: PLATE_CATS.includes(cat) ? item || null : null,
         custom_category: cat === 'other' ? item || null : null,
         carpet_metadata: cat === 'carpet' && washerId
@@ -251,16 +266,21 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
         await api.post('/transactions/', payload);
       }
       closeEdit();
-      await reload();
+      // Pull the authoritative recalculated row + totals back from the server.
+      await reload({ fresh: true });
+      onDataChanged?.();
     } catch (err: any) {
       alert(err?.response?.data?.detail || 'Save failed');
     }
   };
 
   const dayStr = format(selectedDay, 'yyyy-MM-dd');
+  const periodKey = mode === 'week' ? `week:${weekId ?? ''}` : `day:${dayStr}`;
 
   const reload = useCallback(async (opts: { fresh?: boolean; keepDrafts?: boolean } = {}) => {
-    const params = { day: format(selectedDay, 'yyyy-MM-dd') };
+    const params = mode === 'week' && weekId
+      ? { week_id: weekId }
+      : { day: format(selectedDay, 'yyyy-MM-dd') };
     const cfg = (extra: any = {}) => ({ ...extra, skipCache: opts.fresh });
     try {
       const [txRes, priceRes] = await Promise.all([
@@ -313,7 +333,7 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dayStr]);
+  }, [periodKey]);
 
   useEffect(() => {
     // Switching days must hit the server so the table actually changes —
@@ -380,17 +400,19 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
   const flushSave = useCallback(
     (key: string, patch: Partial<SheetRow>) => {
       setRows((prev) => prev.map((r) => (r._key === key ? { ...r, ...patch, saving: true, error: '' } : r)));
-      persistRow(key, patch).catch((err: any) => {
-        setRows((prev) =>
-          prev.map((r) =>
-            r._key === key
-              ? { ...r, saving: false, error: err?.response?.data?.detail || 'Save failed' }
-              : r,
-          ),
-        );
-      });
+      persistRow(key, patch)
+        .then(() => onDataChanged?.())
+        .catch((err: any) => {
+          setRows((prev) =>
+            prev.map((r) =>
+              r._key === key
+                ? { ...r, saving: false, error: err?.response?.data?.detail || 'Save failed' }
+                : r,
+            ),
+          );
+        });
     },
-    [persistRow],
+    [persistRow, onDataChanged],
   );
 
   const patchRow = (key: string, patch: Partial<SheetRow>) => {
@@ -439,6 +461,7 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
     try {
       await api.delete(`/transactions/${row.id}`);
       await reload();
+      onDataChanged?.();
     } catch (err: any) {
       alert(err?.response?.data?.detail || 'Could not delete the row');
     }
@@ -447,17 +470,11 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
   const saveDraftNow = (key: string) => {
     const row = rows.find((r) => r._key === key);
     if (!row) return;
-    if (row.draft && !row.washer_id) {
-      setRows((prev) =>
-        prev.map((r) => (r._key === key ? { ...r, error: 'Pick a washer first' } : r)),
-      );
-      return;
-    }
     flushSave(key, {});
   };
 
   const syncAll = async () => {
-    const drafts = rows.filter((r) => r.draft && r.washer_id);
+    const drafts = rows.filter((r) => r.draft);
     if (drafts.length === 0) {
       await reload();
       return;
@@ -466,6 +483,7 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
     try {
       await Promise.all(drafts.map((d) => persistRow(d._key, {})));
       await reload();
+      onDataChanged?.();
     } catch (err: any) {
       alert(err?.response?.data?.detail || 'Sync failed');
     } finally {
@@ -486,6 +504,84 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
     });
     setSmsOpen(null);
     setSmsText('');
+  };
+
+  // ---------- Carpets: receive / release from the add-row toolbar ----------
+
+  const openRelease = async () => {
+    setSelectedCarpetId('');
+    setReleaseCash('');
+    setReleaseMpesa('');
+    setReleaseWasher('');
+    try {
+      const res = await api.get('/carpets/', { skipCache: true });
+      setCarpetList((res.data || []).filter((c: any) => c.status !== 'released'));
+    } catch {
+      setCarpetList([]);
+    }
+    setReleaseOpen(true);
+  };
+
+  const selectedCarpet = carpetList.find((c) => String(c.id) === String(selectedCarpetId)) || null;
+
+  const chooseCarpet = (id: string) => {
+    setSelectedCarpetId(id);
+    const c = carpetList.find((x) => String(x.id) === String(id));
+    if (c) {
+      setReleaseCash(String(c.expected_price ?? ''));
+      setReleaseMpesa('');
+      setReleaseWasher(c.receiver_id ? String(c.receiver_id) : '');
+    }
+  };
+
+  const submitReleaseCarpet = async () => {
+    if (!selectedCarpet) {
+      alert('Pick the carpet being released first');
+      return;
+    }
+    setReleaseBusy(true);
+    try {
+      await api.post(`/carpets/${selectedCarpet.id}/release`, {
+        cash_paid: toNum(releaseCash),
+        mpesa_paid: toNum(releaseMpesa),
+        washer_id: releaseWasher ? Number(releaseWasher) : null,
+      });
+      setReleaseOpen(false);
+      await reload({ fresh: true });
+      onDataChanged?.();
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Could not release the carpet');
+    } finally {
+      setReleaseBusy(false);
+    }
+  };
+
+  const submitReceiveCarpet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!receive.image) {
+      alert('A photo of the carpet is required on arrival');
+      return;
+    }
+    setReceiveBusy(true);
+    setReceiveError('');
+    try {
+      await api.post('/carpets/', {
+        image_data: receive.image,
+        image_thumb: receive.thumb || receive.image,
+        characteristics: receive.characteristics || null,
+        client_name: receive.client_name || null,
+        customer_phone: receive.customer_phone || null,
+        receiver_id: receive.receiver_id || null,
+        expected_price: toNum(receive.expected_price),
+      });
+      setReceiveOpen(false);
+      setReceive({ image: '', thumb: '', characteristics: '', client_name: '', customer_phone: '', receiver_id: '', expected_price: '' });
+      onDataChanged?.();
+    } catch (err: any) {
+      setReceiveError(err?.response?.data?.detail || 'Could not save the carpet — your photo is kept, tap Save again to retry.');
+    } finally {
+      setReceiveBusy(false);
+    }
   };
 
   const totals = useMemo(() => {
@@ -526,7 +622,7 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
       {/* Empty day wording */}
       {rows.length === 0 && (
         <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-12 text-center text-sm font-medium text-slate-500 dark:border-white/10 dark:bg-slate-900/60 dark:text-slate-400">
-          {isFutureDay ? (
+          {isFutureDay && mode === 'day' ? (
             <>
               <Calendar size={20} />
               <span>No activity yet — {format(selectedDay, 'EEEE dd MMM yyyy')} hasn't arrived.</span>
@@ -534,7 +630,11 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
           ) : (
             <>
               <AlertCircle size={20} />
-              <span>No transactions recorded for {format(selectedDay, 'EEEE dd MMM yyyy')} yet.</span>
+              <span>
+                {mode === 'week'
+                  ? 'No transactions recorded for this week yet.'
+                  : `No transactions recorded for ${format(selectedDay, 'EEEE dd MMM yyyy')} yet.`}
+              </span>
             </>
           )}
         </div>
@@ -543,7 +643,7 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
       {/* Category chips */}
       <div className="flex flex-wrap gap-1.5">
         {Object.entries(totals.counts).length === 0 ? (
-          <span className="muted text-xs">No jobs logged yet today.</span>
+          <span className="muted text-xs">{mode === 'week' ? 'No jobs logged this week.' : 'No jobs logged yet today.'}</span>
         ) : (
           Object.entries(totals.counts).map(([cat, n]) => (
             <span key={cat} className="chip">
@@ -563,14 +663,20 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200/80 px-4 py-3 dark:border-white/10">
           <div className="min-w-0">
             <h2 className="truncate text-base font-black tracking-tight sm:text-lg">
-              Day sheet — {format(selectedDay, 'EEEE, dd MMM yyyy')}
+              {mode === 'week'
+                ? `Week sheet — combined transactions`
+                : `Day sheet — ${format(selectedDay, 'EEEE, dd MMM yyyy')}`}
             </h2>
-            <p className="muted text-xs">Edit inline. Tap Sync to save every pending row.</p>
+            <p className="muted text-xs">
+              {mode === 'week'
+                ? 'Every transaction in the selected week, combined. Edits save straight to the server.'
+                : 'Edit inline. Tap the tick on a row to save it, or Sync to save every pending row.'}
+            </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {onOpenSummary && (
               <button onClick={onOpenSummary} className="btn-secondary btn-sm">
-                <MessageSquareText size={14} /> Day summary
+                <MessageSquareText size={14} /> {mode === 'week' ? 'Week summary' : 'Day summary'}
               </button>
             )}
             <button onClick={() => void reload({ fresh: true, keepDrafts: true })} className="btn-secondary btn-sm" title="Reload from the server (keeps unsaved rows)">
@@ -642,8 +748,6 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
               { cat: 'motorcycle', label: 'Bike · 70', expected: 70 },
               { cat: 'bicycle', label: 'Cycle · 50', expected: 50 },
               { cat: 'other', label: 'Other', expected: 0 },
-              { cat: 'carpet', label: `Receive carpet · ${prices.carpet?.min_price ?? 300}`, expected: Number(prices.carpet?.min_price ?? 300) },
-              { cat: 'carpet', label: `Release carpet · ${prices.carpet?.min_price ?? 300}`, expected: Number(prices.carpet?.min_price ?? 300) },
               { cat: 'vacuum', label: 'Vacuum · 300', expected: 300 },
               { cat: 'vacuum', label: 'Vacuum · 200', expected: 200 },
               { cat: 'engine', label: 'Engine · 300', expected: 300 },
@@ -657,6 +761,25 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
                 <Plus size={12} /> {label}
               </button>
             ))}
+            <button
+              onClick={() => {
+                setReceive({
+                  image: '', thumb: '', characteristics: '', client_name: '', customer_phone: '',
+                  receiver_id: '', expected_price: String(prices.carpet?.min_price ?? 300),
+                });
+                setReceiveError('');
+                setReceiveOpen(true);
+              }}
+              className="chip border-violet-300 bg-violet-50 text-violet-700 dark:border-violet-400/30 dark:bg-violet-500/10 dark:text-violet-300"
+            >
+              <Plus size={12} /> Receive carpet
+            </button>
+            <button
+              onClick={() => void openRelease()}
+              className="chip border-blue-300 bg-blue-50 text-blue-700 dark:border-blue-400/30 dark:bg-blue-500/10 dark:text-blue-300"
+            >
+              <Calendar size={12} /> Release carpet
+            </button>
             <Link to="/carpets" className="ml-2 inline-flex items-center gap-1.5 rounded-xl border border-brand-200 bg-white px-3 py-1.5 text-xs font-bold text-brand-700 transition hover:border-brand-300 hover:text-brand-900 dark:border-white/10 dark:bg-white/5 dark:text-brand-300 dark:hover:text-brand-200">
               <Calendar size={12} /> Carpets board
             </Link>
@@ -684,6 +807,26 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
               <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Plate / Item</span>
               <input className="input-base" value={editForm.item} onChange={(e) => setEditForm({ ...editForm, item: e.target.value.toUpperCase() })} />
             </label>
+            {PLATE_CATS.includes(editForm.category) && (
+              <div className="flex flex-wrap gap-4 rounded-xl bg-slate-50 px-3 py-2 dark:bg-white/5">
+                <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={!!editForm.has_vacuum}
+                    onChange={(e) => setEditForm({ ...editForm, has_vacuum: e.target.checked })}
+                  />
+                  Vacuum <span className="text-xs font-normal text-slate-400">+300</span>
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={!!editForm.has_engine_wash}
+                    onChange={(e) => setEditForm({ ...editForm, has_engine_wash: e.target.checked })}
+                  />
+                  Engine wash <span className="text-xs font-normal text-slate-400">+300</span>
+                </label>
+              </div>
+            )}
             <label className="block">
               <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Washer</span>
               <select className="input-base" value={editForm.washer_id} onChange={(e) => setEditForm({ ...editForm, washer_id: e.target.value })}>
@@ -720,6 +863,147 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
               <button onClick={closeEdit} className="btn-secondary flex-1 justify-center">Cancel</button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Release carpet modal */}
+      {releaseOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <div className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black tracking-tight">Release a carpet</h3>
+              <button onClick={() => setReleaseOpen(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
+            </div>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Which carpet is being collected?</span>
+              <select className="input-base" value={selectedCarpetId} onChange={(e) => chooseCarpet(e.target.value)}>
+                <option value="">Choose a carpet…</option>
+                {carpetList.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    #{c.id} · {c.characteristics || 'Carpet'} · {c.status}{c.client_name ? ` · ${c.client_name}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {carpetList.length === 0 && (
+              <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                Nothing to release right now — receive a carpet first.
+              </p>
+            )}
+            {selectedCarpet && (
+              <div className="flex gap-3 rounded-xl bg-slate-50 p-2 dark:bg-white/5">
+                <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-200 dark:bg-white/10">
+                  {selectedCarpet.image_thumb ? (
+                    <img src={selectedCarpet.image_thumb} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="flex h-full w-full items-center justify-center text-slate-400"><ImageIcon size={22} /></span>
+                  )}
+                </div>
+                <div className="min-w-0 text-xs text-slate-600 dark:text-slate-300">
+                  <p className="font-bold text-slate-900 dark:text-white">{selectedCarpet.characteristics || 'Carpet'}</p>
+                  <p>Client: {selectedCarpet.client_name || '—'}</p>
+                  <p>Status: <span className="font-semibold capitalize">{selectedCarpet.status}</span></p>
+                  <p>Price: Ksh {selectedCarpet.expected_price ?? 0}</p>
+                </div>
+              </div>
+            )}
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Cash (Ksh)</span>
+                <input type="number" min="0" className="input-base" value={releaseCash} onChange={(e) => setReleaseCash(e.target.value)} />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">M-Pesa (Ksh)</span>
+                <input type="number" min="0" className="input-base" value={releaseMpesa} onChange={(e) => setReleaseMpesa(e.target.value)} />
+              </label>
+            </div>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Washer</span>
+              <select className="input-base" value={releaseWasher} onChange={(e) => setReleaseWasher(e.target.value)}>
+                <option value="">Use the receiver</option>
+                {employees.map((e) => <option key={e.id} value={e.id}>{e.name || e.abbreviation}</option>)}
+              </select>
+            </label>
+            <div className="flex gap-2">
+              <button onClick={submitReleaseCarpet} disabled={releaseBusy || !selectedCarpet} className="btn-primary flex-1 justify-center">
+                {releaseBusy && <Loader2 size={15} className="animate-spin" />} Release carpet
+              </button>
+              <button onClick={() => setReleaseOpen(false)} className="btn-secondary flex-1 justify-center">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Receive carpet modal */}
+      {receiveOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
+          <form onSubmit={submitReceiveCarpet} className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black tracking-tight">Receive a carpet</h3>
+              <button type="button" onClick={() => setReceiveOpen(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
+            </div>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold">Carpet photo (required)</span>
+              <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Take a photo now or choose one from your gallery / files.</p>
+              <input
+                type="file" accept="image/*"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0];
+                  if (!file) return;
+                  setReceiveCompressing(true);
+                  setReceiveError('');
+                  try {
+                    const { data, thumb } = await compressVariants(file);
+                    setReceive((r) => ({ ...r, image: data, thumb }));
+                  } catch {
+                    setReceiveError('Could not process the image. Try a smaller file.');
+                  } finally {
+                    setReceiveCompressing(false);
+                  }
+                }}
+                className="input-base file:mr-2 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-white"
+              />
+              {receiveCompressing && <span className="mt-1 text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
+              {receive.image && <img src={receive.image} alt="" className="mt-2 h-24 w-24 rounded-xl object-cover ring-1 ring-violet-300" />}
+            </label>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold">Description</span>
+                <input className="input-base" placeholder="e.g. purple rug, 6x8" value={receive.characteristics}
+                  onChange={(e) => setReceive({ ...receive, characteristics: e.target.value })} />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold">Expected price (Ksh)</span>
+                <input type="number" min="0" className="input-base" value={receive.expected_price}
+                  onChange={(e) => setReceive({ ...receive, expected_price: e.target.value })} />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold">Client name</span>
+                <input className="input-base" placeholder="e.g. Mary J." value={receive.client_name}
+                  onChange={(e) => setReceive({ ...receive, client_name: e.target.value })} />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold">Client phone</span>
+                <input className="input-base" placeholder="07xx xxx xxx" value={receive.customer_phone}
+                  onChange={(e) => setReceive({ ...receive, customer_phone: e.target.value })} />
+              </label>
+              <label className="block sm:col-span-2">
+                <span className="mb-1 block text-sm font-semibold">Receiver (washer)</span>
+                <select className="input-base" value={receive.receiver_id}
+                  onChange={(e) => setReceive({ ...receive, receiver_id: e.target.value })}>
+                  <option value="">Not assigned yet</option>
+                  {employees.map((e) => <option key={e.id} value={e.id}>{e.name || e.abbreviation}</option>)}
+                </select>
+              </label>
+            </div>
+            {receiveError && <p className="text-xs font-semibold text-red-600 dark:text-red-400">{receiveError}</p>}
+            <div className="flex gap-2">
+              <button type="submit" disabled={receiveBusy} className="btn-primary flex-1 justify-center">
+                {receiveBusy && <Loader2 size={15} className="animate-spin" />} Save carpet
+              </button>
+              <button type="button" onClick={() => setReceiveOpen(false)} className="btn-secondary flex-1 justify-center">Cancel</button>
+            </div>
+          </form>
         </div>
       )}
     </div>
@@ -926,11 +1210,9 @@ function RowCard({
             )}
 
             <div className="ml-auto flex items-center gap-1">
-              {dirty && !saving && (
-                <button onClick={onSaveDraft} title="Save this row" className="btn-primary btn-sm">
-                  <Check size={14} /> Save
-                </button>
-              )}
+              <button onClick={onSaveDraft} disabled={saving} title="Save this row" className={`btn-sm ${dirty ? 'btn-primary' : 'btn-secondary'}`}>
+                {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />} Save
+              </button>
               <button onClick={onEdit} title="Edit this row" className="btn-secondary btn-sm">
                 <Pencil size={14} /> Edit
               </button>
