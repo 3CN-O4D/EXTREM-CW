@@ -23,12 +23,13 @@ const n = (v: any) => {
 export interface DayStatsProps {
   summary: any;
   carpets: any;
+  dailySummaries: any[];
   selectedDay: Date;
   weekStart: Date;
   mode: 'day' | 'week';
 }
 
-export default function DayStats({ summary, carpets, selectedDay, weekStart, mode }: DayStatsProps) {
+export default function DayStats({ summary, carpets, dailySummaries, selectedDay, weekStart, mode }: DayStatsProps) {
   if (!summary) return null;
 
   const cash = n(summary.total_cash_received);
@@ -116,6 +117,70 @@ export default function DayStats({ summary, carpets, selectedDay, weekStart, mod
           </div>
         ))}
       </div>
+
+      {/* Per-day breakdown for week view — each day's sheet concatenated */}
+      {mode === 'week' && (
+        <div className="border-t border-slate-200/80 dark:border-white/10">
+          <div className="flex items-center justify-between px-5 py-3 dark:border-white/10">
+            <div>
+              <h3 className="text-sm font-black tracking-tight">Day by day</h3>
+              <p className="muted text-xs">Every day in the week, laid out one after another.</p>
+            </div>
+          </div>
+          <div className="table-wrap overflow-x-auto">
+            <table className="table-clean min-w-full">
+              <thead>
+                <tr>
+                  <th className="text-left">Day</th>
+                  <th className="text-right">Cash</th>
+                  <th className="text-right">M-Pesa</th>
+                  <th className="text-right">Expenses</th>
+                  <th className="text-right">Net cash</th>
+                  <th className="text-right">Carpets in</th>
+                  <th className="text-right">Carpets out</th>
+                  <th className="text-right">Remaining</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailySummaries.map((ds: any) => {
+                  const dayData = ds.data || {};
+                  const dayCash = n(dayData.total_cash_received);
+                  const dayMpesa = n(dayData.total_mpesa_received);
+                  const dayExp = n(dayData.total_expenses);
+                  const dayNet = dayCash - dayExp;
+                  const carpetDay = (carpets?.daily || []).find((c: any) => String(c.date).startsWith(ds.date));
+                  return (
+                    <tr key={ds.date} className="border-t border-slate-200/70 dark:border-white/10">
+                      <td className="text-left font-medium">{format(new Date(ds.date), 'EEE dd MMM')}</td>
+                      <td className="text-right font-mono">Ksh {dayCash}</td>
+                      <td className="text-right font-mono">Ksh {dayMpesa}</td>
+                      <td className="text-right font-mono text-red-600 dark:text-red-400">Ksh {dayExp}</td>
+                      <td className={`text-right font-mono font-bold ${dayNet >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                        Ksh {dayNet}
+                      </td>
+                      <td className="text-right font-mono">{carpetDay ? n(carpetDay.received) : 0}</td>
+                      <td className="text-right font-mono">{carpetDay ? n(carpetDay.released) : 0}</td>
+                      <td className="text-right font-mono">{carpetDay ? n(carpetDay.total) - n(carpetDay.released) : 0}</td>
+                    </tr>
+                  );
+                })}
+                <tr className="bg-slate-50 font-black dark:bg-white/5 border-t border-slate-200/70 dark:border-white/10">
+                  <td className="text-left">Week total</td>
+                  <td className="text-right font-mono">Ksh {cash}</td>
+                  <td className="text-right font-mono">Ksh {mpesa}</td>
+                  <td className="text-right font-mono text-red-600 dark:text-red-400">Ksh {expenses}</td>
+                  <td className={`text-right font-mono font-bold ${netCash >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+                    Ksh {netCash}
+                  </td>
+                  <td className="text-right font-mono">{carpetIn}</td>
+                  <td className="text-right font-mono">{carpetOut}</td>
+                  <td className="text-right font-mono">{carpetLeft}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="grid gap-0 border-t border-slate-200/80 dark:border-white/10 lg:grid-cols-2">
         {/* Items breakdown */}

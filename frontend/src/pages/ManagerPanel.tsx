@@ -42,6 +42,7 @@ export default function ManagerPanel() {
   const [summary, setSummary] = useState<any>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
   const [dayCarpets, setDayCarpets] = useState<any>(null);
+  const [dailySummaries, setDailySummaries] = useState<any[]>([]);
 
   const empMap = Object.fromEntries(employees.map(e => [e.id, e.name]));
   const abbrMap = Object.fromEntries(employees.map(e => [e.id, e.abbreviation]));
@@ -106,10 +107,33 @@ export default function ManagerPanel() {
     }
   };
 
+  const fetchDailySummaries = async () => {
+    if (viewMode !== 'week') {
+      setDailySummaries([]);
+      return;
+    }
+    const weekStart = startOfWeek(addWeeks(new Date(), weekOffset), { weekStartsOn: 1 });
+    const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+    try {
+      const results = await Promise.all(
+        days.map((d) =>
+          api
+            .get('/stats/summary', { params: { day: format(d, 'yyyy-MM-dd') } })
+            .then((res) => ({ date: format(d, 'yyyy-MM-dd'), data: res.data }))
+            .catch(() => ({ date: format(d, 'yyyy-MM-dd'), data: null }))
+        )
+      );
+      setDailySummaries(results);
+    } catch {
+      setDailySummaries([]);
+    }
+  };
+
   useEffect(() => {
     fetchTransactions();
     fetchSummary();
     fetchDayCarpets();
+    fetchDailySummaries();
   }, [selectedDay, viewMode, weekOffset]);
 
   const fetchDebts = async () => {
@@ -419,7 +443,7 @@ export default function ManagerPanel() {
       {activeTab === 'sheet' ? (
         <div className="space-y-5">
           <DaySheet employees={employees} selectedDay={selectedDay} onOpenSummary={() => setSummaryOpen(true)} />
-          <DayStats summary={summary} carpets={dayCarpets} selectedDay={selectedDay} weekStart={weekStart} mode={viewMode} />
+          <DayStats summary={summary} carpets={dayCarpets} dailySummaries={dailySummaries} selectedDay={selectedDay} weekStart={weekStart} mode={viewMode} />
         </div>
       ) : activeTab === 'expense' ? (
         <div className="space-y-4">
@@ -1068,6 +1092,7 @@ export default function ManagerPanel() {
               <DayStats
                 summary={summary}
                 carpets={dayCarpets}
+                dailySummaries={dailySummaries}
                 selectedDay={selectedDay}
                 weekStart={weekStart}
                 mode={viewMode}
