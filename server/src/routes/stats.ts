@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { pool } from '../db';
-import { HttpError, getCurrentWeekId, validateDay, wrap, weekdayName, weekdayNameFromDate, toUtcTimestamp } from '../utils';
+import { HttpError, getCurrentWeekId, isoWeekRange, validateDay, wrap, weekdayName, weekdayNameFromDate, toUtcTimestamp } from '../utils';
 import { requireRole, getCurrentUser } from '../auth';
 import { ROLES } from '../types';
 import type { AuthRequest } from '../auth';
@@ -99,19 +99,26 @@ router.get(
 
     const txParams: any[] = [];
     const expParams: any[] = [];
+    const cdParams: any[] = [];
     let txConds = '';
     let expConds = '';
+    let cdConds = '';
     if (day) {
       txParams.push(day);
       txConds = `WHERE date(timestamp) = $${txParams.length}::date`;
       expParams.push(day);
       expConds = `WHERE date(timestamp) = $${expParams.length}::date`;
+      cdParams.push(day);
+      cdConds = `WHERE date(date) = $${cdParams.length}::date`;
     } else {
       if (!week_id) week_id = getCurrentWeekId();
       txParams.push(week_id);
       txConds = `WHERE week_id = $${txParams.length}`;
       expParams.push(week_id);
       expConds = `WHERE week_id = $${expParams.length}`;
+      const { start: wStart, end: wEnd } = isoWeekRange(week_id);
+      cdParams.push(wStart.slice(0, 10), wEnd.slice(0, 10));
+      cdConds = `WHERE date(date) BETWEEN $${cdParams.length - 1}::date AND $${cdParams.length}::date`;
     }
 
     const [totalCash, totalMpesa, expenses, labor, revenue, miscTotal, miscRows, catRows, totalDebt, clientDebt, empLabor] = await Promise.all([
@@ -134,7 +141,7 @@ router.get(
       ),
       pool.query(`SELECT category, COUNT(id) AS c FROM transactions ${txConds} GROUP BY category`, txParams),
       pool.query(`SELECT COALESCE(SUM(debt_balance),0) AS v FROM users`),
-      pool.query(`SELECT COALESCE(SUM(amount - paid),0) AS v FROM client_debts`),
+      pool.query(`SELECT COALESCE(SUM(amount - paid),0) AS v FROM client_debts ${cdConds}`, cdParams),
       pool.query(
         `SELECT users.full_name, users.abbreviation,
                 COALESCE(SUM(transactions.final_payout),0) AS wages,

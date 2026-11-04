@@ -55,20 +55,20 @@ export default function DayStats({ summary, carpets, selectedDay, weekStart, mod
 
   const tiles = [
     { label: 'Cash', value: `Ksh ${cash}`, cls: 'text-emerald-600 dark:text-emerald-400' },
+    { label: 'Expenses', value: `Ksh ${expenses}`, cls: 'text-red-600 dark:text-red-400' },
+    {
+      label: 'Cash balance',
+      value: `Ksh ${netCash}`,
+      cls: netCash >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
+      hint: `Cash ${cash} − expenses ${expenses}`,
+    },
     { label: 'M-Pesa', value: `Ksh ${mpesa}`, cls: 'text-brand-600 dark:text-brand-300' },
     { label: 'Total paid', value: `Ksh ${paid}`, cls: 'text-slate-900 dark:text-white' },
-    { label: 'Expenses', value: `Ksh ${expenses}`, cls: 'text-red-600 dark:text-red-400' },
     {
       label: 'Net wages',
       value: `Ksh ${netWages}`,
       cls: netWages < 0 ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400',
       hint: `gross ${grossWages} · withheld ${withheld}`,
-    },
-    {
-      label: 'Net cash',
-      value: `Ksh ${netCash}`,
-      cls: netCash >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400',
-      hint: `Cash ${cash} − expenses ${expenses}`,
     },
     { label: 'Carpets in', value: `${carpetIn}`, cls: 'text-blue-600 dark:text-blue-400' },
     { label: 'Carpets out', value: `${carpetOut}`, cls: 'text-violet-600 dark:text-violet-300' },
