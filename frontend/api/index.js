@@ -36514,6 +36514,10 @@ async function expirePendingArrivals() {
         `UPDATE vehicle_arrivals SET status = 'expired', debt_id = $1 WHERE id = $2`,
         [debt.rows[0].id, a.id]
       );
+      await client.query(
+        "UPDATE users SET debt_balance = debt_balance + $1 WHERE id = $2",
+        [a.expected_price, a.submitter_id]
+      );
       await client.query("COMMIT");
     } catch (e) {
       await client.query("ROLLBACK");
@@ -36574,7 +36578,7 @@ router11.get(
 router11.post(
   "/",
   wrap(async (req, res) => {
-    const user = await requireRole(req, M9);
+    const user = await getCurrentUser(req);
     const body = req.body || {};
     const plate_number = parsePlate(asOptStr(body.plate_number));
     const category = requireEnum(
@@ -36682,7 +36686,7 @@ router11.patch(
 router11.post(
   "/:id/settle",
   wrap(async (req, res) => {
-    const actor = await requireRole(req, M9);
+    const actor = await getCurrentUser(req);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, "Arrival not found");
     const a = await queryOne("SELECT * FROM vehicle_arrivals WHERE id = $1", [id]);
@@ -36764,11 +36768,14 @@ router11.post(
 router11.delete(
   "/:id",
   wrap(async (req, res) => {
-    await requireRole(req, M9);
+    const actor = await getCurrentUser(req);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, "Arrival not found");
     const a = await queryOne("SELECT * FROM vehicle_arrivals WHERE id = $1", [id]);
     if (!a) throw new HttpError(404, "Arrival not found");
+    if (actor.role.toUpperCase() === "EMPLOYEE" && a.submitter_id !== actor.id) {
+      throw new HttpError(403, "Not your arrival");
+    }
     if (a.status === "settled") throw new HttpError(400, "Settled arrivals stay on record");
     const client = await pool.connect();
     try {

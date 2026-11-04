@@ -34,6 +34,9 @@ export default function ManagerPanel() {
   const [editingDebt, setEditingDebt] = useState<number | null>(null);
   const [debtEdit, setDebtEdit] = useState({ amount: 0, paid: 0 });
   const [arrivals, setArrivals] = useState<any[]>([]);
+  const [arrivalForm, setArrivalForm] = useState({ plate_number: '', category: 'car', expected_price: 200, washer_id: '' });
+  const [arrivalBusy, setArrivalBusy] = useState(false);
+  const [arrivalError, setArrivalError] = useState('');
   const [settlementLogs, setSettlementLogs] = useState<any[]>([]);
   const [settlementResult, setSettlementResult] = useState<any>(null);
   const [clientDebts, setClientDebts] = useState<any[]>([]);
@@ -226,10 +229,36 @@ export default function ManagerPanel() {
   };
 
   const fetchArrivals = async () => {
-    try { const res = await api.get('/vehicles/'); setArrivals(res.data); } catch {}
+    try {
+      const res = await api.get('/vehicles/');
+      setArrivals(res.data);
+      setArrivalError('');
+    } catch (err: any) {
+      setArrivalError(err?.response?.data?.detail || 'Could not load arrivals.');
+    }
   };
 
   useEffect(() => { if (activeTab === 'arrivals') fetchArrivals(); }, [activeTab]);
+
+  const logArrival = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setArrivalBusy(true);
+    setArrivalError('');
+    try {
+      await api.post('/vehicles/', {
+        plate_number: arrivalForm.plate_number,
+        category: arrivalForm.category,
+        expected_price: toNum(arrivalForm.expected_price),
+        ...(arrivalForm.washer_id ? { washer_id: Number(arrivalForm.washer_id) } : {}),
+      });
+      setArrivalForm({ plate_number: '', category: 'car', expected_price: 200, washer_id: '' });
+      await fetchArrivals();
+    } catch (err: any) {
+      setArrivalError(err?.response?.data?.detail || 'Could not log the arrival.');
+    } finally {
+      setArrivalBusy(false);
+    }
+  };
 
   const fetchCarpets = async () => {
     try {
@@ -1610,6 +1639,46 @@ export default function ManagerPanel() {
             Every employee sees their own arrivals; this is the full list. Red rows passed 24 hours and have
             already been charged to that employee as a shortfall.
           </p>
+          {arrivalError && <InlineError message={arrivalError} onRetry={fetchArrivals} />}
+          <form onSubmit={logArrival} className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+            <input
+              className="input-base"
+              placeholder="Plate e.g. KCA182M"
+              value={arrivalForm.plate_number}
+              onChange={(e) => setArrivalForm({ ...arrivalForm, plate_number: e.target.value.toUpperCase() })}
+              required
+            />
+            <select
+              className="input-base"
+              value={arrivalForm.category}
+              onChange={(e) => setArrivalForm({ ...arrivalForm, category: e.target.value })}
+            >
+              {['car', 'taxi', 'midrange', 'lorry', 'exterior', 'motorcycle', 'bicycle', 'other'].map((c) => (
+                <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+              ))}
+            </select>
+            <input
+              type="number"
+              min="0"
+              className="input-base"
+              placeholder="Expected Ksh"
+              value={arrivalForm.expected_price}
+              onChange={(e) => setArrivalForm({ ...arrivalForm, expected_price: toNum(e.target.value) })}
+            />
+            <select
+              className="input-base"
+              value={arrivalForm.washer_id}
+              onChange={(e) => setArrivalForm({ ...arrivalForm, washer_id: e.target.value })}
+            >
+              <option value="">Washer — whoever logs it</option>
+              {employees.map((e: any) => (
+                <option key={e.id} value={e.id}>{e.name || e.full_name} ({e.abbreviation})</option>
+              ))}
+            </select>
+            <button type="submit" disabled={arrivalBusy} className="btn-primary">
+              {arrivalBusy ? <Loader2 size={15} className="animate-spin" /> : <Plus size={15} />} Log arrival
+            </button>
+          </form>
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm">
               <thead>

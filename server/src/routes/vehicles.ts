@@ -70,6 +70,12 @@ export async function expirePendingArrivals(): Promise<void> {
         `UPDATE vehicle_arrivals SET status = 'expired', debt_id = $1 WHERE id = $2`,
         [debt.rows[0].id, a.id],
       );
+      // Keep the cached balance in step with the new debt so stats and
+      // settlements see the shortfall immediately.
+      await client.query(
+        'UPDATE users SET debt_balance = debt_balance + $1 WHERE id = $2',
+        [a.expected_price, a.submitter_id],
+      );
       await client.query('COMMIT');
     } catch (e) {
       await client.query('ROLLBACK');
@@ -138,7 +144,7 @@ router.get(
 router.post(
   '/',
   wrap(async (req: AuthRequest, res) => {
-    const user = await requireRole(req, M);
+    const user = await getCurrentUser(req);
     const body = req.body || {};
     const plate_number = parsePlate(asOptStr(body.plate_number));
     const category = requireEnum(
@@ -261,7 +267,7 @@ router.patch(
 router.post(
   '/:id/settle',
   wrap(async (req: AuthRequest, res) => {
-    const actor = await requireRole(req, M);
+    const actor = await getCurrentUser(req);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, 'Arrival not found');
     const a = await queryOne<ArrivalRow>('SELECT * FROM vehicle_arrivals WHERE id = $1', [id]);
@@ -357,11 +363,14 @@ router.post(
 router.delete(
   '/:id',
   wrap(async (req: AuthRequest, res) => {
-    await requireRole(req, M);
+    const actor = await getCurrentUser(req);
     const id = Number(req.params.id);
     if (!Number.isInteger(id)) throw new HttpError(404, 'Arrival not found');
     const a = await queryOne<ArrivalRow>('SELECT * FROM vehicle_arrivals WHERE id = $1', [id]);
     if (!a) throw new HttpError(404, 'Arrival not found');
+    if (actor.role.toUpperCase() === 'EMPLOYEE' && a.submitter_id !== actor.id) {
+      throw new HttpError(403, 'Not your arrival');
+    }
     if (a.status === 'settled') throw new HttpError(400, 'Settled arrivals stay on record');
 
     const client = await pool.connect();
