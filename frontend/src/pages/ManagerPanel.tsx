@@ -353,7 +353,14 @@ export default function ManagerPanel() {
   const handleEditSave = async (txId: number) => {
     try {
       const payload: any = {};
-      if (editForm.washer_id) payload.washer_id = parseInt(editForm.washer_id);
+      if (editForm.washer_id && editForm.washer_id !== '') {
+        const wid = parseInt(editForm.washer_id);
+        if (!Number.isInteger(wid) || wid <= 0) {
+          alert('Please select a valid washer');
+          return;
+        }
+        payload.washer_id = wid;
+      }
       if (editForm.category) payload.category = editForm.category;
       if (editForm.expected_price) payload.expected_price = parseFloat(editForm.expected_price);
       if (editForm.cash_paid !== undefined) payload.cash_paid = parseFloat(editForm.cash_paid);
@@ -373,7 +380,9 @@ export default function ManagerPanel() {
       alert('Transaction updated!');
       setEditingTx(null);
       fetchTransactions();
-    } catch { alert('Error updating transaction'); }
+    } catch (err: any) {
+      alert(err?.response?.data?.detail || 'Error updating transaction');
+    }
   };
 
   const handleDelete = async (txId: number) => {
@@ -991,8 +1000,9 @@ export default function ManagerPanel() {
                     <tr key={tx.id} className="border-b border-slate-200/70 bg-yellow-50 dark:border-white/10 dark:bg-yellow-900/20">
                       <td className="py-2 text-xs">{format(new Date(tx.timestamp), 'EEE HH:mm')}</td>
                       <td className="py-2">
-                        <select className="input-base px-2 py-1 text-xs" value={editForm.washer_id}
+                        <select className="input-base px-2 py-1 text-xs" value={editForm.washer_id || ''}
                           onChange={e => setEditForm({ ...editForm, washer_id: e.target.value })}>
+                          <option value="">—</option>
                           {employees.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
                         </select>
                       </td>

@@ -218,6 +218,10 @@ export default function DaySheet({ employees, selectedDay, onOpenSummary }: DayS
       alert('Pick a washer first');
       return;
     }
+    if (washerId !== undefined && (!Number.isInteger(washerId) || washerId <= 0)) {
+      alert('Please select a valid washer');
+      return;
+    }
     const cat = editForm.category || 'car';
     const item = editForm.item || '';
     try {
