@@ -176,9 +176,30 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
 
   // Flip one add-on on/off while keeping the other, then re-price the row from
   // its category + new flags.
-  const toggleAddonFlag = (key: string, type: 'vacuum' | 'engine') => {
+  const toggleAddonFlag = (key: string, type: 'vacuum' | 'engine' | 'exterior') => {
     const row = rows.find((r) => r._key === key);
     if (!row) return;
+
+    // Exterior is an add-on only on car rows. It is an exterior-only wash, so
+    // it replaces the full car price with the exterior price (200 -> 150) and
+    // uses the exterior commission config (33.3334% of 150 = Ksh 50).
+    if (type === 'exterior') {
+      const isExterior = row.category === 'exterior';
+      if (!isExterior && row.category !== 'car') return;
+      applyAddon(key, {
+        category: isExterior ? 'car' : 'exterior',
+        expected: isExterior
+          ? Number(prices.car?.max_price ?? STANDARD.car ?? 200)
+          : Number(prices.exterior?.max_price ?? STANDARD.exterior ?? 150),
+        has_vacuum: false,
+        has_engine_wash: false,
+      });
+      return;
+    }
+
+    // Vacuum / engine add-ons do not apply to an exterior-only wash.
+    if (row.category === 'exterior') return;
+
     const hasVac = type === 'vacuum' ? !row.has_vacuum : !!row.has_vacuum;
     const hasEng = type === 'engine' ? !row.has_engine_wash : !!row.has_engine_wash;
     let expected = row.expected || 0;
@@ -228,8 +249,8 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
     const cat = normalizeCategory(rawCat, item);
     const untrackedCarpet = cat === 'carpet' && !editOpen.carpet_characteristics;
     const expected = Number(editForm.expected) || (cat !== rawCat ? STANDARD[cat] || 0 : 0);
-    const hasVac = !!(editForm.has_vacuum || cat === 'vacuum');
-    const hasEng = !!(editForm.has_engine_wash || cat === 'engine');
+    const hasVac = cat !== 'exterior' && !!(editForm.has_vacuum || cat === 'vacuum');
+    const hasEng = cat !== 'exterior' && !!(editForm.has_engine_wash || cat === 'engine');
     try {
       const payload: any = {
         ...(washerId ? { washer_id: washerId } : {}),
@@ -744,7 +765,7 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
                     onPatch={(patch) => patchRow(row._key, patch)}
                     onSaveDraft={() => saveDraftNow(row._key)}
                     onDelete={() => deleteRow(row)}
-                    onToggleAddonFlag={(type: 'vacuum' | 'engine') => toggleAddonFlag(row._key, type)}
+                    onToggleAddonFlag={(type: 'vacuum' | 'engine' | 'exterior') => toggleAddonFlag(row._key, type)}
                     onEdit={() => openEdit(row)}
                     isDuplicate={duplicates.has(row._key)}
                   />
@@ -837,7 +858,7 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
               <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Plate / Item</span>
               <input className="input-base" value={editForm.item} onChange={(e) => setEditForm({ ...editForm, item: e.target.value.toUpperCase() })} />
             </label>
-            {PLATE_CATS.includes(editForm.category) && (
+            {PLATE_CATS.includes(editForm.category) && editForm.category !== 'exterior' && (
               <div className="flex flex-wrap gap-4 rounded-xl bg-slate-50 px-3 py-2 dark:bg-white/5">
                 <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
                   <input
@@ -1063,7 +1084,7 @@ function RowLine({
   onPatch: (patch: Partial<SheetRow>) => void;
   onSaveDraft: () => void;
   onDelete: () => void;
-  onToggleAddonFlag: (type: 'vacuum' | 'engine') => void;
+  onToggleAddonFlag: (type: 'vacuum' | 'engine' | 'exterior') => void;
   onEdit: () => void;
   isDuplicate: boolean;
 }) {
@@ -1179,30 +1200,48 @@ function RowLine({
         <td className={`${cell} whitespace-nowrap`}>
           {isPlate ? (
             <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => onToggleAddonFlag('vacuum')}
-                title="Toggle vacuum (+300)"
-                className={`rounded-lg border px-2 py-1 text-[10px] font-bold transition ${
-                  row.has_vacuum
-                    ? 'border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-400/30 dark:bg-blue-500/15 dark:text-blue-300'
-                    : 'border-slate-200 bg-white text-slate-400 hover:border-blue-300 hover:text-blue-600 dark:border-white/10 dark:bg-white/5 dark:hover:text-blue-300'
-                }`}
-              >
-                Vac
-              </button>
-              <button
-                type="button"
-                onClick={() => onToggleAddonFlag('engine')}
-                title="Toggle engine wash (+300)"
-                className={`rounded-lg border px-2 py-1 text-[10px] font-bold transition ${
-                  row.has_engine_wash
-                    ? 'border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/15 dark:text-amber-300'
-                    : 'border-slate-200 bg-white text-slate-400 hover:border-amber-300 hover:text-amber-600 dark:border-white/10 dark:bg-white/5 dark:hover:text-amber-300'
-                }`}
-              >
-                Eng
-              </button>
+              {(row.category === 'car' || row.category === 'exterior') && (
+                <button
+                  type="button"
+                  onClick={() => onToggleAddonFlag('exterior')}
+                  title="Toggle exterior-only wash (Ksh 150, earns Ksh 50)"
+                  className={`rounded-lg border px-2 py-1 text-[10px] font-bold transition ${
+                    row.category === 'exterior'
+                      ? 'border-emerald-300 bg-emerald-100 text-emerald-700 dark:border-emerald-400/30 dark:bg-emerald-500/15 dark:text-emerald-300'
+                      : 'border-slate-200 bg-white text-slate-400 hover:border-emerald-300 hover:text-emerald-600 dark:border-white/10 dark:bg-white/5 dark:hover:text-emerald-300'
+                  }`}
+                >
+                  Ext
+                </button>
+              )}
+              {row.category !== 'exterior' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => onToggleAddonFlag('vacuum')}
+                    title="Toggle vacuum (+300)"
+                    className={`rounded-lg border px-2 py-1 text-[10px] font-bold transition ${
+                      row.has_vacuum
+                        ? 'border-blue-300 bg-blue-100 text-blue-700 dark:border-blue-400/30 dark:bg-blue-500/15 dark:text-blue-300'
+                        : 'border-slate-200 bg-white text-slate-400 hover:border-blue-300 hover:text-blue-600 dark:border-white/10 dark:bg-white/5 dark:hover:text-blue-300'
+                    }`}
+                  >
+                    Vac
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onToggleAddonFlag('engine')}
+                    title="Toggle engine wash (+300)"
+                    className={`rounded-lg border px-2 py-1 text-[10px] font-bold transition ${
+                      row.has_engine_wash
+                        ? 'border-amber-300 bg-amber-100 text-amber-700 dark:border-amber-400/30 dark:bg-amber-500/15 dark:text-amber-300'
+                        : 'border-slate-200 bg-white text-slate-400 hover:border-amber-300 hover:text-amber-600 dark:border-white/10 dark:bg-white/5 dark:hover:text-amber-300'
+                    }`}
+                  >
+                    Eng
+                  </button>
+                </>
+              )}
             </div>
           ) : (
             <span className="text-slate-300 dark:text-slate-600">—</span>
