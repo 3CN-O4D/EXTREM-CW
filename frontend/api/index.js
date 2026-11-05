@@ -36810,18 +36810,7 @@ var vehicles_default = router11;
 var import_express12 = __toESM(require_express2());
 var router12 = (0, import_express12.Router)();
 var M10 = ROLES.slice(0, 2);
-var ALLOWED_CATEGORIES = [
-  "bicycle",
-  "motorcycle",
-  "taxi",
-  "car",
-  "midrange",
-  "lorry",
-  "carpet",
-  "vacuum",
-  "engine",
-  "other"
-];
+var ALLOWED_CATEGORIES = SERVICE_CATEGORIES;
 router12.get(
   "/",
   wrap(async (req, res) => {

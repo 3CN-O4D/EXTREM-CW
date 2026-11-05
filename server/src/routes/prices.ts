@@ -3,7 +3,7 @@ import { pool, queryOne } from '../db';
 import { HttpError, wrap } from '../utils';
 import { asFloat, asOptFloat, asOptStr, asBool, money } from '../finance';
 import { requireRole, getCurrentUser } from '../auth';
-import { ROLES } from '../types';
+import { ROLES, SERVICE_CATEGORIES } from '../types';
 import type { AuthRequest } from '../auth';
 import type { PriceRow } from '../types';
 import { serializePrice } from '../serialize';
@@ -11,10 +11,7 @@ import { serializePrice } from '../serialize';
 const router = Router();
 const M = ROLES.slice(0, 2); // ADMIN, MANAGER
 
-const ALLOWED_CATEGORIES = [
-  'bicycle', 'motorcycle', 'taxi', 'car', 'midrange', 'lorry',
-  'carpet', 'vacuum', 'engine', 'other',
-];
+const ALLOWED_CATEGORIES = SERVICE_CATEGORIES;
 
 // GET /prices — list all pricing config (admin/manager)
 router.get(
