@@ -820,7 +820,7 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
       {/* Edit row modal */}
       {editOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-          <div className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+          <div className="card-pad max-h-[90vh] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain rounded-3xl bg-white dark:bg-slate-900">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-black tracking-tight">Edit Row</h3>
               <button onClick={closeEdit} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
@@ -899,7 +899,7 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
       {/* Release carpet modal */}
       {releaseOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-          <div className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+          <div className="card-pad max-h-[90vh] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain rounded-3xl bg-white dark:bg-slate-900">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-black tracking-tight">Release a carpet</h3>
               <button onClick={() => setReleaseOpen(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
@@ -967,7 +967,7 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
       {/* Receive carpet modal */}
       {receiveOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-          <form onSubmit={submitReceiveCarpet} className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+          <form onSubmit={submitReceiveCarpet} className="card-pad max-h-[90vh] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain rounded-3xl bg-white dark:bg-slate-900">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-black tracking-tight">Receive a carpet</h3>
               <button type="button" onClick={() => setReceiveOpen(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>

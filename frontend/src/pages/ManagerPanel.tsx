@@ -823,7 +823,7 @@ export default function ManagerPanel() {
         {/* Receive carpet modal */}
         {showReceive && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-            <form onSubmit={submitReceive} className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+            <form onSubmit={submitReceive} className="card-pad max-h-[90vh] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain rounded-3xl bg-white dark:bg-slate-900">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-black tracking-tight">Receive a carpet</h3>
                 <button type="button" onClick={() => setShowReceive(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
@@ -900,7 +900,7 @@ export default function ManagerPanel() {
         {/* Change status modal */}
         {statusModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-            <div className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+            <div className="card-pad max-h-[90vh] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain rounded-3xl bg-white dark:bg-slate-900">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-black tracking-tight">
                   Mark as {STATUS_META[statusModal.status].label}
@@ -955,7 +955,7 @@ export default function ManagerPanel() {
         {/* Release modal */}
         {releaseModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-            <div className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+            <div className="card-pad max-h-[90vh] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain rounded-3xl bg-white dark:bg-slate-900">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-black tracking-tight">Release carpet</h3>
                 <button onClick={() => setReleaseModal(null)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
@@ -997,7 +997,7 @@ export default function ManagerPanel() {
         {/* Edit carpet modal */}
         {editModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm">
-            <div className="card-pad w-full max-w-md space-y-4 rounded-3xl bg-white dark:bg-slate-900">
+            <div className="card-pad max-h-[90vh] w-full max-w-md space-y-4 overflow-y-auto overscroll-contain rounded-3xl bg-white dark:bg-slate-900">
               <div className="flex items-center justify-between">
                 <h3 className="text-lg font-black tracking-tight">Edit carpet</h3>
                 <button onClick={() => setEditModal(null)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
