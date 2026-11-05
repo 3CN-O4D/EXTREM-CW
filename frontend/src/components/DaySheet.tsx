@@ -848,7 +848,24 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
             </div>
             <label className="block">
               <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Category</span>
-              <select className="input-base" value={editForm.category} onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}>
+              <select className="input-base" value={editForm.category} onChange={(e) => {
+                const category = e.target.value;
+                const wasExterior = editForm.category === 'exterior';
+                const isExterior = category === 'exterior';
+                setEditForm({
+                  ...editForm,
+                  category,
+                  ...(isExterior
+                    ? {
+                        expected: Number(prices.exterior?.max_price ?? STANDARD.exterior ?? 150),
+                        has_vacuum: false,
+                        has_engine_wash: false,
+                      }
+                    : wasExterior
+                      ? { expected: Number(prices[category]?.max_price ?? STANDARD[category] ?? 0) }
+                      : {}),
+                });
+              }}>
                 {['car', 'taxi', 'midrange', 'lorry', 'exterior', 'motorcycle', 'bicycle', 'carpet', 'vacuum', 'engine', 'other'].map((cat) => (
                   <option key={cat} value={cat}>{CATEGORY_LABELS[cat] || cat}</option>
                 ))}
@@ -858,24 +875,46 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
               <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Plate / Item</span>
               <input className="input-base" value={editForm.item} onChange={(e) => setEditForm({ ...editForm, item: e.target.value.toUpperCase() })} />
             </label>
-            {PLATE_CATS.includes(editForm.category) && editForm.category !== 'exterior' && (
+            {PLATE_CATS.includes(editForm.category) && (
               <div className="flex flex-wrap gap-4 rounded-xl bg-slate-50 px-3 py-2 dark:bg-white/5">
-                <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={!!editForm.has_vacuum}
-                    onChange={(e) => setEditForm({ ...editForm, has_vacuum: e.target.checked })}
-                  />
-                  Vacuum <span className="text-xs font-normal text-slate-400">+300</span>
-                </label>
-                <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
-                  <input
-                    type="checkbox"
-                    checked={!!editForm.has_engine_wash}
-                    onChange={(e) => setEditForm({ ...editForm, has_engine_wash: e.target.checked })}
-                  />
-                  Engine wash <span className="text-xs font-normal text-slate-400">+300</span>
-                </label>
+                {(editForm.category === 'car' || editForm.category === 'exterior') && (
+                  <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                    <input
+                      type="checkbox"
+                      checked={editForm.category === 'exterior'}
+                      onChange={(e) => setEditForm({
+                        ...editForm,
+                        category: e.target.checked ? 'exterior' : 'car',
+                        expected: Number(e.target.checked
+                          ? (prices.exterior?.max_price ?? STANDARD.exterior ?? 150)
+                          : (prices.car?.max_price ?? STANDARD.car ?? 200)),
+                        has_vacuum: false,
+                        has_engine_wash: false,
+                      })}
+                    />
+                    Exterior only <span className="text-xs font-normal text-slate-400">150 (Ksh 50)</span>
+                  </label>
+                )}
+                {editForm.category !== 'exterior' && (
+                  <>
+                    <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={!!editForm.has_vacuum}
+                        onChange={(e) => setEditForm({ ...editForm, has_vacuum: e.target.checked })}
+                      />
+                      Vacuum <span className="text-xs font-normal text-slate-400">+300</span>
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={!!editForm.has_engine_wash}
+                        onChange={(e) => setEditForm({ ...editForm, has_engine_wash: e.target.checked })}
+                      />
+                      Engine wash <span className="text-xs font-normal text-slate-400">+300</span>
+                    </label>
+                  </>
+                )}
               </div>
             )}
             <label className="block">
