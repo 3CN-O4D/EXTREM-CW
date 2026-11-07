@@ -48,7 +48,7 @@ export default function CarpetsPanel() {
     const today = new Date();
     const start = startOfWeek(today, { weekStartsOn: 1 });
     const idx = Math.floor((today.getTime() - start.getTime()) / 86400000);
-    return idx >= 0 && idx < 5 ? idx : 0;
+    return idx >= 0 && idx < 7 ? idx : 0;
   });
   const [viewCarpet, setViewCarpet] = useState<any>(null);
   const [viewImage, setViewImage] = useState<string | null>(null);
@@ -247,7 +247,7 @@ export default function CarpetsPanel() {
   // ---- Day / week carpet stats (computed from the list already loaded) ----
   const weekStart = startOfWeek(addDays(new Date(), weekOffset * 7), { weekStartsOn: 1 });
   const weekEnd = addDays(weekStart, 7);
-  const weekDays = Array.from({ length: 5 }, (_, i) => addDays(weekStart, i));
+  const weekDays = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const keyOf = (d: Date) => format(d, 'yyyy-MM-dd');
   const inWeek = (ts: string | null | undefined) => {
     if (!ts) return false;
@@ -355,12 +355,12 @@ export default function CarpetsPanel() {
         ))}
       </div>
 
-      {/* Carpet stats: Mon–Fri daily buttons + weekly breakdown */}
+      {/* Carpet stats: Mon–Sun daily buttons + weekly breakdown */}
       <div className="card overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 bg-slate-50 px-5 py-3 dark:border-white/10 dark:bg-white/5">
           <div>
             <h3 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">Carpet Stats</h3>
-            <p className="muted text-xs text-slate-500 dark:text-slate-400">Pick a weekday for that day's counts, then see the weekly totals.</p>
+            <p className="muted text-xs text-slate-500 dark:text-slate-400">Pick a day (Mon–Sun) for that day's counts, then see the weekly totals.</p>
           </div>
           <div className="flex items-center gap-1.5">
             <button
