@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   AlertCircle,
   AlertTriangle,
+  Banknote,
   Calendar,
+  Camera,
   Check,
   Image as ImageIcon,
   Loader2,
@@ -11,6 +13,8 @@ import {
   Pencil,
   RefreshCw,
   Save,
+  Search,
+  Smartphone,
   Trash2,
   X,
 } from 'lucide-react';
@@ -125,8 +129,10 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
   const [releaseOpen, setReleaseOpen] = useState(false);
   const [carpetList, setCarpetList] = useState<any[]>([]);
   const [selectedCarpetId, setSelectedCarpetId] = useState('');
-  const [releaseCash, setReleaseCash] = useState('');
-  const [releaseMpesa, setReleaseMpesa] = useState('');
+  const [releaseSearch, setReleaseSearch] = useState('');
+  const [releaseAmount, setReleaseAmount] = useState('');
+  const [releaseMethod, setReleaseMethod] = useState<'cash' | 'mpesa'>('cash');
+  const [releaseSender, setReleaseSender] = useState('');
   const [releaseWasher, setReleaseWasher] = useState('');
   const [releaseBusy, setReleaseBusy] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
@@ -544,8 +550,10 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
 
   const openRelease = async () => {
     setSelectedCarpetId('');
-    setReleaseCash('');
-    setReleaseMpesa('');
+    setReleaseSearch('');
+    setReleaseAmount('');
+    setReleaseMethod('cash');
+    setReleaseSender('');
     setReleaseWasher('');
     try {
       const res = await api.get('/carpets/', { skipCache: true });
@@ -558,12 +566,38 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
 
   const selectedCarpet = carpetList.find((c) => String(c.id) === String(selectedCarpetId)) || null;
 
+  const carpetWasherName = (c: any) => {
+    const w = employees.find((e) => Number(e.id) === Number(c.receiver_id));
+    return w?.name || w?.full_name || (w?.abbreviation ? `(${w.abbreviation})` : '');
+  };
+
+  const filteredCarpets = useMemo(() => {
+    const q = releaseSearch.trim().toLowerCase();
+    if (!q) return carpetList;
+    return carpetList.filter((c) => {
+      const hay = [
+        c.id,
+        c.characteristics,
+        c.client_name,
+        c.customer_phone,
+        c.status,
+        c.expected_price,
+        carpetWasherName(c),
+      ]
+        .filter((v) => v !== null && v !== undefined)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [carpetList, releaseSearch, employees]);
+
   const chooseCarpet = (id: string) => {
     setSelectedCarpetId(id);
     const c = carpetList.find((x) => String(x.id) === String(id));
     if (c) {
-      setReleaseCash(String(c.expected_price ?? ''));
-      setReleaseMpesa('');
+      setReleaseAmount(String(c.expected_price ?? ''));
+      setReleaseMethod('cash');
+      setReleaseSender('');
       setReleaseWasher(c.receiver_id ? String(c.receiver_id) : '');
     }
   };
@@ -576,8 +610,10 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
     setReleaseBusy(true);
     try {
       await api.post(`/carpets/${selectedCarpet.id}/release`, {
-        cash_paid: toNum(releaseCash),
-        mpesa_paid: toNum(releaseMpesa),
+        cash_paid: releaseMethod === 'cash' ? toNum(releaseAmount) : 0,
+        mpesa_paid: releaseMethod === 'mpesa' ? toNum(releaseAmount) : 0,
+        payment_method: releaseMethod,
+        mpesa_sender_name: releaseMethod === 'mpesa' ? releaseSender || null : null,
         washer_id: releaseWasher ? Number(releaseWasher) : null,
       });
       setReleaseOpen(false);
@@ -587,6 +623,22 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
       alert(err?.response?.data?.detail || 'Could not release the carpet');
     } finally {
       setReleaseBusy(false);
+    }
+  };
+
+  const handleReceivePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setReceiveCompressing(true);
+    setReceiveError('');
+    try {
+      const { data, thumb } = await compressVariants(file);
+      setReceive((r) => ({ ...r, image: data, thumb }));
+    } catch {
+      setReceiveError('Could not process the image. Try a smaller file.');
+    } finally {
+      setReceiveCompressing(false);
     }
   };
 
@@ -708,6 +760,25 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => {
+                setReceive({
+                  image: '', thumb: '', characteristics: '', client_name: '', customer_phone: '',
+                  receiver_id: '', expected_price: String(prices.carpet?.min_price ?? 300),
+                });
+                setReceiveError('');
+                setReceiveOpen(true);
+              }}
+              className="btn-secondary btn-sm border-violet-300 text-violet-700 dark:border-violet-400/30 dark:text-violet-300"
+            >
+              <Plus size={14} /> Receive carpet
+            </button>
+            <button
+              onClick={() => void openRelease()}
+              className="btn-secondary btn-sm border-blue-300 text-blue-700 dark:border-blue-400/30 dark:text-blue-300"
+            >
+              <Calendar size={14} /> Release carpet
+            </button>
             {onOpenSummary && (
               <button onClick={onOpenSummary} className="btn-secondary btn-sm">
                 <MessageSquareText size={14} /> {mode === 'week' ? 'Week summary' : 'Day summary'}
@@ -964,54 +1035,116 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
               <h3 className="text-lg font-black tracking-tight">Release a carpet</h3>
               <button onClick={() => setReleaseOpen(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
             </div>
-            <label className="block">
+            <div className="block">
               <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Which carpet is being collected?</span>
-              <select className="input-base" value={selectedCarpetId} onChange={(e) => chooseCarpet(e.target.value)}>
-                <option value="">Choose a carpet…</option>
-                {carpetList.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    #{c.id} · {c.characteristics || 'Carpet'} · {c.status}{c.client_name ? ` · ${c.client_name}` : ''}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {carpetList.length === 0 && (
-              <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
-                Nothing to release right now — receive a carpet first.
-              </p>
-            )}
+              <div className="relative">
+                <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  className="input-base pl-9"
+                  placeholder="Search by washer, description, price, client…"
+                  value={releaseSearch}
+                  onChange={(e) => setReleaseSearch(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="max-h-64 space-y-1.5 overflow-y-auto overscroll-contain pr-1">
+              {carpetList.length === 0 ? (
+                <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700 dark:bg-amber-500/10 dark:text-amber-300">
+                  Nothing to release right now — receive a carpet first.
+                </p>
+              ) : filteredCarpets.length === 0 ? (
+                <p className="rounded-xl bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-500 dark:bg-white/5 dark:text-slate-400">
+                  No carpets match “{releaseSearch}”.
+                </p>
+              ) : (
+                filteredCarpets.map((c) => {
+                  const active = String(c.id) === String(selectedCarpetId);
+                  const washerName = carpetWasherName(c);
+                  return (
+                    <button
+                      key={c.id}
+                      type="button"
+                      onClick={() => chooseCarpet(String(c.id))}
+                      className={`flex w-full items-center gap-3 rounded-xl border p-2 text-left transition ${
+                        active
+                          ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-300 dark:border-blue-400/50 dark:bg-blue-500/15 dark:ring-blue-400/30'
+                          : 'border-slate-200 bg-white hover:border-blue-300 dark:border-white/10 dark:bg-white/5 dark:hover:border-blue-400/40'
+                      }`}
+                    >
+                      <div className="h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-slate-200 dark:bg-white/10">
+                        {c.image_thumb ? (
+                          <img src={c.image_thumb} alt="" className="h-full w-full object-cover" />
+                        ) : (
+                          <span className="flex h-full w-full items-center justify-center text-slate-400"><ImageIcon size={18} /></span>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-bold text-slate-900 dark:text-white">
+                          {c.characteristics || 'Carpet'}
+                          <span className="ml-1 text-[10px] font-bold text-slate-400">#{c.id}</span>
+                        </p>
+                        <p className="truncate text-[11px] text-slate-500 dark:text-slate-400">
+                          {washerName ? `Washer: ${washerName} · ` : ''}Ksh {c.expected_price ?? 0}
+                          {c.client_name ? ` · ${c.client_name}` : ''}
+                        </p>
+                      </div>
+                      <span className="chip chip-soft shrink-0 capitalize">{c.status}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
             {selectedCarpet && (
-              <div className="flex gap-3 rounded-xl bg-slate-50 p-2 dark:bg-white/5">
-                <div className="h-20 w-20 shrink-0 overflow-hidden rounded-lg bg-slate-200 dark:bg-white/10">
-                  {selectedCarpet.image_thumb ? (
-                    <img src={selectedCarpet.image_thumb} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <span className="flex h-full w-full items-center justify-center text-slate-400"><ImageIcon size={22} /></span>
-                  )}
-                </div>
-                <div className="min-w-0 text-xs text-slate-600 dark:text-slate-300">
-                  <p className="font-bold text-slate-900 dark:text-white">{selectedCarpet.characteristics || 'Carpet'}</p>
-                  <p>Client: {selectedCarpet.client_name || '—'}</p>
-                  <p>Status: <span className="font-semibold capitalize">{selectedCarpet.status}</span></p>
-                  <p>Price: Ksh {selectedCarpet.expected_price ?? 0}</p>
-                </div>
+              <div className="rounded-xl bg-slate-50 p-2 text-xs text-slate-600 dark:bg-white/5 dark:text-slate-300">
+                <p className="font-bold text-slate-900 dark:text-white">#{selectedCarpet.id} · {selectedCarpet.characteristics || 'Carpet'}</p>
+                <p>Client: {selectedCarpet.client_name || '—'}{selectedCarpet.customer_phone ? ` · ${selectedCarpet.customer_phone}` : ''}</p>
+                <p>Status: <span className="font-semibold capitalize">{selectedCarpet.status}</span> · Price: Ksh {selectedCarpet.expected_price ?? 0}</p>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-3">
-              <label className="block">
-                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Cash (Ksh)</span>
-                <input type="number" min="0" className="input-base" value={releaseCash} onChange={(e) => setReleaseCash(e.target.value)} />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">M-Pesa (Ksh)</span>
-                <input type="number" min="0" className="input-base" value={releaseMpesa} onChange={(e) => setReleaseMpesa(e.target.value)} />
-              </label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setReleaseMethod('cash')}
+                className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold transition ${
+                  releaseMethod === 'cash'
+                    ? 'border-emerald-400 bg-emerald-50 text-emerald-700 dark:border-emerald-400/40 dark:bg-emerald-500/15 dark:text-emerald-300'
+                    : 'border-slate-200 bg-white text-slate-500 hover:border-emerald-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-400'
+                }`}
+              >
+                <Banknote size={15} /> Cash
+              </button>
+              <button
+                type="button"
+                onClick={() => setReleaseMethod('mpesa')}
+                className={`flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold transition ${
+                  releaseMethod === 'mpesa'
+                    ? 'border-green-400 bg-green-50 text-green-700 dark:border-green-400/40 dark:bg-green-500/15 dark:text-green-300'
+                    : 'border-slate-200 bg-white text-slate-500 hover:border-green-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-400'
+                }`}
+              >
+                <Smartphone size={15} /> M-Pesa
+              </button>
             </div>
+            <label className="block">
+              <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Amount paid ({releaseMethod === 'cash' ? 'cash' : 'M-Pesa'}, Ksh)</span>
+              <input type="number" min="0" className="input-base" value={releaseAmount} onChange={(e) => setReleaseAmount(e.target.value)} />
+            </label>
+            {releaseMethod === 'mpesa' && (
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">M-Pesa payer name</span>
+                <input
+                  className="input-base"
+                  placeholder="Name on the M-Pesa message"
+                  value={releaseSender}
+                  onChange={(e) => setReleaseSender(e.target.value)}
+                />
+              </label>
+            )}
             <label className="block">
               <span className="mb-1 block text-sm font-semibold text-slate-700 dark:text-slate-300">Washer</span>
               <select className="input-base" value={releaseWasher} onChange={(e) => setReleaseWasher(e.target.value)}>
                 <option value="">Use the receiver</option>
-                {employees.map((e) => <option key={e.id} value={e.id}>{e.name || e.abbreviation}</option>)}
+                {employees.map((e) => <option key={e.id} value={e.id}>{e.name || e.full_name || e.abbreviation}</option>)}
               </select>
             </label>
             <div className="flex gap-2">
@@ -1032,30 +1165,22 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
               <h3 className="text-lg font-black tracking-tight">Receive a carpet</h3>
               <button type="button" onClick={() => setReceiveOpen(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
             </div>
-            <label className="block">
+            <div className="block">
               <span className="mb-1 block text-sm font-semibold">Carpet photo (required)</span>
-              <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Take a photo now or choose one from your gallery / files.</p>
-              <input
-                type="file" accept="image/*"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  setReceiveCompressing(true);
-                  setReceiveError('');
-                  try {
-                    const { data, thumb } = await compressVariants(file);
-                    setReceive((r) => ({ ...r, image: data, thumb }));
-                  } catch {
-                    setReceiveError('Could not process the image. Try a smaller file.');
-                  } finally {
-                    setReceiveCompressing(false);
-                  }
-                }}
-                className="input-base file:mr-2 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-white"
-              />
-              {receiveCompressing && <span className="mt-1 text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
+              <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">Take a photo now or choose one from your gallery / files.</p>
+              <div className="flex flex-wrap gap-2">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-violet-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-violet-700">
+                  <Camera size={15} /> Take photo
+                  <input type="file" accept="image/*" capture="environment" onChange={handleReceivePhoto} className="hidden" />
+                </label>
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition hover:border-violet-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
+                  <ImageIcon size={15} /> Choose file
+                  <input type="file" accept="image/*" onChange={handleReceivePhoto} className="hidden" />
+                </label>
+              </div>
+              {receiveCompressing && <span className="mt-2 block text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
               {receive.image && <img src={receive.image} alt="" className="mt-2 h-24 w-24 rounded-xl object-cover ring-1 ring-violet-300" />}
-            </label>
+            </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-1 block text-sm font-semibold">Description</span>

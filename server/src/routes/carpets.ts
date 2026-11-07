@@ -544,6 +544,10 @@ router.post(
     if (body.customer_phone !== undefined) carpet.customer_phone = asOptStr(body.customer_phone);
     if (body.client_name !== undefined) carpet.client_name = asOptStr(body.client_name);
 
+    // Payment is recorded as either cash or M-Pesa. For M-Pesa the payer name
+    // is stored on the generated transaction so the ledger matches the SMS.
+    const mpesaSenderName = asOptStr(body.mpesa_sender_name) ?? null;
+
     // The washer can be picked now, or falls back to whoever received/was assigned.
     const washerId =
       body.washer_id !== undefined && body.washer_id !== null && body.washer_id !== ''
@@ -583,7 +587,7 @@ router.post(
           cash_paid: carpet.cash_paid,
           mpesa_paid: carpet.mpesa_paid,
           mpesa_transaction_id: null,
-          mpesa_sender_name: null,
+          mpesa_sender_name: mpesaSenderName,
           manual_tip: 0,
           tip_method: 'cash',
           misc_amount: 0,

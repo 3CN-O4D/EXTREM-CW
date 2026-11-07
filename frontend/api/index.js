@@ -36135,6 +36135,7 @@ router8.post(
     }
     if (body.customer_phone !== void 0) carpet.customer_phone = asOptStr(body.customer_phone);
     if (body.client_name !== void 0) carpet.client_name = asOptStr(body.client_name);
+    const mpesaSenderName = asOptStr(body.mpesa_sender_name) ?? null;
     const washerId = body.washer_id !== void 0 && body.washer_id !== null && body.washer_id !== "" ? Number(body.washer_id) : carpet.receiver_id ?? carpet.submitter_id;
     if (!Number.isInteger(washerId)) {
       throw new HttpError(422, "choose who washes the carpet (receiver or washer)");
@@ -36167,7 +36168,7 @@ router8.post(
           cash_paid: carpet.cash_paid,
           mpesa_paid: carpet.mpesa_paid,
           mpesa_transaction_id: null,
-          mpesa_sender_name: null,
+          mpesa_sender_name: mpesaSenderName,
           manual_tip: 0,
           tip_method: "cash",
           misc_amount: 0,
