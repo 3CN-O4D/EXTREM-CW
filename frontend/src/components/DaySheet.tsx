@@ -608,21 +608,54 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
       return;
     }
     setReleaseBusy(true);
+    const carpetId = selectedCarpet.id;
+    let released = false;
     try {
-      await api.post(`/carpets/${selectedCarpet.id}/release`, {
-        cash_paid: releaseMethod === 'cash' ? toNum(releaseAmount) : 0,
-        mpesa_paid: releaseMethod === 'mpesa' ? toNum(releaseAmount) : 0,
-        payment_method: releaseMethod,
-        mpesa_sender_name: releaseMethod === 'mpesa' ? releaseSender || null : null,
-        washer_id: releaseWasher ? Number(releaseWasher) : null,
-      });
-      setReleaseOpen(false);
-      await reload({ fresh: true });
-      onDataChanged?.();
+      await api.post(
+        `/carpets/${carpetId}/release`,
+        {
+          cash_paid: releaseMethod === 'cash' ? toNum(releaseAmount) : 0,
+          mpesa_paid: releaseMethod === 'mpesa' ? toNum(releaseAmount) : 0,
+          payment_method: releaseMethod,
+          mpesa_sender_name: releaseMethod === 'mpesa' ? releaseSender || null : null,
+          washer_id: releaseWasher ? Number(releaseWasher) : null,
+        },
+        // Releasing writes the transaction, updates balances and may create a
+        // client debt, so give it longer than the default request timeout.
+        { timeout: 60000 },
+      );
+      released = true;
     } catch (err: any) {
-      alert(err?.response?.data?.detail || 'Could not release the carpet');
-    } finally {
-      setReleaseBusy(false);
+      // The release can commit even when the reply is lost (mobile networks,
+      // proxy timeouts). Confirm the carpet state before showing an error, and
+      // treat a retry of an already-released carpet as success.
+      const detail = err?.response?.data?.detail;
+      if (err?.response?.status === 400 && /already released/i.test(detail || '')) {
+        released = true;
+      } else {
+        try {
+          const check = await api.get(`/carpets/${carpetId}`, { skipCache: true });
+          released = check.data?.status === 'released';
+        } catch {
+          released = false;
+        }
+        if (!released) {
+          setReleaseBusy(false);
+          alert(detail || 'Could not release the carpet');
+          return;
+        }
+      }
+    }
+
+    // Success (or already released): close first, then refresh in the
+    // background so a slow reload cannot re-trigger the error toast.
+    setReleaseOpen(false);
+    setReleaseBusy(false);
+    onDataChanged?.();
+    try {
+      await reload({ fresh: true });
+    } catch {
+      // The release is committed; a refresh hiccup is not a release failure.
     }
   };
 
