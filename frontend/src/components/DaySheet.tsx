@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   Banknote,
   Calendar,
-  Camera,
   Check,
   Image as ImageIcon,
   Loader2,
@@ -24,6 +23,7 @@ import api from '../services/api';
 import { parsePaymentSms } from '../utils/smsParser';
 import { compressVariants } from '../utils/image';
 import { InlineError } from './States';
+import ImagePicker from './ImagePicker';
 
 export interface DaySheetProps {
   employees: any[];
@@ -626,10 +626,7 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
     }
   };
 
-  const handleReceivePhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+  const handleReceivePhoto = async (file: File) => {
     setReceiveCompressing(true);
     setReceiveError('');
     try {
@@ -1165,22 +1162,12 @@ export default function DaySheet({ employees, selectedDay, mode = 'day', weekId,
               <h3 className="text-lg font-black tracking-tight">Receive a carpet</h3>
               <button type="button" onClick={() => setReceiveOpen(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
             </div>
-            <div className="block">
-              <span className="mb-1 block text-sm font-semibold">Carpet photo (required)</span>
-              <p className="mb-2 text-xs text-slate-500 dark:text-slate-400">Take a photo now or choose one from your gallery / files.</p>
-              <div className="flex flex-wrap gap-2">
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-violet-600 px-3 py-2 text-sm font-bold text-white transition hover:bg-violet-700">
-                  <Camera size={15} /> Take photo
-                  <input type="file" accept="image/*" capture="environment" onChange={handleReceivePhoto} className="hidden" />
-                </label>
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 transition hover:border-violet-300 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
-                  <ImageIcon size={15} /> Choose file
-                  <input type="file" accept="image/*" onChange={handleReceivePhoto} className="hidden" />
-                </label>
-              </div>
-              {receiveCompressing && <span className="mt-2 block text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
-              {receive.image && <img src={receive.image} alt="" className="mt-2 h-24 w-24 rounded-xl object-cover ring-1 ring-violet-300" />}
-            </div>
+            <ImagePicker
+              label="Carpet photo (required)"
+              preview={receive.image}
+              busy={receiveCompressing}
+              onFile={handleReceivePhoto}
+            />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-1 block text-sm font-semibold">Description</span>

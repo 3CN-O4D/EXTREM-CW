@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import { compressVariants } from '../utils/image';
 import { InlineError, PageError, PageLoading } from '../components/States';
+import ImagePicker from '../components/ImagePicker';
 
 const STATUS_FLOW = ['received', 'washed', 'dried', 'ready', 'released'] as const;
 type Status = (typeof STATUS_FLOW)[number];
@@ -795,30 +796,23 @@ export default function CarpetsPanel() {
               <h3 className="text-lg font-black tracking-tight">Receive a carpet</h3>
               <button type="button" onClick={() => setShowReceive(false)} className="rounded-xl p-2 text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5"><X size={18} /></button>
             </div>
-            <label className="block">
-              <span className="mb-1 block text-sm font-semibold">Carpet photo (required)</span>
-              <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Take a photo now or choose one from your gallery / files.</p>
-              <input
-                type="file" accept="image/*"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  setReceiveCompressing(true);
-                  setReceiveError('');
-                  try {
-                    const { data, thumb } = await compressVariants(file);
-                    setReceive((r) => ({ ...r, image: data, thumb }));
-                  } catch {
-                    setReceiveError('Could not process the image. Try a smaller file.');
-                  } finally {
-                    setReceiveCompressing(false);
-                  }
-                }}
-                className="input-base file:mr-2 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-white"
-              />
-              {receiveCompressing && <span className="mt-1 text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
-              {receive.image && <img src={receive.image} alt="" className="mt-2 h-24 w-24 rounded-xl object-cover ring-1 ring-violet-300" />}
-            </label>
+            <ImagePicker
+              label="Carpet photo (required)"
+              preview={receive.image}
+              busy={receiveCompressing}
+              onFile={async (file) => {
+                setReceiveCompressing(true);
+                setReceiveError('');
+                try {
+                  const { data, thumb } = await compressVariants(file);
+                  setReceive((r) => ({ ...r, image: data, thumb }));
+                } catch {
+                  setReceiveError('Could not process the image. Try a smaller file.');
+                } finally {
+                  setReceiveCompressing(false);
+                }
+              }}
+            />
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-1 block text-sm font-semibold">Description</span>
@@ -884,29 +878,22 @@ export default function CarpetsPanel() {
                 Hang the carpet out in the sun to air-dry completely. Mark it <b>Ready</b> only after it is fully dry.
               </div>
             ) : (
-              <label className="block">
-                <span className="mb-1 block text-sm font-semibold">Photo for "{STATUS_META[statusModal.status].label}" (optional)</span>
-                <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Take a new photo or choose one from your gallery / files.</p>
-                <input
-                  type="file" accept="image/*"
-                  onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file) return;
-                    setStatusCompressing(true);
-                    try {
-                      const { data, thumb } = await compressVariants(file);
-                      setStatusModal((m) => (m ? { ...m, image: data, thumb } : m));
-                    } catch {
-                      alert('Could not process the image. Try a smaller file.');
-                    } finally {
-                      setStatusCompressing(false);
-                    }
-                  }}
-                  className="input-base file:mr-2 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-white"
-                />
-                {statusCompressing && <span className="mt-1 text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
-                {statusModal.image && <img src={statusModal.image} alt="" className="mt-2 h-24 w-24 rounded-xl object-cover ring-1 ring-violet-300" />}
-              </label>
+              <ImagePicker
+                label={`Photo for "${STATUS_META[statusModal.status].label}" (optional)`}
+                preview={statusModal.image}
+                busy={statusCompressing}
+                onFile={async (file) => {
+                  setStatusCompressing(true);
+                  try {
+                    const { data, thumb } = await compressVariants(file);
+                    setStatusModal((m) => (m ? { ...m, image: data, thumb } : m));
+                  } catch {
+                    alert('Could not process the image. Try a smaller file.');
+                  } finally {
+                    setStatusCompressing(false);
+                  }
+                }}
+              />
             )}
             <div className="flex gap-2">
               <button onClick={submitStatus} disabled={statusBusy} className="btn-primary flex-1 justify-center">
@@ -988,31 +975,23 @@ export default function CarpetsPanel() {
                 </p>
               )}
             </label>
-            <label className="block">
-              <span className="mb-1 block text-sm font-semibold">Carpet photo</span>
-              <p className="mb-1 text-xs text-slate-500 dark:text-slate-400">Take a new photo or choose one from your gallery / files.</p>
-              <input
-                type="file" accept="image/*"
-                onChange={async (e) => {
-                  const file = e.target.files?.[0];
-                  if (!file) return;
-                  setEditCompressing(true);
-                  try {
-                    const { data, thumb } = await compressVariants(file);
-                    setEditModal((m) => (m ? { ...m, image: data, thumb } : m));
-                  } catch {
-                    alert('Could not process the image. Try a smaller file.');
-                  } finally {
-                    setEditCompressing(false);
-                  }
-                }}
-                className="input-base file:mr-2 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3 file:py-1.5 file:text-sm file:font-bold file:text-white"
-              />
-              {editCompressing && <span className="mt-1 text-xs text-brand-600 dark:text-brand-300">Compressing image…</span>}
-              {(editModal.thumb || editModal.image) && (
-                <img src={editModal.thumb || editModal.image} alt="" className="mt-2 h-24 w-24 rounded-xl object-cover ring-1 ring-violet-300" />
-              )}
-            </label>
+            <ImagePicker
+              label="Carpet photo"
+              hint="Take a new photo or choose one from your gallery / files."
+              preview={editModal.thumb || editModal.image}
+              busy={editCompressing}
+              onFile={async (file) => {
+                setEditCompressing(true);
+                try {
+                  const { data, thumb } = await compressVariants(file);
+                  setEditModal((m) => (m ? { ...m, image: data, thumb } : m));
+                } catch {
+                  alert('Could not process the image. Try a smaller file.');
+                } finally {
+                  setEditCompressing(false);
+                }
+              }}
+            />
             <label className="block">
               <span className="mb-1 block text-sm font-semibold">Owner / Receiver</span>
               <select className="input-base" value={editModal.receiver_id}
