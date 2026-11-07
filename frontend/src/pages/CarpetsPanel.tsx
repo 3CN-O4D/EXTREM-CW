@@ -280,13 +280,16 @@ export default function CarpetsPanel() {
 
   const dayStats = weekDays.map((d) => {
     const key = keyOf(d);
+    // Received and Released are movement for that day. Washed / Dried / Ready
+    // are cumulative stage totals: every carpet currently sitting in that
+    // stage, regardless of which day it got there.
     return {
       date: d,
       key,
       received: carpets.filter((c) => tappedOn(c.created_at, key)).length,
-      washed: carpets.filter((c) => tappedOn(c.washed_at, key)).length,
-      dried: carpets.filter((c) => tappedOn(c.dried_at, key)).length,
-      ready: carpets.filter((c) => tappedOn(c.ready_at, key)).length,
+      washed: carpets.filter((c) => c.status === 'washed').length,
+      dried: carpets.filter((c) => c.status === 'dried').length,
+      ready: carpets.filter((c) => c.status === 'ready').length,
       released: carpets.filter((c) => tappedOn(c.released_at, key)).length,
     };
   });
@@ -298,21 +301,24 @@ export default function CarpetsPanel() {
     return {
       ...e,
       received: mine.filter((c) => tappedOn(c.created_at, selectedDay.key)).length,
-      washed: mine.filter((c) => tappedOn(c.washed_at, selectedDay.key)).length,
-      dried: mine.filter((c) => tappedOn(c.dried_at, selectedDay.key)).length,
-      ready: mine.filter((c) => tappedOn(c.ready_at, selectedDay.key)).length,
+      washed: mine.filter((c) => c.status === 'washed').length,
+      dried: mine.filter((c) => c.status === 'dried').length,
+      ready: mine.filter((c) => c.status === 'ready').length,
       released: mine.filter((c) => tappedOn(c.released_at, selectedDay.key)).length,
     };
   });
 
   const weekRows = statEmployees.map((e: any) => {
     const mine = carpets.filter((c) => c.receiver_id === e.id);
+    // Received/Released are this week's movement; Washed/Dried/Ready are the
+    // current stage totals, so a carpet that became ready last week still
+    // counts as ready now.
     return {
       ...e,
       received: mine.filter((c) => inWeek(c.created_at)).length,
-      washed: mine.filter((c) => inWeek(c.washed_at)).length,
-      dried: mine.filter((c) => inWeek(c.dried_at)).length,
-      ready: mine.filter((c) => inWeek(c.ready_at)).length,
+      washed: mine.filter((c) => c.status === 'washed').length,
+      dried: mine.filter((c) => c.status === 'dried').length,
+      ready: mine.filter((c) => c.status === 'ready').length,
       released: mine.filter((c) => inWeek(c.released_at)).length,
       holding: mine.filter((c) => c.status !== 'released').length,
       total: mine.length,
@@ -360,7 +366,7 @@ export default function CarpetsPanel() {
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 bg-slate-50 px-5 py-3 dark:border-white/10 dark:bg-white/5">
           <div>
             <h3 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">Carpet Stats</h3>
-            <p className="muted text-xs text-slate-500 dark:text-slate-400">Pick a day (Mon–Sun) for that day's counts, then see the weekly totals.</p>
+            <p className="muted text-xs text-slate-500 dark:text-slate-400">Received and released are that day's movement; washed, dried and ready are current totals.</p>
           </div>
           <div className="flex items-center gap-1.5">
             <button
@@ -460,7 +466,7 @@ export default function CarpetsPanel() {
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200/80 bg-slate-50 px-5 py-3 dark:border-white/10 dark:bg-white/5">
           <div>
             <h3 className="text-sm font-black tracking-tight text-slate-900 dark:text-white">Weekly Stats</h3>
-            <p className="muted text-xs text-slate-500 dark:text-slate-400">Who received / released how many, and who is holding how many now.</p>
+            <p className="muted text-xs text-slate-500 dark:text-slate-400">Received/released this week; washed, dried and ready are current totals.</p>
           </div>
           <span className="rounded-lg bg-white px-2.5 py-1 text-xs font-bold text-slate-600 dark:bg-white/5 dark:text-slate-300">
             {format(weekStart, 'dd MMM')} – {format(addDays(weekStart, 6), 'dd MMM yyyy')}
