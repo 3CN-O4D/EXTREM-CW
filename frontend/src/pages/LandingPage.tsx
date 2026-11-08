@@ -149,6 +149,45 @@ const TICKER = [
   'M-Pesa accepted',
 ];
 
+type RevealTarget = { el: HTMLDivElement; reveal: () => void };
+
+// Shared, rAF-throttled scroll fallback: an IntersectionObserver alone can miss
+// elements when a jump (End key, restored scroll, fast flick) skips them between
+// frames, leaving a section permanently invisible.
+const pendingReveals = new Set<RevealTarget>();
+let revealCheckQueued = false;
+let revealListenersOn = false;
+
+function stopRevealListenersIfIdle() {
+  if (pendingReveals.size > 0 || !revealListenersOn) return;
+  revealListenersOn = false;
+  window.removeEventListener('scroll', queueRevealCheck);
+  window.removeEventListener('resize', queueRevealCheck);
+}
+
+function runRevealCheck() {
+  revealCheckQueued = false;
+  const limit = window.innerHeight - 40;
+  pendingReveals.forEach((target) => {
+    if (target.el.getBoundingClientRect().top < limit) target.reveal();
+  });
+  stopRevealListenersIfIdle();
+}
+
+function queueRevealCheck() {
+  if (revealCheckQueued) return;
+  revealCheckQueued = true;
+  window.requestAnimationFrame(runRevealCheck);
+}
+
+function registerReveal(target: RevealTarget) {
+  pendingReveals.add(target);
+  if (revealListenersOn) return;
+  revealListenersOn = true;
+  window.addEventListener('scroll', queueRevealCheck, { passive: true });
+  window.addEventListener('resize', queueRevealCheck);
+}
+
 function Reveal({
   children,
   delay = 0,
@@ -165,26 +204,43 @@ function Reveal({
     const el = ref.current;
     if (!el) return;
 
-    // Already in (or above) the viewport: show immediately so a fast scroll or a
-    // restored scroll position can never leave a section permanently invisible.
-    if (el.getBoundingClientRect().top < window.innerHeight) {
+    let observer: IntersectionObserver | null = null;
+
+    const target: RevealTarget = {
+      el,
+      reveal: () => {
+        setShown(true);
+        observer?.disconnect();
+        pendingReveals.delete(target);
+        stopRevealListenersIfIdle();
+      },
+    };
+
+    // Already in (or above) the viewport: show immediately so a restored scroll
+    // position can never leave a section invisible.
+    if (el.getBoundingClientRect().top < window.innerHeight - 40) {
       setShown(true);
       return;
     }
 
-    const observer = new IntersectionObserver(
+    observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
         if (!entry) return;
         if (entry.isIntersecting || entry.boundingClientRect.top < 0) {
-          setShown(true);
-          observer.disconnect();
+          target.reveal();
         }
       },
       { threshold: 0.12, rootMargin: '0px 0px -40px 0px' },
     );
     observer.observe(el);
-    return () => observer.disconnect();
+    registerReveal(target);
+
+    return () => {
+      observer?.disconnect();
+      pendingReveals.delete(target);
+      stopRevealListenersIfIdle();
+    };
   }, []);
 
   return (
